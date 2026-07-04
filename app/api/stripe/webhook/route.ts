@@ -1,0 +1,103 @@
+/**
+ * POST /api/stripe/webhook — keeps Supabase profiles in sync with Stripe.
+ *
+ *   checkout.session.completed      → tier=pro, refill Sparks
+ *   customer.subscription.updated   → pro while active/trialing, else free
+ *   customer.subscription.deleted   → tier=free
+ *
+ * Local dev: stripe listen --forward-to localhost:3000/api/stripe/webhook
+ * (copy the printed whsec_… into STRIPE_WEBHOOK_SECRET).
+ */
+import { NextRequest, NextResponse } from "next/server";
+import type Stripe from "stripe";
+import { getStripe } from "@/lib/stripe";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { SPARKS_ALLOWANCE, type Tier } from "@/lib/tier";
+
+export const runtime = "nodejs";
+
+/** Set a user's tier and refill/clamp Sparks accordingly. */
+async function setTier(
+  match: { userId?: string; customerId?: string },
+  tier: Tier,
+  extra: Partial<{ stripe_customer_id: string; stripe_subscription_id: string | null }> = {}
+) {
+  const admin = createAdminClient();
+  const update = {
+    tier,
+    sparks: SPARKS_ALLOWANCE[tier],
+    sparks_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    ...extra,
+  };
+  const query = admin.from("profiles").update(update);
+  const { error } = match.userId
+    ? await query.eq("id", match.userId)
+    : await query.eq("stripe_customer_id", match.customerId!);
+  if (error) throw new Error(`Supabase profile update failed: ${error.message}`);
+}
+
+export async function POST(req: NextRequest) {
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    return NextResponse.json({ error: "STRIPE_WEBHOOK_SECRET is not set." }, { status: 500 });
+  }
+
+  const payload = await req.text();
+  const signature = req.headers.get("stripe-signature");
+  if (!signature) {
+    return NextResponse.json({ error: "Missing stripe-signature header." }, { status: 400 });
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = getStripe().webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Webhook signature verification failed: ${err instanceof Error ? err.message : err}` },
+      { status: 400 }
+    );
+  }
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object;
+        const userId = session.metadata?.user_id ?? session.client_reference_id;
+        if (userId && session.mode === "subscription") {
+          await setTier({ userId }, "pro", {
+            stripe_customer_id: String(session.customer),
+            stripe_subscription_id: String(session.subscription),
+          });
+        }
+        break;
+      }
+      case "customer.subscription.updated": {
+        const sub = event.data.object;
+        const active = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
+        await setTier(
+          { userId: sub.metadata?.user_id, customerId: String(sub.customer) },
+          active ? "pro" : "free",
+          { stripe_subscription_id: active ? sub.id : null }
+        );
+        break;
+      }
+      case "customer.subscription.deleted": {
+        const sub = event.data.object;
+        await setTier(
+          { userId: sub.metadata?.user_id, customerId: String(sub.customer) },
+          "free",
+          { stripe_subscription_id: null }
+        );
+        break;
+      }
+      // Everything else is noise for us — acknowledge and move on.
+    }
+  } catch (err) {
+    // Non-2xx makes Stripe retry the event — right call for transient DB errors.
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Webhook handling failed." },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ received: true });
+}

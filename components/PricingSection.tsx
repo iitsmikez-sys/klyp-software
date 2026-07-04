@@ -1,0 +1,290 @@
+import Link from "next/link";
+import FadeIn from "./FadeIn";
+
+/* ─── Icons ─── */
+function CheckIcon() {
+  return (
+    <svg
+      className="flex-shrink-0 mt-0.5"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#00E5A0"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function WarnIcon() {
+  return (
+    <svg
+      className="flex-shrink-0 mt-0.5"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#5a5a72"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <circle cx="12" cy="17" r="0.5" fill="#5a5a72" />
+    </svg>
+  );
+}
+
+/* ─── Types ─── */
+type FeatureItem =
+  | { kind: "check"; text: string }
+  | { kind: "warn"; text: string }
+  | { kind: "divider"; text: string };
+
+type PriceDisplay =
+  | { kind: "free" }
+  | { kind: "fixed"; amount: string }
+  | { kind: "discounted"; original: string; discounted: string }
+  | { kind: "custom" };
+
+type Plan = {
+  id: string;
+  name: string;
+  tagline: string;
+  price: PriceDisplay;
+  features: FeatureItem[];
+  cta: { label: string; subtext?: string; href: string };
+  highlighted?: boolean;
+  badge?: string;
+};
+
+/* ─── Data ─── */
+const plans: Plan[] = [
+  {
+    id: "free",
+    name: "FREE",
+    tagline: "Free forever",
+    price: { kind: "free" },
+    features: [
+      { kind: "check", text: "60 Sparks per month" },
+      { kind: "check", text: "Up to 1080p rendered clips" },
+      { kind: "check", text: "Auto reframe" },
+      { kind: "check", text: "AI captions with emoji and keyword highlighter" },
+      { kind: "warn",  text: "Watermark on all clips" },
+      { kind: "warn",  text: "No clip editing" },
+      { kind: "warn",  text: "Clips cannot be exported after 3 days" },
+    ],
+    cta: { label: "Create an account", href: "/login" },
+  },
+  {
+    id: "starter",
+    name: "STARTER",
+    tagline: "For individual creators",
+    price: { kind: "fixed", amount: "$15" },
+    features: [
+      { kind: "check", text: "150 Sparks per month" },
+      { kind: "check", text: "AI clipping with Virality Score" },
+      { kind: "check", text: "AI animated captions in 20+ languages" },
+      { kind: "check", text: "Export to TikTok, Reels & Shorts" },
+      { kind: "check", text: "Powerful clip editor" },
+      { kind: "check", text: "1 brand template" },
+      { kind: "check", text: "Filler & silence removal" },
+      { kind: "check", text: "No watermark" },
+    ],
+    cta: { label: "Start your free trial", subtext: "No credit card required", href: "/login" },
+  },
+  {
+    id: "pro",
+    name: "PRO",
+    tagline: "For professional creators & teams",
+    price: { kind: "discounted", original: "$29", discounted: "$14.5" },
+    features: [
+      { kind: "check",   text: "3,600 Sparks per year, available instantly" },
+      { kind: "check",   text: "Team workspace with 2 seats" },
+      { kind: "check",   text: "2 brand templates" },
+      { kind: "divider", text: "Everything in Starter, plus:" },
+      { kind: "check",   text: "AI B-roll" },
+      { kind: "check",   text: "Input from 10+ sources" },
+      { kind: "check",   text: "Multiple aspect ratios (9:16, 1:1, 16:9)" },
+      { kind: "check",   text: "Social media scheduler" },
+      { kind: "check",   text: "Custom fonts" },
+      { kind: "check",   text: "Limited API access" },
+    ],
+    cta: { label: "Start your free trial", href: "/login" },
+    highlighted: true,
+    badge: "Most Popular",
+  },
+  {
+    id: "business",
+    name: "BUSINESS",
+    tagline: "For organizations that need tailored solutions, API, and more",
+    price: { kind: "custom" },
+    features: [
+      { kind: "divider", text: "Everything in Pro, plus:" },
+      { kind: "check",   text: "Priority processing" },
+      { kind: "check",   text: "Customized Sparks & seats" },
+      { kind: "check",   text: "Dedicated storage" },
+      { kind: "check",   text: "API & custom integrations" },
+      { kind: "check",   text: "Priority support" },
+      { kind: "check",   text: "Enterprise security" },
+    ],
+    cta: { label: "Contact us", href: "/login" },
+  },
+];
+
+/* ─── Price renderer ─── */
+function Price({ p }: { p: PriceDisplay }) {
+  if (p.kind === "free") {
+    return (
+      <div className="flex items-end gap-1.5 min-h-[3.5rem]">
+        <span className="font-syne text-4xl font-bold text-foreground">$0</span>
+        <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
+      </div>
+    );
+  }
+  if (p.kind === "fixed") {
+    return (
+      <div className="flex items-end gap-1.5 min-h-[3.5rem]">
+        <span className="font-syne text-4xl font-bold text-foreground">{p.amount}</span>
+        <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
+      </div>
+    );
+  }
+  if (p.kind === "discounted") {
+    return (
+      <div className="min-h-[3.5rem]">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-foreground-muted line-through text-base">{p.original}</span>
+          <span className="text-xs font-medium text-accent bg-accent-glow px-1.5 py-0.5 rounded">50% off</span>
+        </div>
+        <div className="flex items-end gap-1.5">
+          <span className="font-syne text-4xl font-bold text-accent">{p.discounted}</span>
+          <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-end min-h-[3.5rem]">
+      <span className="font-syne text-3xl font-bold text-foreground">Custom pricing</span>
+    </div>
+  );
+}
+
+/* ─── Feature row renderer ─── */
+function FeatureRow({ item }: { item: FeatureItem }) {
+  if (item.kind === "divider") {
+    return (
+      <li className="flex items-center gap-2 pt-2 pb-1">
+        <div className="flex-1 h-px bg-border" />
+        <span className="text-[10px] font-semibold text-foreground-muted uppercase tracking-wider whitespace-nowrap">
+          {item.text}
+        </span>
+        <div className="flex-1 h-px bg-border" />
+      </li>
+    );
+  }
+  return (
+    <li className="flex items-start gap-2.5">
+      {item.kind === "check" ? <CheckIcon /> : <WarnIcon />}
+      <span
+        className={`text-sm leading-snug ${
+          item.kind === "warn" ? "text-muted" : "text-foreground-muted"
+        }`}
+      >
+        {item.text}
+      </span>
+    </li>
+  );
+}
+
+/* ─── Section ─── */
+export default function PricingSection() {
+  return (
+    <section id="pricing" className="px-4 sm:px-6 py-24 max-w-[90rem] mx-auto w-full">
+      {/* Header */}
+      <FadeIn>
+        <div className="text-center mb-14">
+          <p className="text-accent text-xs font-semibold font-syne uppercase tracking-widest mb-3">
+            Pricing
+          </p>
+          <h2 className="font-syne text-4xl md:text-5xl font-bold text-foreground">
+            Simple, honest pricing
+          </h2>
+          <p className="mt-4 text-foreground-muted max-w-md mx-auto text-sm">
+            Start free. Upgrade when you&apos;re ready to grow.
+          </p>
+        </div>
+      </FadeIn>
+
+      {/* Cards grid: 1 col → 2 col (md) → 4 col (xl) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 items-start">
+        {plans.map((plan, i) => {
+          const isHighlighted = plan.highlighted;
+
+          return (
+            <FadeIn key={plan.id} delay={i * 0.09}>
+              <div
+                className={`relative flex flex-col rounded-2xl border p-6 transition-all duration-200 hover:-translate-y-1 ${
+                  isHighlighted
+                    ? "bg-surface border-accent/50 shadow-accent-glow xl:-my-4 xl:py-10"
+                    : "bg-surface border-border hover:border-subtle"
+                }`}
+              >
+                {/* Most Popular badge */}
+                {plan.badge && (
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-accent text-background text-[11px] font-bold font-syne tracking-wide whitespace-nowrap">
+                      {plan.badge}
+                    </span>
+                  </div>
+                )}
+
+                {/* Plan header */}
+                <div className="mb-5">
+                  <p className={`font-syne text-xs font-bold uppercase tracking-[0.15em] mb-1 ${isHighlighted ? "text-accent" : "text-foreground-muted"}`}>
+                    {plan.name}
+                  </p>
+                  <p className="text-xs text-foreground-muted leading-snug mb-4">{plan.tagline}</p>
+                  <Price p={plan.price} />
+                </div>
+
+                {/* Divider */}
+                <div className="h-px bg-border mb-5" />
+
+                {/* Features */}
+                <ul className="flex flex-col gap-2.5 flex-1 mb-7">
+                  {plan.features.map((item, fi) => (
+                    <FeatureRow key={fi} item={item} />
+                  ))}
+                </ul>
+
+                {/* CTA */}
+                <div className="flex flex-col items-center gap-1.5">
+                  <Link
+                    href={plan.cta.href}
+                    className={`w-full text-center py-2.5 px-4 rounded-xl text-sm font-bold font-syne transition-colors ${
+                      isHighlighted
+                        ? "bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm"
+                        : "bg-surface-2 border border-border text-foreground hover:border-subtle"
+                    }`}
+                  >
+                    {plan.cta.label}
+                  </Link>
+                  {plan.cta.subtext && (
+                    <p className="text-[11px] text-foreground-muted">{plan.cta.subtext}</p>
+                  )}
+                </div>
+              </div>
+            </FadeIn>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
