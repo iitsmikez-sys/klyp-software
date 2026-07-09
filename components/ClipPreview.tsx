@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { ClipWithWords, CaptionStyle } from "@/lib/clips";
 import { CAPTION_STYLES } from "@/lib/clips";
-import type { HookStyle } from "@/lib/captions";
+import { buildCaptionCues, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { useSparks } from "./SparksProvider";
 import { watermarkCanvasPos, WATERMARK_FONT_SIZE } from "@/lib/watermark";
@@ -22,24 +22,14 @@ interface Props {
   exporting: boolean;
 }
 
-type RelWord = { text: string; start: number; end: number };
 type Cue = { text: string; start: number; end: number };
 
 /* ── Caption helpers ── */
 
-function buildCues(words: RelWord[]): Cue[] {
-  const cues: Cue[] = [];
-  for (let i = 0; i < words.length; i += 4) {
-    const g = words.slice(i, i + 4);
-    cues.push({ text: g.map((w) => w.text).join(" "), start: g[0].start, end: g.at(-1)!.end });
-  }
-  return cues;
-}
-
 function drawCaptions(
   ctx: CanvasRenderingContext2D,
   t: number,
-  relWords: RelWord[],
+  wordCues: Cue[],
   cues: Cue[],
   style: CaptionStyle,
   W: number,
@@ -55,7 +45,7 @@ function drawCaptions(
   ctx.textBaseline = "bottom";
 
   if (style === "KLYP") {
-    const word = relWords.find((w) => t >= w.start && t <= w.end);
+    const word = wordCues.find((c) => t >= c.start && t < c.end);
     if (!word) return;
 
     const fs = Math.round(82 * scale);
@@ -68,7 +58,7 @@ function drawCaptions(
     return;
   }
 
-  const cue = cues.find((c) => t >= c.start && t <= c.end);
+  const cue = cues.find((c) => t >= c.start && t < c.end);
   if (!cue) return;
 
   if (style === "BOLD") {
@@ -150,17 +140,20 @@ export default function ClipPreview({
   const styleRef = useRef<CaptionStyle>(style);
   useEffect(() => { styleRef.current = style; }, [style]);
 
-  // Pre-compute clip-relative word arrays once
-  const relWords = useRef<RelWord[]>(
-    clip.words
-      .map((w) => ({
-        text: w.text,
-        start: w.start / 1000 - clip.start_seconds,
-        end: w.end / 1000 - clip.start_seconds,
-      }))
-      .filter((w) => w.start >= -0.5)
+  // Pre-compute display cues once — same timing engine as the ASS burn, so
+  // the preview matches the export exactly (seconds, clip-relative).
+  const toSec = (c: { text: string; startMs: number; endMs: number }): Cue => ({
+    text: c.text,
+    start: c.startMs / 1000,
+    end: c.endMs / 1000,
+  });
+  const cues = useRef<Cue[]>(
+    buildCaptionCues(clip.words, clip.start_seconds * 1000, clip.end_seconds * 1000).map(toSec)
   );
-  const cues = useRef<Cue[]>(buildCues(relWords.current));
+  // One-word cues for the KLYP style.
+  const wordCues = useRef<Cue[]>(
+    buildCaptionCues(clip.words, clip.start_seconds * 1000, clip.end_seconds * 1000, 1).map(toSec)
+  );
 
   // Fetch the preview MP4 on mount
   useEffect(() => {
@@ -212,7 +205,7 @@ export default function ClipPreview({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const t = video.currentTime;
-      drawCaptions(ctx, t, relWords.current, cues.current, styleRef.current, canvas.width, canvas.height);
+      drawCaptions(ctx, t, wordCues.current, cues.current, styleRef.current, canvas.width, canvas.height);
       if (hook) drawHookPreview(ctx, t, hook, hookStyle, canvas.width, canvas.height);
       if (!isPro) drawWatermark(ctx, t, canvas.width, canvas.height);
 

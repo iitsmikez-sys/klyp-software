@@ -18,7 +18,6 @@
  * to a worker service in a later stage.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { spawn } from "child_process";
 import { mkdtemp, readdir, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -26,10 +25,18 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { AssemblyAI } from "assemblyai";
 import { ClipAnalysisSchema, type AnalyzeResponse, type AnalyzeEvent, type AnalyzeStage, type TimedWord } from "@/lib/clips";
-import { resolveBin, run } from "@/lib/bin";
+import { resolveBin, run, runYtDlpWithRetry } from "@/lib/bin";
 import { findUploadedVideo } from "@/lib/video-cache";
 import { getProfile, consumeSparks } from "@/lib/profile";
-import { estimateSparks, MIN_ANALYZE_COST } from "@/lib/sparks";
+import {
+  estimateSparks,
+  MIN_ANALYZE_COST,
+  CLIP_COUNT_OPTIONS,
+  CLIP_COUNT_COST,
+  DEFAULT_CLIP_COUNT,
+  clipCharge,
+  type ClipCount,
+} from "@/lib/sparks";
 import { detectChatSpikes, formatSpikesForPrompt, type ChatSpike } from "@/lib/twitch-chat";
 
 export const runtime = "nodejs";
@@ -49,7 +56,8 @@ function fail(stage: FailStage, error: string, status = 500) {
 async function downloadAudio(url: string, dir: string): Promise<string> {
   // Audio_Only on Twitch / bestaudio elsewhere — all HLS (m3u8) streams need
   // ffmpeg to merge segments. --ffmpeg-location avoids the stale-PATH hang.
-  const args = [
+  // Retries once on YouTube's transient 403/429 throttling (see runYtDlpWithRetry).
+  await runYtDlpWithRetry([
     "-f", "bestaudio/best",
     "--no-playlist",
     "--max-filesize", "500M",
@@ -57,23 +65,7 @@ async function downloadAudio(url: string, dir: string): Promise<string> {
     "--concurrent-fragments", "4",
     "-o", path.join(dir, "audio.%(ext)s"),
     url,
-  ];
-
-  await new Promise<void>((resolve, reject) => {
-    const proc = spawn(resolveBin("yt-dlp"), args, { windowsHide: true });
-    let stderr = "";
-    proc.stderr.on("data", (d) => (stderr += d.toString()));
-    proc.on("error", (err) =>
-      reject(
-        err.message.includes("ENOENT")
-          ? new Error("yt-dlp is not installed or not on PATH. Install it with: winget install yt-dlp.yt-dlp")
-          : err
-      )
-    );
-    proc.on("close", (code) =>
-      code === 0 ? resolve() : reject(new Error(`yt-dlp exited with code ${code}: ${stderr.slice(-500)}`))
-    );
-  });
+  ]);
 
   const files = await readdir(dir);
   const audioFile = files.find((f) => f.startsWith("audio."));
@@ -151,7 +143,8 @@ function formatTranscript(words: TimedWord[]): string {
 async function findClips(
   transcriptText: string,
   durationSeconds: number,
-  chatSpikes: ChatSpike[] | null
+  chatSpikes: ChatSpike[] | null,
+  clipCount: ClipCount
 ) {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
@@ -198,7 +191,7 @@ Score every candidate moment on five dimensions, 0-20 each:
 
 viral_score (1-100) is your holistic judgment informed by those dimensions — NOT their sum. A clip that maxes one dimension (a 20/20 comedic moment) beats a clip that's mediocre at everything. Also weigh: does it work with ZERO context for a viewer who has never seen this streamer? Is there a quotable line? Is it relatable outside this game's community?
 
-Calibrate honestly. 90+ means "this could genuinely go viral" — most VODs have zero or one such moment. 75-89 is a strong clip any editor would post. 60-74 is solid filler. Below 60 should rarely appear in your top 5 unless the VOD is genuinely quiet. NEVER inflate scores to make a boring VOD look good — streamers trust the number.
+Calibrate honestly. 90+ means "this could genuinely go viral" — most VODs have zero or one such moment. 75-89 is a strong clip any editor would post. 66-74 is solid but unremarkable. 65 and below does not get returned at all (see FINAL SELECTION). NEVER inflate scores to make a boring VOD look good — streamers trust the number, and an inflated score sneaks a weak clip past the quality floor.
 
 ## CLIP TYPES
 
@@ -236,14 +229,15 @@ If a moment is both funny and a fail, ask: would TikTok caption this as a fail o
 
 ## FINAL SELECTION
 
-- Return the TOP 5 moments, ordered by viral_score, highest first.
-- Prefer variety when scores are close: five RAGE clips from one VOD is a worse deliverable than a spread of types — but never bump a clearly stronger clip for diversity's sake.
+- Return UP TO ${clipCount} moments, ordered by viral_score, highest first.
+- QUALITY FLOOR: include a clip ONLY if its viral_score is above 65. If the VOD has just 3 genuinely great moments, return 3 — NEVER pad the list with filler to hit the count. The streamer is charged per clip returned; a weak clip costs them money and trust.
+- Prefer variety when scores are close: a wall of RAGE clips from one VOD is a worse deliverable than a spread of types — but never bump a clearly stronger clip for diversity's sake.
 - Do not pick overlapping or near-duplicate moments; if one moment produces two candidate windows, pick the better cut.${spikeSection}`,
     messages: [
       {
         role: "user",
         content:
-          `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find the 5 best clippable moments.\n\n${transcriptText}` +
+          `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor.\n\n${transcriptText}` +
           (chatSpikes ? `\n\n${formatSpikesForPrompt(chatSpikes)}` : ""),
       },
     ],
@@ -262,6 +256,7 @@ export async function POST(req: NextRequest) {
   let url: string;
   let uploadId: string | undefined; // set when analyzing an uploaded file instead of a URL
   let durationHint: number | undefined; // optional, from the client's cost preview — used for ETAs
+  let clipCount: ClipCount = DEFAULT_CLIP_COUNT;
   try {
     const body = await req.json();
     url = String(body.url ?? "").trim();
@@ -269,6 +264,9 @@ export async function POST(req: NextRequest) {
     if (rawUploadId) uploadId = rawUploadId;
     const hint = Number(body.durationHint);
     if (Number.isFinite(hint) && hint > 0) durationHint = hint;
+    if ((CLIP_COUNT_OPTIONS as readonly number[]).includes(Number(body.clipCount))) {
+      clipCount = Number(body.clipCount) as ClipCount;
+    }
   } catch {
     return fail("validate", "Request body must be JSON: { \"url\": \"...\" } or { \"uploadId\": \"...\" }", 400);
   }
@@ -301,11 +299,13 @@ export async function POST(req: NextRequest) {
   if (!profile) {
     return fail("validate", "You must be signed in to analyze a VOD.", 401);
   }
-  const upfrontCost = durationHint ? estimateSparks(durationHint) : MIN_ANALYZE_COST;
+  const upfrontCost = durationHint
+    ? estimateSparks(durationHint) + CLIP_COUNT_COST[clipCount]
+    : MIN_ANALYZE_COST;
   if (profile.sparks < upfrontCost) {
     return fail(
       "validate",
-      `Not enough Sparks — this analysis needs about ${upfrontCost} ⚡ but you have ${profile.sparks}. Upgrade to Pro for more.`,
+      `Not enough Sparks — this will cost ${upfrontCost}⚡ but you only have ${profile.sparks}⚡ remaining. Upgrade to Pro.`,
       402
     );
   }
@@ -364,7 +364,7 @@ export async function POST(req: NextRequest) {
         }
         const transcriptText = formatTranscript(words);
         const chatSpikes = await spikesPromise;
-        const clips = await findClips(transcriptText, durationSeconds, chatSpikes);
+        const clips = await findClips(transcriptText, durationSeconds, chatSpikes, clipCount);
         send({ type: "progress", stage: "analyze", status: "done" });
 
         // Attach per-clip word arrays so the client can burn captions without
@@ -378,8 +378,9 @@ export async function POST(req: NextRequest) {
           ),
         }));
 
-        // Deduct Sparks server-side based on the measured VOD duration.
-        const sparksSpent = estimateSparks(durationSeconds);
+        // Deduct Sparks server-side: VOD length cost + clip cost prorated by
+        // how many clips actually cleared the quality floor.
+        const sparksSpent = estimateSparks(durationSeconds) + clipCharge(clipCount, clips.length);
         const sparksBalance = await consumeSparks(sparksSpent);
 
         send({
@@ -387,6 +388,7 @@ export async function POST(req: NextRequest) {
           clips: clipsWithWords,
           durationSeconds,
           transcriptChars: transcriptText.length,
+          requestedClips: clipCount,
           sparksSpent,
           sparksBalance,
         });

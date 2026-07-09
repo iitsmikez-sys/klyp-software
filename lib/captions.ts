@@ -14,7 +14,66 @@ import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
 const DEFAULT_RES: PlayRes = { w: 1080, h: 1920 };
-const WORDS_PER_CUE = 4;
+
+/* ── Caption cue timing ──────────────────────────────────────────────
+ * Shared by the ASS burn (generateAss) and the preview canvas overlay
+ * (ClipPreview) so what you see is exactly what gets burned. */
+
+/** Max words per cue — small groups, TikTok/CapCut style. */
+export const CUE_MAX_WORDS = 4;
+/** A cue disappears this long after it appears (unless the next cue starts first). */
+export const CUE_HOLD_MS = 1500;
+/** Show cues slightly early to compensate for perception delay. */
+export const CUE_LEAD_MS = 50;
+/** A silence gap longer than this starts a new cue, so words never appear before they're spoken. */
+const CUE_GAP_SPLIT_MS = 800;
+
+export type CaptionCue = { text: string; startMs: number; endMs: number };
+
+/**
+ * Group word timestamps into display cues. Times in the result are
+ * clip-relative milliseconds.
+ *
+ * Rules:
+ *  - a cue is triggered by its first word's start_time (minus CUE_LEAD_MS)
+ *  - max `maxWords` words per cue; a >800ms silence gap also splits, so a
+ *    group never shows words long before they're actually said
+ *  - a cue ends after CUE_HOLD_MS, when the next cue starts, or at the clip
+ *    end — whichever comes first
+ */
+export function buildCaptionCues(
+  words: TimedWord[],
+  clipStartMs: number,
+  clipEndMs: number,
+  maxWords: number = CUE_MAX_WORDS
+): CaptionCue[] {
+  const inRange = words.filter((w) => w.start >= clipStartMs - 200 && w.start < clipEndMs);
+  if (inRange.length === 0) return [];
+
+  const groups: TimedWord[][] = [];
+  let current: TimedWord[] = [];
+  for (const w of inRange) {
+    const splitOnGap = current.length > 0 && w.start - current[current.length - 1].end > CUE_GAP_SPLIT_MS;
+    if (current.length >= maxWords || splitOnGap) {
+      groups.push(current);
+      current = [];
+    }
+    current.push(w);
+  }
+  if (current.length > 0) groups.push(current);
+
+  const clipLenMs = clipEndMs - clipStartMs;
+  const cues: CaptionCue[] = groups.map((g) => ({
+    text: g.map((w) => w.text).join(" "),
+    startMs: Math.max(0, g[0].start - clipStartMs - CUE_LEAD_MS),
+    endMs: 0,
+  }));
+  cues.forEach((cue, i) => {
+    const nextStart = i + 1 < cues.length ? cues[i + 1].startMs : Infinity;
+    cue.endMs = Math.min(cue.startMs + CUE_HOLD_MS, nextStart, clipLenMs);
+  });
+  return cues.filter((c) => c.endMs > c.startMs);
+}
 
 /** ASS timestamp: H:MM:SS.cc (centiseconds, not milliseconds). */
 function assTime(ms: number): string {
@@ -101,29 +160,11 @@ export function generateAss(
 ): string {
   const sections = [assHeader(res), "", styleBlock(style, res), "", EVENTS_HEADER];
 
-  // Only words that start within the clip window.
-  const inRange = words.filter(
-    (w) => w.start >= clipStartMs - 200 && w.start < clipEndMs
-  );
-
-  if (inRange.length > 0) {
-    if (style === "KLYP") {
-      // One word at a time, in green, center bottom.
-      for (const w of inRange) {
-        const relStart = w.start - clipStartMs;
-        const relEnd = Math.min(w.end, clipEndMs) - clipStartMs;
-        sections.push(dialogue(relStart, relEnd, sanitizeAssText(w.text).toUpperCase()));
-      }
-    } else {
-      // Group into chunks of WORDS_PER_CUE.
-      for (let i = 0; i < inRange.length; i += WORDS_PER_CUE) {
-        const group = inRange.slice(i, i + WORDS_PER_CUE);
-        const relStart = group[0].start - clipStartMs;
-        const relEnd = Math.min(group.at(-1)!.end, clipEndMs) - clipStartMs;
-        const text = sanitizeAssText(group.map((w) => w.text).join(" "));
-        sections.push(dialogue(relStart, relEnd, text));
-      }
-    }
+  // KLYP shows one word at a time; other styles show small word groups.
+  const cues = buildCaptionCues(words, clipStartMs, clipEndMs, style === "KLYP" ? 1 : CUE_MAX_WORDS);
+  for (const cue of cues) {
+    const text = sanitizeAssText(style === "KLYP" ? cue.text.toUpperCase() : cue.text);
+    sections.push(dialogue(cue.startMs, cue.endMs, text));
   }
 
   return sections.join("\n");

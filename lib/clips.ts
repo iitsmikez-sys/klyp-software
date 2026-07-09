@@ -51,7 +51,10 @@ export const ClipSchema = z.object({
 });
 
 export const ClipAnalysisSchema = z.object({
-  clips: z.array(ClipSchema).describe("The 5 best clippable moments, ordered by viral_score descending"),
+  clips: z
+    .array(ClipSchema)
+    .max(10)
+    .describe("The best clippable moments (up to the requested count, only those above the quality floor), ordered by viral_score descending"),
 });
 
 export type Clip = z.infer<typeof ClipSchema>;
@@ -76,6 +79,8 @@ export type AnalyzeEvent =
       clips: ClipWithWords[];
       durationSeconds: number;
       transcriptChars: number;
+      /** How many clips the user asked for — fewer may return (quality floor). */
+      requestedClips: number;
       /** Sparks deducted for this analysis and the balance after (server-authoritative). */
       sparksSpent: number;
       sparksBalance: number;

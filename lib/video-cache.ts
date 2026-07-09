@@ -8,7 +8,7 @@ import { mkdir, readdir, stat } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { resolveBin, run } from "@/lib/bin";
+import { resolveBin, runYtDlpWithRetry } from "@/lib/bin";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
 
@@ -61,7 +61,7 @@ export async function ensureSourceVideo(url: string): Promise<string> {
 
   const download = (async () => {
     await mkdir(CACHE_DIR, { recursive: true });
-    await run(resolveBin("yt-dlp"), [
+    await runYtDlpWithRetry([
       "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b",
       "--merge-output-format", "mp4",
       "--no-playlist",

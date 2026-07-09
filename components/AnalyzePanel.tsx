@@ -3,7 +3,14 @@
 import { useState, useEffect, useRef, FormEvent } from "react";
 import type { ClipType, AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat } from "@/lib/clips";
 import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS } from "@/lib/clips";
-import { MIN_ANALYZE_COST } from "@/lib/sparks";
+import {
+  MIN_ANALYZE_COST,
+  CLIP_COUNT_OPTIONS,
+  CLIP_COUNT_COST,
+  DEFAULT_CLIP_COUNT,
+  clipCharge,
+  type ClipCount,
+} from "@/lib/sparks";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
 import ClipPreview from "./ClipPreview";
@@ -97,13 +104,17 @@ export default function AnalyzePanel() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
+  const [clipCount, setClipCount] = useState<ClipCount>(DEFAULT_CLIP_COUNT);
+  const [analysisNote, setAnalysisNote] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { balance, tier, sync } = useSparks();
   const isPro = tier === "pro";
   const busy = downloading !== null || zipProgress !== null;
   const outOfSparks = balance !== null && balance < MIN_ANALYZE_COST;
+  // Full estimate = VOD length cost (probed) + clip count cost.
+  const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   const cantAfford =
-    !outOfSparks && balance !== null && estimatedSparks !== null && estimatedSparks > balance;
+    !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
 
   // Streamer handle persists across sessions.
   useEffect(() => {
@@ -270,6 +281,17 @@ export default function AnalyzePanel() {
       setClipFormats(Object.fromEntries(event.clips.map((_, i) => [i, "9:16" as ExportFormat])));
       // All clips start unsaved — the user decides what enters their library.
       setClipStatus(Object.fromEntries(event.clips.map((_, i) => [i, "unsaved" as const])));
+      // Fewer clips than requested = quality floor kicked in; explain the prorated charge.
+      if (event.clips.length === 0) {
+        setAnalysisNote(
+          "MIDAS didn't find any moments worth clipping in this VOD — no clip charge, only the base analysis cost applied. Try a different VOD, or a longer/more eventful one."
+        );
+      } else if (event.clips.length < event.requestedClips) {
+        const requested = event.requestedClips as ClipCount;
+        setAnalysisNote(
+          `Found ${event.clips.length} great moment${event.clips.length === 1 ? "" : "s"} out of ${requested} requested — only charged ${clipCharge(requested, event.clips.length)}⚡ for clips instead of ${CLIP_COUNT_COST[requested]}⚡.`
+        );
+      }
       setAnalyzedUrl(sourceRef);
       // The server already deducted — mirror its authoritative balance.
       sync(event.sparksBalance);
@@ -291,6 +313,7 @@ export default function AnalyzePanel() {
     setLoading(true);
     setError(null);
     setClips(null);
+    setAnalysisNote(null);
     setStages({ ...INITIAL_STAGES });
     setEtaRemaining(null);
 
@@ -300,8 +323,8 @@ export default function AnalyzePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           inputMode === "file" && uploadedFile
-            ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds }
-            : { url, durationHint: previewDuration ?? undefined }
+            ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount }
+            : { url, durationHint: previewDuration ?? undefined, clipCount }
         ),
       });
 
@@ -681,6 +704,33 @@ export default function AnalyzePanel() {
           )}
         </form>
 
+        {/* Clip count selector */}
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <span
+            className="text-xs text-foreground-muted whitespace-nowrap cursor-help"
+            title="We only return clips worth posting — if your VOD doesn't have 10 great moments you'll get fewer"
+          >
+            How many clips? <span className="text-subtle">ⓘ</span>
+          </span>
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {CLIP_COUNT_OPTIONS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setClipCount(n)}
+                disabled={loading}
+                className={`px-3 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
+                  clipCount === n
+                    ? "bg-accent-glow text-accent"
+                    : "bg-surface-2 text-foreground-muted hover:text-foreground"
+                }`}
+              >
+                {n} <span className="font-normal opacity-70">· {CLIP_COUNT_COST[n]}⚡</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Streamer handle — burned into the corner of every export */}
         <div className="flex items-center gap-2 mt-3">
           <label htmlFor="klyp-handle" className="text-xs text-foreground-muted whitespace-nowrap">
@@ -711,14 +761,14 @@ export default function AnalyzePanel() {
               <span className="text-foreground-muted">Checking video length…</span>
             ) : (
               <span className="text-foreground-muted">
-                This VOD will use approximately{" "}
+                Estimated cost:{" "}
                 <span className={`font-syne font-bold ${cantAfford ? "text-red-400" : "text-accent"}`}>
-                  {estimatedSparks} Sparks
+                  {estimatedSparks} (VOD) + {CLIP_COUNT_COST[clipCount]} ({clipCount} clips) = {totalEstimate}⚡
                 </span>
                 {cantAfford && (
                   <span className="text-red-400">
-                    {" "}— you only have {balance}.{" "}
-                    <a href="/dashboard/upgrade" className="underline">Upgrade to Pro</a> for more ⚡
+                    {" "}— not enough Sparks: this will cost {totalEstimate}⚡ but you only have {balance}⚡ remaining.{" "}
+                    <a href="/dashboard/upgrade" className="underline">Upgrade to Pro</a>
                   </span>
                 )}
               </span>
@@ -750,52 +800,61 @@ export default function AnalyzePanel() {
       {/* Results */}
       {clips && (
         <div className="mt-6">
-          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-            <h3 className="font-syne text-base font-semibold text-foreground">
-              Top {clips.length} clippable moments
-            </h3>
-            <div className="flex items-center gap-2">
-            <button
-              onClick={keepAll}
-              disabled={busy || !clips.some((_, i) => clipStatus[i] === "unsaved")}
-              title="Save every remaining clip to My Clips"
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-background text-xs font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              Keep all
-            </button>
-            <button
-              onClick={downloadAllAsZip}
-              disabled={busy}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
-            >
-              {zipProgress ? (
-                <>
-                  <span className="w-3 h-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                  Rendering {zipProgress.done}/{zipProgress.total}…
-                </>
-              ) : (
-                <>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  Download all (.zip)
-                </>
-              )}
-            </button>
+          {clips.length > 0 && (
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+              <h3 className="font-syne text-base font-semibold text-foreground">
+                Top {clips.length} clippable moment{clips.length === 1 ? "" : "s"}
+              </h3>
+              <div className="flex items-center gap-2">
+              <button
+                onClick={keepAll}
+                disabled={busy || !clips.some((_, i) => clipStatus[i] === "unsaved")}
+                title="Save every remaining clip to My Clips"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-background text-xs font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Keep all
+              </button>
+              <button
+                onClick={downloadAllAsZip}
+                disabled={busy}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
+              >
+                {zipProgress ? (
+                  <>
+                    <span className="w-3 h-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                    Rendering {zipProgress.done}/{zipProgress.total}…
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download all (.zip)
+                  </>
+                )}
+              </button>
+              </div>
             </div>
-          </div>
+          )}
+
+          {analysisNote && (
+            <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-lg bg-accent-glow border border-accent/30 text-sm text-foreground">
+              <SparkIcon size={14} className="text-accent flex-shrink-0" />
+              {analysisNote}
+            </div>
+          )}
 
           {downloadError && (
             <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
               {downloadError}
             </div>
           )}
-          {clips.every((_, i) => clipStatus[i] === "discarded") && (
+          {clips.length > 0 && clips.every((_, i) => clipStatus[i] === "discarded") && (
             <p className="text-sm text-foreground-muted text-center py-8">
               All clips discarded. Analyze another VOD to find more moments.
             </p>

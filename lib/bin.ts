@@ -75,3 +75,30 @@ export function run(bin: string, args: string[]): Promise<void> {
     );
   });
 }
+
+/** Failure signatures from yt-dlp that are almost always transient throttling, not a real block. */
+const TRANSIENT_YTDLP_ERROR = /HTTP Error 403|HTTP Error 429|Read timed out|Connection reset|Temporary failure/i;
+
+/**
+ * Like run(), but retries once on yt-dlp's transient throttling errors (YouTube's
+ * bot-detection intermittently 403s a fresh request that succeeds moments later).
+ * Non-transient failures (bad URL, missing binary, private/deleted video) fail fast.
+ */
+export async function runYtDlpWithRetry(args: string[], retries = 1, delayMs = 3000): Promise<void> {
+  const bin = resolveBin("yt-dlp");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await run(bin, args);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const transient = TRANSIENT_YTDLP_ERROR.test(message);
+      if (!transient || attempt >= retries) {
+        throw transient
+          ? new Error("YouTube is rate-limiting downloads right now — please wait a moment and try again.")
+          : err;
+      }
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
