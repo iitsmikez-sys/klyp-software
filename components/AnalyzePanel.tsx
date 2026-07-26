@@ -8,6 +8,7 @@ import {
   CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
+  MAX_CLIP_COUNT,
   clipCharge,
   type ClipCount,
 } from "@/lib/sparks";
@@ -16,9 +17,13 @@ import { SparkIcon } from "./SparksBalance";
 import ClipPreview from "./ClipPreview";
 import ProGateModal from "./ProGateModal";
 import { createClient } from "@/lib/supabase/client";
+import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
+
+/** Export can include a first-time source download + full-quality burn — generous but finite. */
+const EXPORT_TIMEOUT_MS = 10 * 60_000;
 
 const TYPE_STYLES: Record<ClipType, string> = {
   CLUTCH: "bg-amber-500/15 text-amber-400 border-amber-500/30",
@@ -105,6 +110,7 @@ export default function AnalyzePanel() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [clipCount, setClipCount] = useState<ClipCount>(DEFAULT_CLIP_COUNT);
+  const [confirmMaxOpen, setConfirmMaxOpen] = useState(false);
   const [analysisNote, setAnalysisNote] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { balance, tier, sync } = useSparks();
@@ -139,7 +145,7 @@ export default function AnalyzePanel() {
     setEstimating(true);
     const probe = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/duration?url=${encodeURIComponent(url)}`);
+        const res = await processingFetch(`/api/duration?url=${encodeURIComponent(url)}`);
         if (res.ok) {
           const data = await res.json();
           setEstimatedSparks(data.sparks);
@@ -175,7 +181,7 @@ export default function AnalyzePanel() {
   };
 
   /** Validate + upload a local VOD file, streaming progress. */
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setFileError(null);
     if (!UPLOAD_EXT_PATTERN.test(file.name)) {
       setFileError("Unsupported file type — upload an MP4, MOV, or AVI video.");
@@ -188,10 +194,14 @@ export default function AnalyzePanel() {
 
     setUploadedFile(null);
     setUploadPct(0);
-    // XMLHttpRequest instead of fetch — it reports upload progress.
+    // XMLHttpRequest instead of fetch — it reports upload progress. Not a
+    // fetch call, so it needs the processing-service URL + auth token attached
+    // by hand rather than going through processingFetch().
+    const token = await processingAuthToken();
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload");
+    xhr.open("POST", processingUrl("/api/upload"));
     xhr.setRequestHeader("x-file-name", encodeURIComponent(file.name));
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
     };
@@ -305,11 +315,21 @@ export default function AnalyzePanel() {
   // the VOD URL, or "upload:<id>" for uploaded files.
   const sourceRef = inputMode === "file" && uploadedFile ? `upload:${uploadedFile.id}` : url;
 
-  const analyze = async (e: FormEvent) => {
+  const analyze = (e: FormEvent) => {
     e.preventDefault();
     if (loading) return;
     if (inputMode === "file" ? !uploadedFile : !url) return;
+    // MAX mode is the priciest run — require explicit confirmation before
+    // anything fires. Nothing is charged at this point either way: the server
+    // deducts Sparks only after the analysis completes (see /api/analyze).
+    if (clipCount === MAX_CLIP_COUNT) {
+      setConfirmMaxOpen(true);
+      return;
+    }
+    void runAnalysis();
+  };
 
+  const runAnalysis = async () => {
     setLoading(true);
     setError(null);
     setClips(null);
@@ -318,7 +338,7 @@ export default function AnalyzePanel() {
     setEtaRemaining(null);
 
     try {
-      const res = await fetch("/api/analyze", {
+      const res = await processingFetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -336,13 +356,28 @@ export default function AnalyzePanel() {
       }
 
       // Read the SSE stream: events arrive as "data: {...}\n\n" frames.
+      // The server heartbeats every 10s — if nothing arrives for 45s the
+      // connection is dead, so cancel the read instead of spinning forever.
+      const WATCHDOG_MS = 45_000;
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let watchdogFired = false;
+      let watchdog: ReturnType<typeof setTimeout> | undefined;
+      const armWatchdog = () => {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => {
+          watchdogFired = true;
+          reader.cancel().catch(() => {});
+        }, WATCHDOG_MS);
+      };
+      armWatchdog();
 
+      try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        armWatchdog();
         buffer += decoder.decode(value, { stream: true });
 
         let frameEnd;
@@ -355,6 +390,14 @@ export default function AnalyzePanel() {
           }
         }
       }
+      } finally {
+        clearTimeout(watchdog);
+      }
+      if (watchdogFired) {
+        setError(
+          "Analysis timed out — no response from the server for 45 seconds. Check the dev server terminal for [analyze] logs and try again."
+        );
+      }
     } catch {
       setError("Connection lost — is the dev server still running?");
     } finally {
@@ -365,9 +408,15 @@ export default function AnalyzePanel() {
 
   /** Render one clip via /api/clip and return the MP4 blob. */
   const fetchClipBlob = async (clip: ClipWithWords, style: CaptionStyle, index: number, raw = false): Promise<Blob> => {
-    const res = await fetch("/api/clip", {
+    // Timeout so a hung export fails loudly instead of spinning forever. The
+    // server keeps working after an abort, so a retry usually hits a warm cache.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), EXPORT_TIMEOUT_MS);
+    try {
+    const res = await processingFetch("/api/clip", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify(
         raw
           ? {
@@ -388,7 +437,7 @@ export default function AnalyzePanel() {
               handle: handle || undefined,
               hook: clipHooks[index] ?? undefined,
               // Keep the burn identical to the preview overlay (black pill bar).
-              hook_style: "BOXED",
+              hook_style: "IMPACT",
               aspect_ratio: clipFormats[index] ?? "9:16",
             }
       ),
@@ -397,7 +446,17 @@ export default function AnalyzePanel() {
       const data = await res.json().catch(() => null);
       throw new Error(data?.error ?? `Clip generation failed (HTTP ${res.status}).`);
     }
-    return res.blob();
+    return await res.blob();
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(
+          "Export timed out after 10 minutes — the source VOD may still be downloading in the background. Try again in a bit."
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
   };
 
   const saveBlob = (blob: Blob, filename: string) => {
@@ -725,7 +784,8 @@ export default function AnalyzePanel() {
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
                 }`}
               >
-                {n} <span className="font-normal opacity-70">· {CLIP_COUNT_COST[n]}⚡</span>
+                {n === MAX_CLIP_COUNT ? `${n} MAX` : n}{" "}
+                <span className="font-normal opacity-70">· {CLIP_COUNT_COST[n]}⚡</span>
               </button>
             ))}
           </div>
@@ -1091,6 +1151,44 @@ export default function AnalyzePanel() {
 
       {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}
 
+      {/* MAX clips confirmation — nothing runs (and nothing is charged) until confirmed. */}
+      {confirmMaxOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmMaxOpen(false); }}
+        >
+          <div className="w-full max-w-sm bg-surface border border-border rounded-2xl shadow-2xl p-5 space-y-3">
+            <p className="font-syne font-bold text-foreground">MAX clips analysis</p>
+            <p className="text-sm text-foreground-muted">
+              Are you sure? You are using{" "}
+              <span className="font-syne font-bold text-accent">
+                {totalEstimate ?? CLIP_COUNT_COST[clipCount]}⚡
+              </span>{" "}
+              for <span className="font-syne font-bold text-accent">{clipCount} clips</span>
+              {totalEstimate === null && <> (plus the VOD-length cost, added once the video is probed)</>}.
+            </p>
+            <p className="text-[11px] text-subtle">
+              Fewer clips may come back (quality floor) — you&apos;re only charged for what MIDAS
+              actually returns, and nothing is deducted until the analysis completes.
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => setConfirmMaxOpen(false)}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold font-syne text-foreground-muted hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setConfirmMaxOpen(false); void runAnalysis(); }}
+                className="px-3 py-1.5 rounded-lg bg-accent text-background text-xs font-bold font-syne hover:bg-accent-dim transition-colors"
+              >
+                Yes, analyze
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Preview modal ── */}
       {previewIndex !== null && clips && (
         <ClipPreview
@@ -1098,7 +1196,7 @@ export default function AnalyzePanel() {
           analyzedUrl={analyzedUrl}
           initialStyle={clipStyles[previewIndex] ?? "BOLD"}
           hook={clipHooks[previewIndex] ?? null}
-          hookStyle="BOXED"
+          hookStyle="IMPACT"
           exporting={downloading === previewIndex}
           onClose={() => setPreviewIndex(null)}
           onExport={(style) => {

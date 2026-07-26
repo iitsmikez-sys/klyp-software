@@ -14,14 +14,19 @@ import { drawHookPreview } from "@/lib/hook-preview";
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
 import type { SavedClip } from "@/lib/clip-ui";
+import { processingFetch } from "@/lib/processing-api";
+
+/** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
+const PREVIEW_TIMEOUT_MS = 6 * 60_000;
+/** Export can include a first-time source download + full-quality burn — generous but finite. */
+const EXPORT_TIMEOUT_MS = 10 * 60_000;
 
 const HOOK_STYLE_LABELS: Record<HookStyle, string> = {
-  CLASSIC: "Classic — bold white, black outline",
-  IMPACT: "Impact — heavy meme text",
+  CLASSIC: "Classic — bold white, thick black outline",
+  IMPACT: "Impact — heavy meme callout (default)",
   YELLOW: "Yellow — subtitle yellow",
   BOXED: "Boxed — white on black bar",
   NEON: "Neon — Klyp green",
-  TYPEWRITER: "Typewriter — documentary look",
 };
 
 function fmtClipTime(seconds: number) {
@@ -33,6 +38,8 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [retryToken, setRetryToken] = useState(0);
   const [transcriptOnly, setTranscriptOnly] = useState(false);
   const [proGateOpen, setProGateOpen] = useState(false);
   const { tier } = useSparks();
@@ -56,7 +63,7 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
   }, [clip]);
 
   const [selectedHook, setSelectedHook] = useState<string | null>(hooks[0] ?? null);
-  const [hookStyle, setHookStyle] = useState<HookStyle>("CLASSIC");
+  const [hookStyle, setHookStyle] = useState<HookStyle>("IMPACT");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("BOLD");
   const [format, setFormat] = useState<ExportFormat>("9:16");
   const [exporting, setExporting] = useState(false);
@@ -92,9 +99,23 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
   }, [previewUrl, selectedHook, hookStyle]);
 
   // Fetch the cut preview on expand (source video is cached server-side per URL).
+  // First view of a VOD legitimately takes minutes (full source download), so
+  // the timeout is generous — but finite, so a wedged request fails loudly
+  // instead of spinning forever. Aborting the fetch doesn't cancel the server
+  // download, so a Retry after a timeout usually joins the finished cache.
   useEffect(() => {
     let blobUrl: string | null = null;
-    fetch("/api/preview", {
+    let timedOut = false;
+    setLoadingPreview(true);
+    setLoadError(null);
+    setElapsed(0);
+    const startedAt = Date.now();
+    const ticker = setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, PREVIEW_TIMEOUT_MS);
+    const settle = () => { clearInterval(ticker); clearTimeout(timeout); };
+
+    processingFetch("/api/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -102,32 +123,47 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
         start_seconds: clip.start_seconds,
         end_seconds: clip.end_seconds,
       }),
+      signal: controller.signal,
     })
       .then((res) => {
         if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d?.error ?? "Preview failed.")));
         return res.blob();
       })
       .then((blob) => {
+        settle();
         blobUrl = URL.createObjectURL(blob);
         setPreviewUrl(blobUrl);
         setLoadingPreview(false);
       })
       .catch((err: Error) => {
-        setLoadError(err.message);
+        settle();
+        if (controller.signal.aborted && !timedOut) return; // unmounted — leave state alone
+        setLoadError(
+          timedOut
+            ? `Preview timed out after ${Math.round(PREVIEW_TIMEOUT_MS / 60_000)} minutes. The source VOD may still be downloading in the background — hit Retry in a bit.`
+            : err.message
+        );
         setLoadingPreview(false);
       });
     return () => {
+      settle();
+      controller.abort();
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [clip.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clip.id, retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportClip = async () => {
     setExporting(true);
     setExportError(null);
+    // Timeout so a hung export fails loudly instead of spinning forever. The
+    // server keeps working after an abort, so a retry usually hits a warm cache.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), EXPORT_TIMEOUT_MS);
     try {
-      const res = await fetch("/api/clip", {
+      const res = await processingFetch("/api/clip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           url: clip.url,
           start_seconds: clip.start_seconds,
@@ -155,8 +191,13 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
       a.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Export failed.");
+      setExportError(
+        controller.signal.aborted
+          ? "Export timed out after 10 minutes — the source VOD may still be downloading in the background. Try again in a bit."
+          : err instanceof Error ? err.message : "Export failed."
+      );
     } finally {
+      clearTimeout(timeout);
       setExporting(false);
     }
   };
@@ -218,14 +259,24 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground-muted">
             <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
             <span className="text-xs text-center px-4">
-              Generating preview…<br />
-              <span className="text-subtle">(downloads source video first time)</span>
+              Generating preview…{elapsed >= 5 ? ` (${fmtClipTime(elapsed)})` : ""}<br />
+              <span className="text-subtle">
+                {elapsed < 30
+                  ? "(downloads source video first time)"
+                  : "Still downloading the source VOD — long VODs can take several minutes."}
+              </span>
             </span>
           </div>
         )}
         {loadError && (
-          <div className="absolute inset-0 flex items-center justify-center p-4">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
             <p className="text-red-400 text-xs text-center">{loadError}</p>
+            <button
+              onClick={() => setRetryToken((t) => t + 1)}
+              className="px-3 py-1.5 rounded-md border border-border text-xs font-bold font-syne text-foreground-muted hover:text-foreground hover:border-accent/50 transition-colors"
+            >
+              Retry
+            </button>
           </div>
         )}
         {previewUrl && (
@@ -269,9 +320,22 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
           </div>
         ) : (
           <p className="text-[10px] text-subtle">
-            No hook options saved for this clip — it was analyzed before hooks were stored. New analyses save them automatically.
+            No hook options saved for this clip — it was analyzed before hooks were stored. Type your own below.
           </p>
         )}
+        {/* Editable hook text — picking an option above fills this in; tweak freely. */}
+        <input
+          type="text"
+          value={selectedHook ?? ""}
+          onChange={(e) => setSelectedHook(e.target.value.length > 0 ? e.target.value.slice(0, 80) : null)}
+          placeholder="Type a custom hook, or pick one above"
+          maxLength={80}
+          disabled={exporting}
+          className="mt-1.5 w-full px-3 py-1.5 rounded-lg border border-border bg-surface-2 text-xs text-foreground placeholder:text-subtle focus:outline-none focus:border-accent/50 disabled:opacity-50"
+        />
+        <p className="text-[10px] text-subtle mt-1">
+          Burned on screen in ALL CAPS for the first 3s — clear the field to export without a hook.
+        </p>
       </div>
 
       {/* Hook text style */}
@@ -365,10 +429,19 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
         </div>
       )}
 
+      {/* Preview is just a look-before-you-export convenience — export makes its
+          own independent request to /api/clip and doesn't need previewUrl, so a
+          stuck or failed preview should never block it. */}
+      {(loadingPreview || loadError) && (
+        <p className="text-[10px] text-subtle">
+          {loadError ? "Preview unavailable — you can still export below." : "Preview still loading — export doesn't need to wait for it."}
+        </p>
+      )}
+
       {/* Export */}
       <button
         onClick={exportClip}
-        disabled={exporting || loadingPreview || !!loadError}
+        disabled={exporting}
         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
       >
         {exporting ? (

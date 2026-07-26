@@ -15,9 +15,13 @@ import { rm, readFile } from "fs/promises";
 import path from "path";
 import { resolveBin, run } from "@/lib/bin";
 import { resolveSource, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
+import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
+import { withCors, corsPreflight } from "@/lib/cors";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+export const OPTIONS = corsPreflight;
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
@@ -47,12 +51,27 @@ async function cutPreview(
     "-movflags", "+faststart",
     "-y",
     outPath,
-  ]);
+  ],
+  // ffmpeg prints progress to stderr continuously — silence means it's wedged.
+  { stallTimeoutMs: 30_000, maxRunMs: 5 * 60_000 });
 
   return outPath;
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
+  return withCors(await handlePOST(req));
+}
+
+async function handlePOST(req: NextRequest): Promise<Response> {
+  // This route only runs on the processing service — set DEPLOYMENT_TARGET
+  // there (and in local dev's .env.local, where one server plays both roles).
+  if (process.env.DEPLOYMENT_TARGET !== "processing") {
+    return NextResponse.json({ error: "This endpoint only runs on the processing service." }, { status: 404 });
+  }
+
+  const reqId = Math.random().toString(36).slice(2, 8);
+  const log = (...args: unknown[]) => console.log(`[preview ${reqId}]`, new Date().toISOString(), ...args);
+
   let url: string, start: number, end: number;
   try {
     const body = await req.json();
@@ -70,12 +89,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid timestamps." }, { status: 400 });
   }
 
+  // Require a signed-in session, verified via Bearer token (not cookies —
+  // this service is on a different origin than the frontend that calls it).
+  const token = bearerToken(req);
+  let profile;
+  try {
+    profile = token ? await getProfileFromToken(token) : null;
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to load your profile." },
+      { status: 500 }
+    );
+  }
+  if (!profile) {
+    return NextResponse.json({ error: "You must be signed in to preview clips." }, { status: 401 });
+  }
+
+  log("start", url.slice(0, 100), `${start}-${end}s`);
   let previewPath: string | null = null;
   try {
+    const t0 = Date.now();
     const sourcePath = await resolveSource(url);
+    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`);
+
+    const t1 = Date.now();
     previewPath = await cutPreview(sourcePath, start, end);
+    log("preview cut in", `${((Date.now() - t1) / 1000).toFixed(1)}s`);
 
     const fileBuffer = await readFile(previewPath);
+    log("done, total", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `${(fileBuffer.byteLength / 1e6).toFixed(1)}MB`);
     return new NextResponse(fileBuffer, {
       headers: {
         "Content-Type": "video/mp4",
@@ -84,10 +126,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Preview generation failed." },
-      { status: 500 }
-    );
+    const message = err instanceof Error ? err.message : "Preview generation failed.";
+    log("FAILED:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   } finally {
     if (previewPath) rm(previewPath, { force: true }).catch(() => {});
   }

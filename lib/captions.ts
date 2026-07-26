@@ -174,29 +174,29 @@ export function generateAss(
 export const HOOK_DURATION_MS = 3000;
 
 /** Hook text style presets — CapCut-style looks. Fonts must exist on the server. */
-export const HOOK_STYLES = ["CLASSIC", "IMPACT", "YELLOW", "BOXED", "NEON", "TYPEWRITER"] as const;
+export const HOOK_STYLES = ["CLASSIC", "IMPACT", "YELLOW", "BOXED", "NEON"] as const;
 export type HookStyle = (typeof HOOK_STYLES)[number];
 
 /**
  * Hook style parameters at the reference 1080×1920 resolution.
  * borderStyle 1 = outline+shadow, 3 = opaque box (fill = OutlineColour).
+ * Outline widths on the stroke styles sit at ~15-18% of the font size — thick
+ * meme-caption strokes ("RAKAI CRASHED OUT" style), not thin subtitle borders.
  */
 const HOOK_STYLE_PARAMS: Record<
   HookStyle,
   { font: string; fontSize: number; color: string; bold: 0 | 1; outline: number; borderStyle: 1 | 3 }
 > = {
-  // Bold white, heavy black outline — the classic TikTok hook.
-  CLASSIC: { font: "Arial", fontSize: 72, color: "&H00FFFFFF", bold: 1, outline: 4, borderStyle: 1 },
-  // Impact font, extra-heavy outline — meme/top-text energy.
-  IMPACT: { font: "Impact", fontSize: 78, color: "&H00FFFFFF", bold: 0, outline: 5, borderStyle: 1 },
+  // Bold white, thick black outline — classic meme caption.
+  CLASSIC: { font: "Arial", fontSize: 72, color: "&H00FFFFFF", bold: 1, outline: 12, borderStyle: 1 },
+  // Impact font, extra-thick outline — heavy meme/top-text energy. The default.
+  IMPACT: { font: "Impact", fontSize: 78, color: "&H00FFFFFF", bold: 0, outline: 14, borderStyle: 1 },
   // Yellow Arial Black — the "subtitle yellow" CapCut preset.
   YELLOW: { font: "Arial Black", fontSize: 66, color: "&H0000FFFF", bold: 1, outline: 4, borderStyle: 1 },
   // White text on a solid black box — news-banner style.
   BOXED: { font: "Arial", fontSize: 64, color: "&H00FFFFFF", bold: 1, outline: 14, borderStyle: 3 },
   // Klyp green (#00E5A0) — branded neon look.
   NEON: { font: "Arial", fontSize: 72, color: "&H00A0E500", bold: 1, outline: 4, borderStyle: 1 },
-  // Courier New — typewriter/documentary caption look.
-  TYPEWRITER: { font: "Courier New", fontSize: 62, color: "&H00FFFFFF", bold: 1, outline: 3, borderStyle: 1 },
 };
 
 /**

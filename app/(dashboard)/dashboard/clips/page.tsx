@@ -7,6 +7,7 @@ import SavedClipEditor from "@/components/SavedClipEditor";
 import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
 import { UPSCALE_COST } from "@/lib/sparks";
+import { processingFetch } from "@/lib/processing-api";
 import {
   type SavedClip,
   TYPE_STYLES,
@@ -74,7 +75,7 @@ export default function ClipsPage() {
     setWorkingId(clip.id);
     try {
       const hasWords = Array.isArray(clip.words) && clip.words.length > 0;
-      const res = await fetch("/api/clip", {
+      const res = await processingFetch("/api/clip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -21,21 +21,37 @@ import { pipeline } from "stream/promises";
 import path from "path";
 import { resolveBin, runCapture } from "@/lib/bin";
 import { CACHE_DIR } from "@/lib/video-cache";
-import { getProfile } from "@/lib/profile";
+import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { estimateSparks } from "@/lib/sparks";
+import { withCors, corsPreflight } from "@/lib/cors";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+export const OPTIONS = corsPreflight;
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB — keep in sync with AnalyzePanel
 const ALLOWED_EXTS = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"]);
 const TOO_LARGE_MSG = "File too large — use a URL instead or trim your VOD first.";
 
-export async function POST(req: NextRequest) {
-  // Uploads are for signed-in users only — same gate as analysis.
+export async function POST(req: NextRequest): Promise<Response> {
+  return withCors(await handlePOST(req));
+}
+
+async function handlePOST(req: NextRequest): Promise<Response> {
+  // This route only runs on the processing service — set DEPLOYMENT_TARGET
+  // there (and in local dev's .env.local, where one server plays both roles).
+  if (process.env.DEPLOYMENT_TARGET !== "processing") {
+    return NextResponse.json({ error: "This endpoint only runs on the processing service." }, { status: 404 });
+  }
+
+  // Uploads are for signed-in users only — same gate as analysis, verified
+  // via Bearer token (not cookies — this service is on a different origin
+  // than the frontend that calls it).
+  const token = bearerToken(req);
   let profile;
   try {
-    profile = await getProfile();
+    profile = token ? await getProfileFromToken(token) : null;
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to load your profile." },

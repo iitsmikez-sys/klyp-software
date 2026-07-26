@@ -4,13 +4,25 @@
  * Module-level Map dedupes concurrent requests for the same VOD.
  */
 import { createHash } from "crypto";
-import { mkdir, readdir, stat } from "fs/promises";
+import { mkdir, readdir, stat, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { resolveBin, runYtDlpWithRetry } from "@/lib/bin";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
+
+/**
+ * Total cache size cap. Once exceeded, the oldest completed VOD downloads
+ * (LRU by mtime) are evicted before a new download starts. Never touches
+ * uploads or the file currently being downloaded. Without this the cache
+ * grows forever — it's what silently ran the disk down to single-digit GB
+ * free and caused preview/export to fail unpredictably at whichever step
+ * happened to run out of space first.
+ */
+const CACHE_MAX_BYTES = 60 * 1024 * 1024 * 1024; // 60 GB
+
+const log = (...args: unknown[]) => console.log("[video-cache]", new Date().toISOString(), ...args);
 
 /* ── Uploaded VOD files ─────────────────────────────────────────────
  * Uploads are stored as upload-<uuid>.<ext> in CACHE_DIR and referenced
@@ -48,31 +60,206 @@ export async function resolveSource(ref: string): Promise<string> {
   return ensureSourceVideo(ref);
 }
 
+/**
+ * Delete leftover partial/temp artifacts for a download key — yt-dlp's
+ * `.part`, `.part-FragN.part`, `.ytdl`, and ffmpeg's `.temp.mp4` merge
+ * remnant. Runs before a fresh attempt and after a failed one, so a killed
+ * or interrupted download (stall/timeout kill, process crash, dev-server
+ * restart) doesn't leak disk space forever. Best-effort — a file still open
+ * elsewhere just gets skipped and retried next time. Never touches the
+ * completed `${key}.mp4` itself.
+ */
+async function pruneStaleArtifacts(key: string): Promise<void> {
+  let files: string[];
+  try {
+    files = await readdir(CACHE_DIR);
+  } catch {
+    return;
+  }
+  const stale = files.filter((f) => f.startsWith(`${key}.`) && f !== `${key}.mp4`);
+  for (const f of stale) {
+    try {
+      await unlink(path.join(CACHE_DIR, f));
+      log("pruned stale artifact", f);
+    } catch {
+      // in use or already gone — fine, next prune will catch it
+    }
+  }
+}
+
+/** List a key's partial download artifacts (.part/.ytdl/fragments) — empty if none. */
+async function partialArtifacts(key: string): Promise<string[]> {
+  try {
+    const files = await readdir(CACHE_DIR);
+    return files.filter((f) => f.startsWith(`${key}.`) && f !== `${key}.mp4`);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * True if another download for this key is actively in progress right now,
+ * detected by its temp files' combined size growing over a short sample
+ * window — not just by their presence (which could be dead debris from a
+ * killed/crashed attempt).
+ *
+ * This exists because `inflightDownloads` (below) is an in-memory Map and
+ * ONLY dedupes calls within the same module instance. In Next.js dev mode
+ * each API route is compiled as a separate bundle, so /api/preview and
+ * /api/clip each get their OWN copy of this module — a download started by
+ * one is invisible to the other's in-memory Map. Without this check, a
+ * preview followed shortly by an export of the same VOD would start a
+ * second, colliding yt-dlp process writing the same fragment files, which
+ * fails with a Windows file-in-use error (confirmed live: this is exactly
+ * what was happening). Checking the filesystem instead of memory catches
+ * this regardless of which module instance is asking.
+ */
+async function isActivelyDownloading(key: string): Promise<boolean> {
+  const files = await partialArtifacts(key);
+  if (files.length === 0) return false;
+
+  const totalSize = async () => {
+    let sum = 0;
+    for (const f of files) {
+      try {
+        sum += (await stat(path.join(CACHE_DIR, f))).size;
+      } catch {
+        // vanished between readdir and stat — fine, just don't count it
+      }
+    }
+    return sum;
+  };
+
+  const before = await totalSize();
+  await new Promise((r) => setTimeout(r, 1500));
+  const after = await totalSize();
+  return after > before;
+}
+
+/**
+ * Wait for another process/module instance's in-progress download of this
+ * key to finish, instead of starting a second one that would collide with
+ * it. Polls for the final file; bails out if the other download's own
+ * artifacts disappear without producing it (it failed) or after a timeout.
+ */
+async function waitForConcurrentDownload(outPath: string, key: string): Promise<string> {
+  const POLL_MS = 2000;
+  const MAX_WAIT_MS = 30 * 60_000; // matches ensureSourceVideo's own maxRunMs
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < MAX_WAIT_MS) {
+    if (existsSync(outPath) && (await stat(outPath)).size > 0) {
+      log("joined a concurrent download already in progress", key);
+      return outPath;
+    }
+    if ((await partialArtifacts(key)).length === 0) {
+      throw new Error("A concurrent download of this video ended without completing — try again.");
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  throw new Error("Timed out waiting for a concurrent download of this video to finish.");
+}
+
+/**
+ * If the cache directory is over CACHE_MAX_BYTES, delete completed VOD
+ * downloads oldest-first (by mtime) until back under the cap. Skips
+ * uploaded files and the key about to be downloaded. Best-effort: a file
+ * that's mid-read by a concurrent preview/export request is left alone.
+ */
+async function evictIfOverCap(excludeKey: string): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(CACHE_DIR);
+  } catch {
+    return;
+  }
+
+  const candidates: { name: string; size: number; mtimeMs: number }[] = [];
+  let total = 0;
+  for (const name of names) {
+    let s;
+    try {
+      s = await stat(path.join(CACHE_DIR, name));
+    } catch {
+      continue;
+    }
+    total += s.size;
+    if (name.endsWith(".mp4") && !name.startsWith("upload-") && !name.startsWith(`${excludeKey}.`)) {
+      candidates.push({ name, size: s.size, mtimeMs: s.mtimeMs });
+    }
+  }
+  if (total <= CACHE_MAX_BYTES) return;
+
+  candidates.sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
+  const toFree = total - CACHE_MAX_BYTES;
+  let freed = 0;
+  log("cache over cap", `${(total / 1e9).toFixed(1)}GB / ${(CACHE_MAX_BYTES / 1e9).toFixed(0)}GB`, "— evicting oldest");
+  for (const c of candidates) {
+    if (freed >= toFree) break;
+    try {
+      await unlink(path.join(CACHE_DIR, c.name));
+      freed += c.size;
+      log("evicted", c.name, `${(c.size / 1e9).toFixed(1)}GB`);
+    } catch {
+      // likely open for a concurrent request — skip, try the next oldest
+    }
+  }
+}
+
 const inflightDownloads = new Map<string, Promise<string>>();
 
 export async function ensureSourceVideo(url: string): Promise<string> {
   const key = createHash("sha1").update(url).digest("hex");
   const outPath = path.join(CACHE_DIR, `${key}.mp4`);
 
-  if (existsSync(outPath) && (await stat(outPath)).size > 0) return outPath;
+  if (existsSync(outPath) && (await stat(outPath)).size > 0) {
+    log("cache hit", key);
+    return outPath;
+  }
 
   const existing = inflightDownloads.get(key);
   if (existing) return existing;
 
   const download = (async () => {
     await mkdir(CACHE_DIR, { recursive: true });
-    await runYtDlpWithRetry([
-      "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b",
-      "--merge-output-format", "mp4",
-      "--no-playlist",
-      "--ffmpeg-location", resolveBin("ffmpeg"),
-      "-o", outPath,
-      url,
-    ]);
-    if (!existsSync(outPath)) {
-      throw new Error("yt-dlp finished but the merged MP4 was not produced.");
+
+    // Someone else (possibly a different Next.js dev-mode route bundle) is
+    // already downloading this exact key — join that instead of racing it.
+    if (await isActivelyDownloading(key)) {
+      return waitForConcurrentDownload(outPath, key);
     }
-    return outPath;
+
+    await pruneStaleArtifacts(key);
+    await evictIfOverCap(key).catch((err) => log("eviction check failed (non-fatal)", err));
+
+    const startedAt = Date.now();
+    log("download start", key, url.slice(0, 100));
+    try {
+      await runYtDlpWithRetry(
+        [
+          "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b",
+          "--merge-output-format", "mp4",
+          "--no-playlist",
+          "--socket-timeout", "30",
+          "--ffmpeg-location", resolveBin("ffmpeg"),
+          "-o", outPath,
+          url,
+        ],
+        // stallTimeoutMs kills a silent wedge; maxRunMs bounds the total download
+        // time so a preview/export request can't run forever on an endless VOD.
+        { stallTimeoutMs: 90_000, maxRunMs: 30 * 60_000 }
+      );
+      if (!existsSync(outPath)) {
+        throw new Error("yt-dlp finished but the merged MP4 was not produced.");
+      }
+      const { size } = await stat(outPath);
+      log("download done", key, `${((Date.now() - startedAt) / 1000).toFixed(1)}s`, `${(size / 1e9).toFixed(2)}GB`);
+      return outPath;
+    } catch (err) {
+      log("download FAILED", key, err instanceof Error ? err.message : String(err));
+      await pruneStaleArtifacts(key); // don't leave partial debris behind on failure
+      throw err;
+    }
   })();
 
   inflightDownloads.set(key, download);

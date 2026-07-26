@@ -7,6 +7,7 @@ import { buildCaptionCues, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { useSparks } from "./SparksProvider";
 import { watermarkCanvasPos, WATERMARK_FONT_SIZE } from "@/lib/watermark";
+import { processingFetch } from "@/lib/processing-api";
 
 /* ── Types ── */
 interface Props {
@@ -23,6 +24,9 @@ interface Props {
 }
 
 type Cue = { text: string; start: number; end: number };
+
+/** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
+const PREVIEW_TIMEOUT_MS = 6 * 60_000;
 
 /* ── Caption helpers ── */
 
@@ -119,7 +123,7 @@ export default function ClipPreview({
   analyzedUrl,
   initialStyle,
   hook,
-  hookStyle = "BOXED",
+  hookStyle = "IMPACT",
   onClose,
   onExport,
   exporting,
@@ -130,6 +134,8 @@ export default function ClipPreview({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [retryToken, setRetryToken] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -155,11 +161,24 @@ export default function ClipPreview({
     buildCaptionCues(clip.words, clip.start_seconds * 1000, clip.end_seconds * 1000, 1).map(toSec)
   );
 
-  // Fetch the preview MP4 on mount
+  // Fetch the preview MP4 on mount (and on Retry). First view of a VOD
+  // legitimately takes minutes (full source download), so the timeout is
+  // generous — but finite, so a wedged request fails loudly instead of
+  // spinning forever. Aborting the fetch doesn't cancel the server download,
+  // so a Retry after a timeout usually joins the finished cache.
   useEffect(() => {
     let blobUrl: string | null = null;
+    let timedOut = false;
+    setLoadingPreview(true);
+    setLoadError(null);
+    setElapsed(0);
+    const startedAt = Date.now();
+    const ticker = setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, PREVIEW_TIMEOUT_MS);
+    const settle = () => { clearInterval(ticker); clearTimeout(timeout); };
 
-    fetch("/api/preview", {
+    processingFetch("/api/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -167,26 +186,36 @@ export default function ClipPreview({
         start_seconds: clip.start_seconds,
         end_seconds: clip.end_seconds,
       }),
+      signal: controller.signal,
     })
       .then((res) => {
         if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d.error ?? "Preview failed.")));
         return res.blob();
       })
       .then((blob) => {
+        settle();
         blobUrl = URL.createObjectURL(blob);
         setPreviewUrl(blobUrl);
         setLoadingPreview(false);
       })
       .catch((err: Error) => {
-        setLoadError(err.message);
+        settle();
+        if (controller.signal.aborted && !timedOut) return; // unmounted — leave state alone
+        setLoadError(
+          timedOut
+            ? `Preview timed out after ${Math.round(PREVIEW_TIMEOUT_MS / 60_000)} minutes. The source VOD may still be downloading in the background — hit Retry in a bit.`
+            : err.message
+        );
         setLoadingPreview(false);
       });
 
     return () => {
+      settle();
+      controller.abort();
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       cancelAnimationFrame(rafRef.current);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Canvas rAF loop — starts once preview URL is ready
   useEffect(() => {
@@ -265,14 +294,24 @@ export default function ClipPreview({
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground-muted text-sm">
               <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
               <span className="text-xs text-center px-4">
-                Generating preview…<br/>
-                <span className="text-subtle">(downloads source video first time)</span>
+                Generating preview…{elapsed >= 5 ? ` (${fmt(elapsed)})` : ""}<br/>
+                <span className="text-subtle">
+                  {elapsed < 30
+                    ? "(downloads source video first time)"
+                    : "Still downloading the source VOD — long VODs can take several minutes."}
+                </span>
               </span>
             </div>
           )}
           {loadError && (
-            <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
               <p className="text-red-400 text-xs text-center">{loadError}</p>
+              <button
+                onClick={() => setRetryToken((t) => t + 1)}
+                className="px-3 py-1.5 rounded-md border border-border text-xs font-bold font-syne text-foreground-muted hover:text-foreground hover:border-accent/50 transition-colors"
+              >
+                Retry
+              </button>
             </div>
           )}
           {previewUrl && (
@@ -371,10 +410,19 @@ export default function ClipPreview({
             </div>
           )}
 
+          {/* Preview is just a look-before-you-export convenience — export fires
+              its own independent /api/clip request and doesn't need previewUrl,
+              so a stuck or failed preview should never block it. */}
+          {(loadingPreview || loadError) && (
+            <p className="text-[10px] text-subtle -mt-1">
+              {loadError ? "Preview unavailable — you can still export below." : "Preview still loading — export doesn't need to wait for it."}
+            </p>
+          )}
+
           {/* Export button */}
           <button
             onClick={() => onExport(style)}
-            disabled={exporting || loadingPreview || !!loadError}
+            disabled={exporting}
             title={!isPro ? "Upgrade to Pro to remove the Klyp watermark" : undefined}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold font-syne transition-colors disabled:opacity-50
               bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm disabled:shadow-none"

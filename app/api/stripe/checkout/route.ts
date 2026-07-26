@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-  if (profile?.tier === "pro") {
+  // Same "confirmed subscription" check as SparksProvider.tsx — if tier says
+  // pro but there's no subscription_id behind it, let checkout proceed rather
+  // than block a user who needs to get a real subscription.
+  if (profile?.tier === "pro" && profile.stripe_subscription_id) {
     return NextResponse.json({ error: "You're already on Pro." }, { status: 400 });
   }
 

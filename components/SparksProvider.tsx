@@ -34,7 +34,12 @@ export function SparksProvider({ children }: { children: ReactNode }) {
     if (error || !data) return;
     const profile = data as Profile;
     setBalance(profile.sparks);
-    setTier(profile.tier);
+    // "Pro" requires a real, confirmed subscription behind it — not just the
+    // raw tier flag. The flag alone can drift from reality (e.g. a manual
+    // dashboard edit, a bug, a webhook mis-fire); every part of the app that
+    // gates on tier goes through this one derivation, so fixing it here fixes
+    // it everywhere at once.
+    setTier(profile.tier === "pro" && profile.stripe_subscription_id ? "pro" : "free");
   }, []);
 
   useEffect(() => {

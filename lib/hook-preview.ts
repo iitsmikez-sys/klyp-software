@@ -17,12 +17,11 @@ type PreviewParams = {
 
 /** Keep in sync with HOOK_STYLE_PARAMS in lib/captions.ts. */
 const PREVIEW_PARAMS: Record<HookStyle, PreviewParams> = {
-  CLASSIC: { font: "Arial", fontSize: 72, color: "#ffffff", bold: true, outline: 4, boxed: false },
-  IMPACT: { font: "Impact, 'Arial Black'", fontSize: 78, color: "#ffffff", bold: false, outline: 5, boxed: false },
+  CLASSIC: { font: "Arial", fontSize: 72, color: "#ffffff", bold: true, outline: 12, boxed: false },
+  IMPACT: { font: "Impact, 'Arial Black'", fontSize: 78, color: "#ffffff", bold: false, outline: 14, boxed: false },
   YELLOW: { font: "'Arial Black'", fontSize: 66, color: "#ffff00", bold: true, outline: 4, boxed: false },
   BOXED: { font: "Arial", fontSize: 64, color: "#ffffff", bold: true, outline: 0, boxed: true },
   NEON: { font: "Arial", fontSize: 72, color: "#00E5A0", bold: true, outline: 4, boxed: false },
-  TYPEWRITER: { font: "'Courier New'", fontSize: 62, color: "#ffffff", bold: true, outline: 3, boxed: false },
 };
 
 /** Greedy word-wrap against the current ctx.font. */

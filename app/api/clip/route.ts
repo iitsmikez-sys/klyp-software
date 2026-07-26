@@ -4,7 +4,8 @@
  * Takes a VOD URL + one clip's timestamps (from /api/analyze) and returns the
  * actual MP4:
  *   1. Download the full video with yt-dlp (cached per-URL, shared with /api/preview)
- *   2. Cut start→end with FFmpeg, center-crop to 9:16 vertical, 1080×1920
+ *   2. Cut start→end with FFmpeg, center-crop to the selected format (9:16 /
+ *      1:1 / 16:9) — or no crop at all for "Original" (native aspect ratio)
  *   3. Burn captions (if style + words provided)
  *   4. Burn animated watermark (free tier only)
  *   5. Stream the MP4 back as a file download
@@ -13,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { resolveBin, run } from "@/lib/bin";
+import { resolveBin, run, runCapture } from "@/lib/bin";
 import { generateAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
@@ -25,11 +26,14 @@ import {
 } from "@/lib/clips";
 import { resolveSource, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
 import { watermarkFilter } from "@/lib/watermark";
-import { getProfile, consumeSparks } from "@/lib/profile";
+import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { UPSCALE_COST } from "@/lib/sparks";
+import { withCors, corsPreflight } from "@/lib/cors";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+export const OPTIONS = corsPreflight;
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
@@ -50,6 +54,24 @@ function handleFilter(handle: string): string {
     `x=main_w-tw-28`,
     `y=96`,
   ].join(":");
+}
+
+/** Native video dimensions via ffprobe — used as ASS PlayRes for "Original" exports. */
+async function probeVideoSize(sourcePath: string): Promise<{ w: number; h: number }> {
+  try {
+    const out = await runCapture(resolveBin("ffprobe"), [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0",
+      sourcePath,
+    ], { maxRunMs: 30_000 });
+    const [w, h] = out.trim().split(",").map(Number);
+    if (w > 0 && h > 0) return { w, h };
+  } catch {
+    // fall through to the 1080p default below
+  }
+  return { w: 1920, h: 1080 };
 }
 
 async function cutClip(
@@ -74,12 +96,19 @@ async function cutClip(
   // Raw mode (Pro-only, enforced in POST) skips the chain entirely: original
   // framing and resolution, nothing burned in — for editing in CapCut/Premiere.
   // Upscale (Pro-only, 35⚡) doubles the output dimensions (e.g. 2160×3840).
-  let { w, h } = FORMAT_DIMENSIONS[format];
-  if (upscale) {
-    w *= 2;
-    h *= 2;
+  let vf: string;
+  if (format === "Original") {
+    // No crop — keep the source's native aspect ratio; only trim (2× if upscaling).
+    // `null` is ffmpeg's no-op video filter, so the rest of the chain appends cleanly.
+    vf = upscale ? "scale=iw*2:ih*2" : "null";
+  } else {
+    let { w, h } = FORMAT_DIMENSIONS[format];
+    if (upscale) {
+      w *= 2;
+      h *= 2;
+    }
+    vf = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
   }
-  let vf = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
   if (assPath) {
     vf += `,subtitles='${toFfmpegPath(assPath)}'`;
   }
@@ -106,7 +135,10 @@ async function cutClip(
     "-movflags", "+faststart",
     "-y",
     outPath,
-  ]);
+  ],
+  // ffmpeg prints progress to stderr continuously — silence means it's wedged.
+  // maxRunMs bounds the whole encode so an export can't hang forever.
+  { stallTimeoutMs: 30_000, maxRunMs: 10 * 60_000 });
 
   return outPath;
 }
@@ -116,14 +148,27 @@ function sanitizeFilename(title: string): string {
   return (safe || "klyp_clip") + ".mp4";
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
+  return withCors(await handlePOST(req));
+}
+
+async function handlePOST(req: NextRequest): Promise<Response> {
+  // This route only runs on the processing service — set DEPLOYMENT_TARGET
+  // there (and in local dev's .env.local, where one server plays both roles).
+  if (process.env.DEPLOYMENT_TARGET !== "processing") {
+    return NextResponse.json({ error: "This endpoint only runs on the processing service." }, { status: 404 });
+  }
+
+  const reqId = Math.random().toString(36).slice(2, 8);
+  const log = (...args: unknown[]) => console.log(`[clip ${reqId}]`, new Date().toISOString(), ...args);
+
   let url: string, start: number, end: number, title: string;
   let style: CaptionStyle | undefined;
   let words: TimedWord[] | undefined;
   let handle: string | undefined;
   let format: ExportFormat = "9:16";
   let hook: string | undefined;
-  let hookStyle: HookStyle = "CLASSIC";
+  let hookStyle: HookStyle = "IMPACT";
   let raw = false;
   let upscale = false;
   try {
@@ -174,16 +219,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
   }
 
-  // Watermark decision is server-side: only a signed-in Pro user skips it.
-  let isPro = false;
-  let sparksBalance: number | null = null;
+  // Require a signed-in session, verified via Bearer token (not cookies —
+  // this service is on a different origin than the frontend that calls it).
+  const token = bearerToken(req);
+  let profile;
   try {
-    const profile = await getProfile();
-    isPro = profile?.tier === "pro";
-    sparksBalance = profile?.sparks ?? null;
-  } catch {
-    // Profile lookup failing should never block an export — default to watermark.
+    profile = token ? await getProfileFromToken(token) : null;
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to load your profile." },
+      { status: 500 }
+    );
   }
+  if (!profile) {
+    return NextResponse.json({ error: "You must be signed in to export clips." }, { status: 401 });
+  }
+  // "Pro" requires a real, confirmed subscription — see SparksProvider.tsx for
+  // why the raw tier flag alone isn't trusted (it can drift from reality).
+  const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
+  const sparksBalance = profile.sparks;
 
   // Format switching is Pro — free tier always exports the 9:16 default.
   if (!isPro) format = "9:16";
@@ -218,13 +272,25 @@ export async function POST(req: NextRequest) {
     handle = undefined;
   }
 
+  log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
   let clipPath: string | null = null;
   let assDir: string | null = null;
   try {
+    const t0 = Date.now();
     const sourcePath = await resolveSource(url);
-    const dims = FORMAT_DIMENSIONS[format];
+    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`);
+
     // ASS PlayRes must match the output resolution so burned text scales with it.
-    const res = upscale ? { w: dims.w * 2, h: dims.h * 2 } : dims;
+    // "Original" has no fixed dimensions — probe the source for its native size.
+    let res: { w: number; h: number };
+    if (format === "Original") {
+      const t1 = Date.now();
+      res = await probeVideoSize(sourcePath);
+      log("probed source size", `${res.w}x${res.h}`, `in ${((Date.now() - t1) / 1000).toFixed(1)}s`);
+    } else {
+      res = FORMAT_DIMENSIONS[format];
+    }
+    if (upscale) res = { w: res.w * 2, h: res.h * 2 };
 
     let assPath: string | undefined;
     let hookAssPath: string | undefined;
@@ -241,14 +307,17 @@ export async function POST(req: NextRequest) {
       await writeFile(hookAssPath, generateHookAss(hook, res, hookStyle), "utf-8");
     }
 
+    const t2 = Date.now();
     clipPath = await cutClip(sourcePath, start, end, isPro, format, assPath, hookAssPath, handle, raw, upscale);
+    log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
 
     // Charge for the upscale only after the render succeeded.
     if (upscale) {
-      await consumeSparks(UPSCALE_COST);
+      await consumeSparksFromToken(token!, UPSCALE_COST);
     }
 
     const fileBuffer = await readFile(clipPath);
+    log("done, total", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `${(fileBuffer.byteLength / 1e6).toFixed(1)}MB`);
     return new NextResponse(fileBuffer, {
       headers: {
         "Content-Type": "video/mp4",
@@ -257,10 +326,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Clip generation failed." },
-      { status: 500 }
-    );
+    const message = err instanceof Error ? err.message : "Clip generation failed.";
+    log("FAILED:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   } finally {
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
     if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});
