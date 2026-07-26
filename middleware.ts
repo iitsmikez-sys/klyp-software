@@ -1,7 +1,19 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { ACCESS_GATE_COOKIE, isValidGateCookie } from "@/lib/access-gate";
 
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/login")) {
+    const gateCookie = request.cookies.get(ACCESS_GATE_COOKIE)?.value;
+    if (!(await isValidGateCookie(gateCookie))) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/access";
+      url.search = "";
+      url.searchParams.set("next", request.nextUrl.pathname);
+      return NextResponse.redirect(url);
+    }
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -40,5 +52,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/login"],
 };
