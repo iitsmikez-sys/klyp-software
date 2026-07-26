@@ -2,14 +2,10 @@
 # Adds ffmpeg + yt-dlp alongside Nixpacks' normal auto-detected Node/Next.js
 # build (npm ci / npm run build / npm start) — those aren't touched here.
 #
-# NOTE: not yet verified against a real Railway build. yt-dlp is a Python
-# package, and pip's exact flags/package names can shift across nixpkgs
-# versions — check the Railway build log on first deploy and adjust package
-# names / the pip command here if it fails.
+# yt-dlp is pulled from nixpkgs directly rather than pip-installed: a pip
+# install into the nix-managed Python (even with --break-system-packages)
+# doesn't reliably land its entry-point script on PATH in the final image.
+# The nixpkgs package puts the binary on PATH the same way ffmpeg already is.
 
 [phases.setup]
-nixPkgs = ["ffmpeg", "python311", "python311Packages.pip"]
-
-[phases.yt-dlp]
-dependsOn = ["setup"]
-cmds = ["pip install --break-system-packages yt-dlp"]
+nixPkgs = ["ffmpeg", "yt-dlp"]
