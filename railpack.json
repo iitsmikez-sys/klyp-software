@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "buildAptPackages": ["...", "curl"],
+  "steps": {
+    "yt-dlp": {
+      "inputs": [{ "step": "install" }],
+      "commands": [
+        "mkdir -p /app/bin",
+        "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /app/bin/yt-dlp",
+        "chmod +x /app/bin/yt-dlp"
+      ]
+    },
+    "build": {
+      "inputs": [{ "step": "yt-dlp" }],
+      "commands": ["npm run build"]
+    }
+  },
+  "deploy": {
+    "aptPackages": ["...", "ffmpeg"],
+    "paths": ["/app/bin"],
+    "inputs": [{ "step": "build", "include": ["."] }]
+  }
+}
