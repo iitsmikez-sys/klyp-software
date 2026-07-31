@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Logo from "./Logo";
+import NotificationBell from "./NotificationBell";
 import { createClient } from "@/lib/supabase/client";
 
 const navItems = [
@@ -104,8 +105,9 @@ export default function Sidebar() {
 
   return (
     <aside className="flex flex-col w-60 min-h-screen bg-surface border-r border-border shrink-0">
-      <div className="flex items-center px-6 h-16 border-b border-border">
+      <div className="flex items-center justify-between px-6 h-16 border-b border-border">
         <Logo size="md" />
+        <NotificationBell />
       </div>
 
       <nav className="flex flex-col gap-1 px-3 py-4 flex-1">

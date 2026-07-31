@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import Logo from "@/components/Logo";
 import FadeIn from "@/components/FadeIn";
 import FAQ from "@/components/FAQ";
@@ -114,7 +115,17 @@ export default function LandingPage() {
 
       {/* ── Nav ── */}
       <nav className="sticky top-0 z-50 flex items-center justify-between px-8 h-16 border-b border-border bg-background/80 backdrop-blur-md">
-        <Logo size="md" />
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Image
+            src="/mascot.png"
+            alt=""
+            width={480}
+            height={460}
+            priority
+            className="h-7 w-auto sm:h-8 md:h-9 select-none"
+          />
+          <Logo size="md" />
+        </div>
         <NavButtons />
       </nav>
 

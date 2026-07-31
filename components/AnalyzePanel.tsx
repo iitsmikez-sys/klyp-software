@@ -25,6 +25,9 @@ const VOD_URL_PATTERN =
 /** Export can include a first-time source download + full-quality burn — generous but finite. */
 const EXPORT_TIMEOUT_MS = 10 * 60_000;
 
+/** Backoff before retrying the initial /api/analyze connection after a network-level failure. */
+const ANALYZE_RETRY_DELAYS_MS = [1000, 2000];
+
 const TYPE_STYLES: Record<ClipType, string> = {
   CLUTCH: "bg-amber-500/15 text-amber-400 border-amber-500/30",
   FUNNY: "bg-sky-500/15 text-sky-400 border-sky-500/30",
@@ -112,6 +115,12 @@ export default function AnalyzePanel() {
   const [clipCount, setClipCount] = useState<ClipCount>(DEFAULT_CLIP_COUNT);
   const [confirmMaxOpen, setConfirmMaxOpen] = useState(false);
   const [analysisNote, setAnalysisNote] = useState<string | null>(null);
+  // Background health poll — lets the UI notice the processing service going
+  // down (or coming back) without the user having to reload the page.
+  const [serverOffline, setServerOffline] = useState(false);
+  // Set while runAnalysis is retrying the initial connection after a network
+  // failure, before any SSE data has arrived.
+  const [reconnectAttempt, setReconnectAttempt] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { balance, tier, sync } = useSparks();
   const isPro = tier === "pro";
@@ -233,6 +242,29 @@ export default function AnalyzePanel() {
     xhr.send(file);
   };
 
+  // Poll /api/health in the background so a dropped dev/processing server is
+  // noticed (and recovered from) automatically instead of requiring a reload.
+  useEffect(() => {
+    let cancelled = false;
+    const checkHealth = async () => {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5_000);
+        const res = await processingFetch("/api/health", { signal: controller.signal });
+        clearTimeout(timeout);
+        if (!cancelled) setServerOffline(!res.ok);
+      } catch {
+        if (!cancelled) setServerOffline(true);
+      }
+    };
+    void checkHealth();
+    const interval = setInterval(checkHealth, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Tick the per-stage ETA down once per second while analyzing.
   useEffect(() => {
     if (!loading || etaRemaining === null) return;
@@ -336,9 +368,11 @@ export default function AnalyzePanel() {
     setAnalysisNote(null);
     setStages({ ...INITIAL_STAGES });
     setEtaRemaining(null);
+    setReconnectAttempt(null);
+    let retriedConnect = false;
 
     try {
-      const res = await processingFetch("/api/analyze", {
+      const requestInit: RequestInit = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -346,7 +380,25 @@ export default function AnalyzePanel() {
             ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount }
             : { url, durationHint: previewDuration ?? undefined, clipCount }
         ),
-      });
+      };
+
+      // A network-level failure here (fetch() throwing, not an HTTP error
+      // response) means the connection to the server never happened at all —
+      // most often a dev server that's mid-restart. Retry with backoff before
+      // surfacing "Connection lost" so a brief hiccup doesn't need a manual retry.
+      let res: Response;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          res = await processingFetch("/api/analyze", requestInit);
+          setReconnectAttempt(null);
+          break;
+        } catch (err) {
+          if (attempt >= ANALYZE_RETRY_DELAYS_MS.length) throw err;
+          retriedConnect = true;
+          setReconnectAttempt(attempt + 1);
+          await new Promise((r) => setTimeout(r, ANALYZE_RETRY_DELAYS_MS[attempt]));
+        }
+      }
 
       // Validation failures come back as plain JSON before the stream starts.
       if (!res.headers.get("content-type")?.includes("text/event-stream")) {
@@ -399,8 +451,13 @@ export default function AnalyzePanel() {
         );
       }
     } catch {
-      setError("Connection lost — is the dev server still running?");
+      setError(
+        retriedConnect
+          ? "Connection lost — the dev server didn't come back after a few reconnect attempts. Check the dev server terminal for [analyze] logs."
+          : "Connection lost — is the dev server still running?"
+      );
     } finally {
+      setReconnectAttempt(null);
       // Brief pause so the final "Done!" check is visible before closing.
       setTimeout(() => setLoading(false), 1200);
     }
@@ -559,6 +616,12 @@ export default function AnalyzePanel() {
             <p className="text-sm text-foreground-muted mb-7">
               Klyp is hunting for your best moments.
             </p>
+
+            {reconnectAttempt !== null && (
+              <p className="-mt-5 mb-7 text-xs text-amber-400">
+                Server didn&apos;t respond — reconnecting (attempt {reconnectAttempt}/{ANALYZE_RETRY_DELAYS_MS.length})…
+              </p>
+            )}
 
             <ol className="space-y-5">
               {PIPELINE_STEPS.map((step) => {
@@ -833,6 +896,13 @@ export default function AnalyzePanel() {
                 )}
               </span>
             )}
+          </div>
+        )}
+
+        {/* Processing server unreachable — set by the background health poll, clears itself */}
+        {serverOffline && !loading && (
+          <div className="flex items-center gap-2 mt-4 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-400">
+            Processing server unreachable — retrying automatically. This clears on its own once it's back.
           </div>
         )}
 

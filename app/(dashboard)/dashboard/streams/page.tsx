@@ -19,6 +19,18 @@ type Channel = {
   platform: "twitch" | "youtube" | "kick";
   channel_url: string;
   created_at: string;
+  twitch_user_id: string | null;
+  twitch_login: string | null;
+  auto_clip_enabled: boolean;
+};
+
+const TWITCH_STATUS_MESSAGE: Record<string, { text: string; ok: boolean }> = {
+  connected: { text: "Twitch channel connected — auto-clipping is live for new VODs.", ok: true },
+  already_connected: { text: "That Twitch channel is already connected.", ok: false },
+  state_mismatch: { text: "Twitch connect failed (session expired) — try again.", ok: false },
+  not_signed_in: { text: "Sign in first, then connect Twitch.", ok: false },
+  save_failed: { text: "Couldn't save the connection — try again.", ok: false },
+  error: { text: "Twitch connect failed — try again.", ok: false },
 };
 
 /** Derive the platform from a channel URL; null = unsupported. */
@@ -69,7 +81,7 @@ export default function StreamsPage() {
   const [channelError, setChannelError] = useState<string | null>(null);
   const [savingChannel, setSavingChannel] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [notified, setNotified] = useState(false);
+  const [twitchStatus, setTwitchStatus] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -86,7 +98,17 @@ export default function StreamsPage() {
       .select("*")
       .order("created_at", { ascending: true })
       .then(({ data }) => setChannels(data ?? []));
-    setNotified(localStorage.getItem("klyp-notify-autoclip") === "1");
+
+    // One-time banner from the /api/twitch/callback redirect — read from the
+    // URL directly (not useSearchParams) so this page doesn't need a Suspense
+    // boundary just for a post-redirect status message.
+    const twitch = new URLSearchParams(window.location.search).get("twitch");
+    if (twitch && TWITCH_STATUS_MESSAGE[twitch]) {
+      setTwitchStatus(TWITCH_STATUS_MESSAGE[twitch]);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("twitch");
+      window.history.replaceState({}, "", url.toString());
+    }
   }, []);
 
   const addChannel = async () => {
@@ -95,6 +117,10 @@ export default function StreamsPage() {
     const platform = channelPlatform(url);
     if (!platform) {
       setChannelError("Enter a Twitch, YouTube, or Kick channel URL (e.g. https://twitch.tv/yourname).");
+      return;
+    }
+    if (platform === "twitch") {
+      setChannelError("Use “Connect with Twitch” below instead — it enables auto-clipping, a pasted link doesn't.");
       return;
     }
     setSavingChannel(true);
@@ -126,17 +152,22 @@ export default function StreamsPage() {
     setSavingChannel(false);
   };
 
-  const removeChannel = async (id: string) => {
-    setRemovingId(id);
-    const supabase = createClient();
-    await supabase.from("streams").delete().eq("id", id);
-    setChannels((prev) => prev.filter((c) => c.id !== id));
+  const removeChannel = async (channel: Channel) => {
+    setRemovingId(channel.id);
+    if (channel.twitch_user_id) {
+      // Routes through the server so the EventSub subscription gets cleaned
+      // up too — a plain client-side delete would leave it orphaned on Twitch.
+      await fetch("/api/twitch/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ streamId: channel.id }),
+      });
+    } else {
+      const supabase = createClient();
+      await supabase.from("streams").delete().eq("id", channel.id);
+    }
+    setChannels((prev) => prev.filter((c) => c.id !== channel.id));
     setRemovingId(null);
-  };
-
-  const notifyMe = () => {
-    localStorage.setItem("klyp-notify-autoclip", "1");
-    setNotified(true);
   };
 
   const streams: StreamGroup[] = useMemo(() => {
@@ -175,13 +206,35 @@ export default function StreamsPage() {
         </Link>
       </header>
 
+      {twitchStatus && (
+        <div
+          className={`mb-6 px-4 py-3 rounded-lg border text-sm ${
+            twitchStatus.ok
+              ? "bg-accent-glow border-accent/30 text-accent"
+              : "bg-red-500/10 border-red-500/30 text-red-400"
+          }`}
+        >
+          {twitchStatus.text}
+        </div>
+      )}
+
       {/* ── Connected channels + auto-clipping ── */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
         <div className="bg-surface border border-border rounded-xl p-6">
           <h2 className="font-syne text-lg font-semibold text-foreground mb-1">Connected Channels</h2>
           <p className="text-sm text-foreground-muted mb-4">
-            Save your channel so Klyp can auto-clip new VODs when automation launches.
+            Connect Twitch for automatic clipping, or paste a YouTube/Kick channel to keep an eye on it.
           </p>
+
+          <a
+            href="/api/twitch/connect"
+            className="mb-3 flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-[#9146FF] text-white text-sm font-bold font-syne hover:bg-[#7d3cdb] transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4.265 3 3 6.236v13.223h4.502V21l2.531.001L12.298 19.459h3.712L21 14.481V3H4.265zm15.047 10.505-2.531 2.531h-4.259l-2.28 2.28v-2.28H6.545V4.687h12.767v8.818zM16.777 7.5h-1.687v5.063h1.687V7.5zm-4.5 0H10.59v5.063h1.687V7.5z" />
+            </svg>
+            Connect with Twitch
+          </a>
 
           <div className="flex gap-2 mb-3">
             <input
@@ -189,7 +242,7 @@ export default function StreamsPage() {
               value={channelInput}
               onChange={(e) => { setChannelInput(e.target.value); setChannelError(null); }}
               onKeyDown={(e) => { if (e.key === "Enter") addChannel(); }}
-              placeholder="https://twitch.tv/yourname"
+              placeholder="https://youtube.com/@yourname (YouTube/Kick only)"
               className="flex-1 px-3.5 py-2.5 rounded-lg bg-surface-2 border border-border text-sm text-foreground placeholder:text-subtle focus:outline-none focus:border-accent transition-colors min-w-0"
             />
             <button
@@ -227,8 +280,13 @@ export default function StreamsPage() {
                   >
                     {ch.channel_url}
                   </a>
+                  {ch.twitch_user_id && (
+                    <span className="flex-shrink-0 text-[10px] font-bold font-syne text-accent">
+                      ⚡ Auto-clip on
+                    </span>
+                  )}
                   <button
-                    onClick={() => removeChannel(ch.id)}
+                    onClick={() => removeChannel(ch)}
                     disabled={removingId === ch.id}
                     title="Disconnect channel"
                     className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded text-foreground-muted hover:text-red-400 hover:bg-red-500/10 flex-shrink-0 disabled:opacity-40"
@@ -249,33 +307,22 @@ export default function StreamsPage() {
         </div>
 
         <div className="relative bg-surface border border-accent/25 rounded-xl p-6 overflow-hidden">
-          <div className="absolute top-4 right-4">
-            <span className="px-2.5 py-1 rounded-full bg-accent-glow border border-accent/30 text-[10px] font-bold font-syne text-accent uppercase tracking-wide">
-              Coming soon
-            </span>
-          </div>
           <div className="w-10 h-10 rounded-xl bg-accent-glow flex items-center justify-center text-accent mb-4">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
             </svg>
           </div>
           <h2 className="font-syne text-lg font-semibold text-foreground mb-1">Auto-Clipping</h2>
-          <p className="text-sm text-foreground-muted leading-relaxed mb-5">
-            Once your channel is connected, Klyp will watch for new VODs and clip
-            them automatically — your best moments waiting in the dashboard when
-            you wake up. No links to paste, ever.
+          <p className="text-sm text-foreground-muted leading-relaxed mb-2">
+            Connected Twitch channels are watched automatically — when a stream
+            ends and its VOD publishes, Klyp clips it the same way a manual
+            &quot;Find clips&quot; run would, no link to paste.
           </p>
-          <button
-            onClick={notifyMe}
-            disabled={notified}
-            className={`px-5 py-2.5 rounded-lg text-sm font-bold font-syne transition-colors ${
-              notified
-                ? "bg-accent-glow border border-accent/30 text-accent cursor-default"
-                : "bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm"
-            }`}
-          >
-            {notified ? "✓ You're on the list" : "Notify me at launch"}
-          </button>
+          <p className="text-xs text-foreground-muted leading-relaxed">
+            If your Sparks balance is too low when a new VOD is found, Klyp
+            skips it and notifies you instead of queuing — top up and re-run it
+            manually from the dashboard.
+          </p>
         </div>
       </section>
 

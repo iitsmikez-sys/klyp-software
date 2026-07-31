@@ -38,3 +38,6 @@ next-env.d.ts
 # local tooling logs & session files
 .stripe-listen*.log
 .claude/
+/logs/
+
+.vercel

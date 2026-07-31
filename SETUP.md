@@ -8,6 +8,7 @@
 - **Download all as ZIP** — renders every clip and bundles them client-side
 - **Sparks** — server-enforced credits in Supabase. Free = 60/mo, Pro = 500/mo. Cost estimated before analysis (10–50 ⚡ by VOD length), deducted server-side after. Monthly reset is lazy (applied on next profile read)
 - **Stripe** — Pro subscription ($29/mo), checkout + billing portal + webhook that flips the profile tier
+- **Auto-Clipping (Twitch)** — connect a Twitch channel via OAuth; a `stream.offline` EventSub webhook queues a bounded retry-poll (VODs take a few minutes to publish) that runs the same analysis pipeline automatically when a new VOD appears, plus a low-frequency safety-net sweep in case a webhook is ever missed. Low Sparks balance → skip + in-app notification, never queued
 
 ## One-time setup (do these in order)
 
@@ -52,7 +53,32 @@ Only the Stripe webhook uses it (webhooks have no user session). Never expose it
 Without the webhook running, checkout succeeds but the profile never flips to
 Pro — the webhook is what grants the tier.
 
-### 4. Test the flow end-to-end
+### 4. Twitch — Auto-Clipping
+
+1. Run `supabase/migrations/005_twitch_auto_clip.sql` in the Supabase SQL editor.
+2. Register an app at https://dev.twitch.tv/console/apps → copy the Client ID
+   and generate a Client Secret into:
+   ```
+   TWITCH_CLIENT_ID=
+   TWITCH_CLIENT_SECRET=
+   ```
+3. Add OAuth redirect URIs to that app: `https://www.klyp.world/api/twitch/callback`
+   (and `http://localhost:3000/api/twitch/callback` for local dev).
+4. Generate a random secret for EventSub webhook signature verification
+   (`openssl rand -hex 32`) and set it as `TWITCH_EVENTSUB_SECRET` — **on both**
+   Vercel (registers subscriptions) and the processing service (verifies
+   incoming webhooks and polls Get Videos).
+5. `SUPABASE_SERVICE_ROLE_KEY` must also be set on the processing service now
+   (not just Vercel) — the auto-clip background worker has no per-request user
+   session, so it uses the service-role client throughout.
+
+Twitch has no "VOD published" event, only `stream.offline` — the EventSub
+webhook (processing service, `/api/twitch/eventsub`) queues a bounded
+retry-poll that waits a few minutes and then checks Get Videos until the VOD
+actually appears. A low-frequency safety-net sweep also re-checks every
+connected channel periodically in case a webhook delivery is ever missed.
+
+### 5. Test the flow end-to-end
 
 1. `npm run dev`
 2. Sign in → dashboard shows **60 ⚡** (real balance from Supabase)
