@@ -48,9 +48,7 @@ type FeatureItem =
 
 type PriceDisplay =
   | { kind: "free" }
-  | { kind: "fixed"; amount: string }
-  | { kind: "discounted"; original: string; discounted: string }
-  | { kind: "custom" };
+  | { kind: "fixed"; amount: string };
 
 type Plan = {
   id: string;
@@ -72,68 +70,33 @@ const plans: Plan[] = [
     price: { kind: "free" },
     features: [
       { kind: "check", text: "60 Sparks per month" },
-      { kind: "check", text: "Up to 1080p rendered clips" },
-      { kind: "check", text: "Auto reframe" },
-      { kind: "check", text: "AI captions with emoji and keyword highlighter" },
-      { kind: "warn",  text: "Watermark on all clips" },
-      { kind: "warn",  text: "No clip editing" },
-      { kind: "warn",  text: "Clips cannot be exported after 3 days" },
+      { kind: "check", text: "AI clip detection with viral scores" },
+      { kind: "check", text: "9:16 vertical exports at 1080×1920" },
+      { kind: "check", text: "AI captions — BOLD, CLEAN & KLYP styles" },
+      { kind: "check", text: "AI hook generator" },
+      { kind: "warn",  text: "Moving klyp.world watermark on every clip" },
     ],
     cta: { label: "Create an account", href: "/login" },
   },
   {
-    id: "starter",
-    name: "STARTER",
-    tagline: "For individual creators",
-    price: { kind: "fixed", amount: "$15" },
-    features: [
-      { kind: "check", text: "150 Sparks per month" },
-      { kind: "check", text: "AI clipping with Virality Score" },
-      { kind: "check", text: "AI animated captions in 20+ languages" },
-      { kind: "check", text: "Export to TikTok, Reels & Shorts" },
-      { kind: "check", text: "Powerful clip editor" },
-      { kind: "check", text: "1 brand template" },
-      { kind: "check", text: "Filler & silence removal" },
-      { kind: "check", text: "No watermark" },
-    ],
-    cta: { label: "Start your free trial", subtext: "No credit card required", href: "/login" },
-  },
-  {
     id: "pro",
     name: "PRO",
-    tagline: "For professional creators & teams",
-    price: { kind: "discounted", original: "$29", discounted: "$14.5" },
+    tagline: "For streamers clipping every session",
+    price: { kind: "fixed", amount: "$28" },
     features: [
-      { kind: "check",   text: "3,600 Sparks per year, available instantly" },
-      { kind: "check",   text: "Team workspace with 2 seats" },
-      { kind: "check",   text: "2 brand templates" },
-      { kind: "divider", text: "Everything in Starter, plus:" },
-      { kind: "check",   text: "AI B-roll" },
-      { kind: "check",   text: "Input from 10+ sources" },
-      { kind: "check",   text: "Multiple aspect ratios (9:16, 1:1, 16:9)" },
-      { kind: "check",   text: "Social media scheduler" },
-      { kind: "check",   text: "Custom fonts" },
-      { kind: "check",   text: "Limited API access" },
+      { kind: "check",   text: "500 Sparks per month — 8× more analyses" },
+      { kind: "check",   text: "No watermark. Clean clips, your brand only" },
+      { kind: "divider", text: "Everything in Free, plus:" },
+      { kind: "check",   text: "Raw exports — edit clips yourself in CapCut" },
+      { kind: "check",   text: "Every format — 9:16, 1:1 and 16:9" },
+      { kind: "check",   text: "Streamer handle overlay on exports" },
+      { kind: "check",   text: "Twitch chat spike detection" },
+      { kind: "check",   text: "Download all clips as a ZIP" },
+      { kind: "check",   text: "Priority support" },
     ],
-    cta: { label: "Start your free trial", href: "/login" },
+    cta: { label: "Get Klyp Pro", subtext: "Cancel anytime", href: "/login" },
     highlighted: true,
     badge: "Most Popular",
-  },
-  {
-    id: "business",
-    name: "BUSINESS",
-    tagline: "For organizations that need tailored solutions, API, and more",
-    price: { kind: "custom" },
-    features: [
-      { kind: "divider", text: "Everything in Pro, plus:" },
-      { kind: "check",   text: "Priority processing" },
-      { kind: "check",   text: "Customized Sparks & seats" },
-      { kind: "check",   text: "Dedicated storage" },
-      { kind: "check",   text: "API & custom integrations" },
-      { kind: "check",   text: "Priority support" },
-      { kind: "check",   text: "Enterprise security" },
-    ],
-    cta: { label: "Contact us", href: "/login" },
   },
 ];
 
@@ -147,31 +110,10 @@ function Price({ p }: { p: PriceDisplay }) {
       </div>
     );
   }
-  if (p.kind === "fixed") {
-    return (
-      <div className="flex items-end gap-1.5 min-h-[3.5rem]">
-        <span className="font-syne text-4xl font-bold text-foreground">{p.amount}</span>
-        <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
-      </div>
-    );
-  }
-  if (p.kind === "discounted") {
-    return (
-      <div className="min-h-[3.5rem]">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-foreground-muted line-through text-base">{p.original}</span>
-          <span className="text-xs font-medium text-accent bg-accent-glow px-1.5 py-0.5 rounded">50% off</span>
-        </div>
-        <div className="flex items-end gap-1.5">
-          <span className="font-syne text-4xl font-bold text-accent">{p.discounted}</span>
-          <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
-        </div>
-      </div>
-    );
-  }
   return (
-    <div className="flex items-end min-h-[3.5rem]">
-      <span className="font-syne text-3xl font-bold text-foreground">Custom pricing</span>
+    <div className="flex items-end gap-1.5 min-h-[3.5rem]">
+      <span className="font-syne text-4xl font-bold text-accent">{p.amount}</span>
+      <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
     </div>
   );
 }
@@ -222,8 +164,8 @@ export default function PricingSection() {
         </div>
       </FadeIn>
 
-      {/* Cards grid: 1 col → 2 col (md) → 4 col (xl) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 items-start">
+      {/* Cards grid: 1 col → 2 col (md) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start max-w-3xl mx-auto">
         {plans.map((plan, i) => {
           const isHighlighted = plan.highlighted;
 
@@ -232,7 +174,7 @@ export default function PricingSection() {
               <div
                 className={`relative flex flex-col rounded-2xl border p-6 transition-all duration-200 hover:-translate-y-1 ${
                   isHighlighted
-                    ? "bg-surface border-accent/50 shadow-accent-glow xl:-my-4 xl:py-10"
+                    ? "bg-surface border-accent/50 shadow-accent-glow md:-my-4 md:py-10"
                     : "bg-surface border-border hover:border-subtle"
                 }`}
               >

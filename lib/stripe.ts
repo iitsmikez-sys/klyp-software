@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 
 /** Pro plan price in cents — used when STRIPE_PRICE_PRO isn't set. */
-export const PRO_PRICE_CENTS = 2900;
+export const PRO_PRICE_CENTS = 2800;
 
 let client: Stripe | null = null;
 

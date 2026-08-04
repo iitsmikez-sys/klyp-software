@@ -177,7 +177,7 @@ export default function UpgradePage() {
             </p>
           )}
           <div className="flex items-end gap-1.5 mb-3">
-            <span className="font-syne text-4xl font-bold text-accent">$29</span>
+            <span className="font-syne text-4xl font-bold text-accent">$28</span>
             <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
           </div>
 

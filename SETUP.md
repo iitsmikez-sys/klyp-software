@@ -7,7 +7,7 @@
 - **Export** — FFmpeg cuts each clip, crops 9:16 1080×1920, burns captions (BOLD / CLEAN / KLYP), optional `@handle` overlay (top-right), animated `klyp.world` watermark on free tier
 - **Download all as ZIP** — renders every clip and bundles them client-side
 - **Sparks** — server-enforced credits in Supabase. Free = 60/mo, Pro = 500/mo. Cost estimated before analysis (10–50 ⚡ by VOD length), deducted server-side after. Monthly reset is lazy (applied on next profile read)
-- **Stripe** — Pro subscription ($29/mo), checkout + billing portal + webhook that flips the profile tier
+- **Stripe** — Pro subscription ($28/mo), checkout + billing portal + webhook that flips the profile tier
 - **Auto-Clipping (Twitch)** — connect a Twitch channel via OAuth; a `stream.offline` EventSub webhook queues a bounded retry-poll (VODs take a few minutes to publish) that runs the same analysis pipeline automatically when a new VOD appears, plus a low-frequency safety-net sweep in case a webhook is ever missed. Low Sparks balance → skip + in-app notification, never queued
 
 ## One-time setup (do these in order)
@@ -46,7 +46,7 @@ Only the Stripe webhook uses it (webhooks have no user session). Never expose it
    ```
    STRIPE_WEBHOOK_SECRET=whsec_…
    ```
-4. `STRIPE_PRICE_PRO` is optional — leave empty and Klyp creates the $29/mo
+4. `STRIPE_PRICE_PRO` is optional — leave empty and Klyp creates the $28/mo
    price inline at checkout. Set it to a `price_…` id if you pre-create the
    product in the Stripe dashboard (cleaner for prod).
 

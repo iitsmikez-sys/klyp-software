@@ -16,7 +16,7 @@ export default function ProGateModal({ onClose }: { onClose: () => void }) {
         <h3 className="font-syne text-lg font-bold text-foreground mb-2">This is a Pro feature</h3>
         <p className="text-sm text-foreground-muted leading-relaxed mb-6">
           Upgrade to remove watermarks, publish directly, upscale clips and more.{" "}
-          <span className="text-foreground font-semibold">$29/month</span>
+          <span className="text-foreground font-semibold">$28/month</span>
         </p>
         <a
           href="/dashboard/upgrade"

@@ -188,7 +188,7 @@ export default function SettingsPage() {
                 {tier === "pro" ? "⚡ PRO" : "FREE"}
               </span>
               <span className="text-sm text-foreground-muted">
-                {tier === "pro" ? "$29/mo · no watermark · 500 ⚡/mo" : "60 ⚡/mo · watermarked exports"}
+                {tier === "pro" ? "$28/mo · no watermark · 500 ⚡/mo" : "60 ⚡/mo · watermarked exports"}
               </span>
             </div>
             <UpgradeButton />
