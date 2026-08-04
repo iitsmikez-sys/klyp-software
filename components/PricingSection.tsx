@@ -82,7 +82,7 @@ const plans: Plan[] = [
     id: "pro",
     name: "PRO",
     tagline: "For streamers clipping every session",
-    price: { kind: "fixed", amount: "$28" },
+    price: { kind: "fixed", amount: "$29" },
     features: [
       { kind: "check",   text: "500 Sparks per month — 8× more analyses" },
       { kind: "check",   text: "No watermark. Clean clips, your brand only" },

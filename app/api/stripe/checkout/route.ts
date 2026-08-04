@@ -1,7 +1,7 @@
 /**
  * POST /api/stripe/checkout — start a Pro subscription checkout.
  *
- * Uses STRIPE_PRICE_PRO if set; otherwise creates the $28/mo price inline so
+ * Uses STRIPE_PRICE_PRO if set; otherwise creates the $29/mo price inline so
  * the flow works with nothing but STRIPE_SECRET_KEY configured.
  * The webhook (app/api/stripe/webhook) flips the profile to Pro on completion.
  */
