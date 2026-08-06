@@ -24,7 +24,12 @@ function killTree(proc: ChildProcess) {
  * as an opaque "exited with code 1" — this turns it into an actionable error.
  */
 function isDiskSpaceError(text: string): boolean {
-  return /no space left on device|not enough space|disk full|enospc/i.test(text);
+  return /no space left on device|not enough space|disk full|enospc|free disk space/i.test(text);
+}
+
+/** True if a thrown error is a disk-full failure — lets callers free space and retry. */
+export function isDiskFullError(err: unknown): boolean {
+  return isDiskSpaceError(err instanceof Error ? err.message : String(err));
 }
 const DISK_SPACE_ERROR_MESSAGE =
   "ran out of disk space (no space left on device). Free up space in the video cache and try again.";
@@ -199,6 +204,11 @@ export async function runYtDlpWithRetry(
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Check disk-full FIRST. A download that wedges because the drive is
+      // full gets killed by stallTimeoutMs, which looks "transient" — and
+      // was then reported as "YouTube is rate-limiting downloads", sending
+      // people chasing a throttling problem they don't have.
+      if (isDiskSpaceError(message)) throw err;
       const transient = TRANSIENT_YTDLP_ERROR.test(message);
       if (!transient || attempt >= retries) {
         throw transient

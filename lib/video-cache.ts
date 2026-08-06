@@ -4,13 +4,21 @@
  * Module-level Map dedupes concurrent requests for the same VOD.
  */
 import { createHash } from "crypto";
-import { mkdir, readdir, stat, unlink } from "fs/promises";
+import { mkdir, readdir, stat, statfs, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { resolveBin, runYtDlpWithRetry } from "@/lib/bin";
+import { isDiskFullError, resolveBin, runYtDlpWithRetry } from "@/lib/bin";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
+
+const GB = 1024 * 1024 * 1024;
+
+/** Read a GB-valued env override, falling back to a default. */
+function envGb(name: string, fallbackGb: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw > 0 ? raw * GB : fallbackGb * GB;
+}
 
 /**
  * Total cache size cap. Once exceeded, the oldest completed VOD downloads
@@ -20,7 +28,20 @@ export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
  * free and caused preview/export to fail unpredictably at whichever step
  * happened to run out of space first.
  */
-const CACHE_MAX_BYTES = 60 * 1024 * 1024 * 1024; // 60 GB
+const CACHE_MAX_BYTES = envGb("KLYP_CACHE_MAX_GB", 20);
+
+/**
+ * Free space to keep available on the cache's volume at all times.
+ *
+ * The size cap alone is NOT enough, and this is the bug that made "ran out
+ * of disk space" keep coming back: the cap only bounds what *we* store, so
+ * on a drive that's already low on space the cache can sit happily under
+ * the cap while the volume itself has nothing left — and yt-dlp/ffmpeg,
+ * which never check free space up front, die mid-write with ENOSPC. We now
+ * evict against real free space too, so a full VOD download can't wedge the
+ * disk regardless of how big the cache happens to be.
+ */
+const MIN_FREE_BYTES = envGb("KLYP_CACHE_MIN_FREE_GB", 15);
 
 const log = (...args: unknown[]) => console.log("[video-cache]", new Date().toISOString(), ...args);
 
@@ -160,13 +181,31 @@ async function waitForConcurrentDownload(outPath: string, key: string): Promise<
   throw new Error("Timed out waiting for a concurrent download of this video to finish.");
 }
 
+/** Bytes actually available on the cache's volume — null if unavailable. */
+async function freeBytes(): Promise<number | null> {
+  try {
+    const fs = await statfs(CACHE_DIR);
+    return fs.bavail * fs.bsize;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * If the cache directory is over CACHE_MAX_BYTES, delete completed VOD
- * downloads oldest-first (by mtime) until back under the cap. Skips
+ * Free cache space before a download, on two independent triggers:
+ *
+ *   1. the cache is over CACHE_MAX_BYTES (bounds what we hoard), and
+ *   2. the volume has less than MIN_FREE_BYTES available (bounds what the
+ *      *disk* has left, which is what actually makes yt-dlp die with ENOSPC).
+ *
+ * Completed VOD downloads are deleted oldest-first (LRU by mtime). Skips
  * uploaded files and the key about to be downloaded. Best-effort: a file
  * that's mid-read by a concurrent preview/export request is left alone.
+ *
+ * `aggressive` drops every evictable file regardless of the thresholds —
+ * used to recover after an actual disk-full failure.
  */
-async function evictIfOverCap(excludeKey: string): Promise<void> {
+async function ensureCacheSpace(excludeKey: string, aggressive = false): Promise<void> {
   let names: string[];
   try {
     names = await readdir(CACHE_DIR);
@@ -188,12 +227,22 @@ async function evictIfOverCap(excludeKey: string): Promise<void> {
       candidates.push({ name, size: s.size, mtimeMs: s.mtimeMs });
     }
   }
-  if (total <= CACHE_MAX_BYTES) return;
+
+  const free = await freeBytes();
+  const overCap = Math.max(0, total - CACHE_MAX_BYTES);
+  const shortOnDisk = free === null ? 0 : Math.max(0, MIN_FREE_BYTES - free);
+  const toFree = aggressive ? Infinity : Math.max(overCap, shortOnDisk);
+  if (toFree <= 0) return;
 
   candidates.sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
-  const toFree = total - CACHE_MAX_BYTES;
+  log(
+    "freeing cache space",
+    `cache ${(total / 1e9).toFixed(1)}GB / ${(CACHE_MAX_BYTES / 1e9).toFixed(0)}GB`,
+    free === null ? "(disk free unknown)" : `disk free ${(free / 1e9).toFixed(1)}GB / ${(MIN_FREE_BYTES / 1e9).toFixed(0)}GB floor`,
+    aggressive ? "— aggressive" : `— need ${(toFree / 1e9).toFixed(1)}GB`
+  );
+
   let freed = 0;
-  log("cache over cap", `${(total / 1e9).toFixed(1)}GB / ${(CACHE_MAX_BYTES / 1e9).toFixed(0)}GB`, "— evicting oldest");
   for (const c of candidates) {
     if (freed >= toFree) break;
     try {
@@ -202,6 +251,20 @@ async function evictIfOverCap(excludeKey: string): Promise<void> {
       log("evicted", c.name, `${(c.size / 1e9).toFixed(1)}GB`);
     } catch {
       // likely open for a concurrent request — skip, try the next oldest
+    }
+  }
+
+  // Still short after evicting everything we're allowed to touch: the space
+  // is being used by something outside the cache, so say so up front rather
+  // than letting yt-dlp fail halfway through a long download.
+  if (!aggressive && freed < toFree) {
+    const nowFree = await freeBytes();
+    if (nowFree !== null && nowFree < MIN_FREE_BYTES) {
+      throw new Error(
+        `Not enough free disk space to download this VOD — ${(nowFree / 1e9).toFixed(1)}GB free, ` +
+          `Klyp needs ${(MIN_FREE_BYTES / 1e9).toFixed(0)}GB. Free up space on the drive holding ${CACHE_DIR}, ` +
+          `or lower the requirement with KLYP_CACHE_MIN_FREE_GB.`
+      );
     }
   }
 }
@@ -230,11 +293,13 @@ export async function ensureSourceVideo(url: string): Promise<string> {
     }
 
     await pruneStaleArtifacts(key);
-    await evictIfOverCap(key).catch((err) => log("eviction check failed (non-fatal)", err));
+    // A thrown "not enough free disk space" here is deliberate and must
+    // propagate; only genuine eviction faults are swallowed as non-fatal.
+    await ensureCacheSpace(key);
 
-    const startedAt = Date.now();
-    log("download start", key, url.slice(0, 100));
-    try {
+    const attempt = async (): Promise<string> => {
+      const startedAt = Date.now();
+      log("download start", key, url.slice(0, 100));
       await runYtDlpWithRetry(
         [
           "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b",
@@ -255,9 +320,28 @@ export async function ensureSourceVideo(url: string): Promise<string> {
       const { size } = await stat(outPath);
       log("download done", key, `${((Date.now() - startedAt) / 1000).toFixed(1)}s`, `${(size / 1e9).toFixed(2)}GB`);
       return outPath;
+    };
+
+    try {
+      return await attempt();
     } catch (err) {
       log("download FAILED", key, err instanceof Error ? err.message : String(err));
       await pruneStaleArtifacts(key); // don't leave partial debris behind on failure
+
+      // Ran the disk dry mid-download (the VOD was bigger than the headroom
+      // we reserved). Drop every other cached VOD and take one more shot
+      // instead of handing the user a dead end they can't act on.
+      if (isDiskFullError(err)) {
+        log("disk full — evicting the whole cache and retrying once", key);
+        await ensureCacheSpace(key, true).catch((e) => log("aggressive eviction failed (non-fatal)", e));
+        try {
+          return await attempt();
+        } catch (retryErr) {
+          log("download FAILED after cache purge", key, retryErr instanceof Error ? retryErr.message : String(retryErr));
+          await pruneStaleArtifacts(key);
+          throw retryErr;
+        }
+      }
       throw err;
     }
   })();
