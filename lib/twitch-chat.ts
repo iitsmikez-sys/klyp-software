@@ -121,3 +121,39 @@ export function formatSpikesForPrompt(spikes: ChatSpike[]): string {
     .map((s) => `[${stamp(s.seconds)}] chat activity ${s.intensity.toFixed(1)}× the stream average`);
   return `Twitch chat replay spikes (moments where chat exploded — strong viral signals):\n${lines.join("\n")}`;
 }
+
+/* ── Audio windows for segmented analysis ──────────────────────────
+ * Long VODs don't need their whole audio transcribed: the spikes already say
+ * where the action is. These windows drive lib/analyze-pipeline.ts's segmented
+ * download path (see the note there for why it's Twitch-only).
+ */
+
+/** Audio captured around each spike. */
+export const SEGMENT_WINDOW_S = 60;
+/** Ceiling on total fetched audio, so a spiky VOD can't creep back to full length. */
+export const SEGMENT_MAX_TOTAL_S = 30 * 60;
+
+export type AudioWindow = { start: number; end: number };
+
+/**
+ * Turn spike timestamps into non-overlapping windows, strongest spike first,
+ * stopping at the total-audio ceiling. Returned in chronological order so the
+ * transcript reads forward.
+ */
+export function spikeWindows(spikes: ChatSpike[], durationSeconds: number): AudioWindow[] {
+  const half = SEGMENT_WINDOW_S / 2;
+  const chosen: AudioWindow[] = [];
+  let total = 0;
+
+  for (const spike of [...spikes].sort((a, b) => b.intensity - a.intensity)) {
+    if (total >= SEGMENT_MAX_TOTAL_S) break;
+    const start = Math.max(0, Math.round(spike.seconds - half));
+    const end = Math.min(Math.round(durationSeconds), Math.round(spike.seconds + half));
+    if (end <= start) continue;
+    // A weaker spike inside a window we already took adds nothing.
+    if (chosen.some((w) => start < w.end && end > w.start)) continue;
+    chosen.push({ start, end });
+    total += end - start;
+  }
+  return chosen.sort((a, b) => a.start - b.start);
+}

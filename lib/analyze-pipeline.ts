@@ -14,7 +14,14 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { AssemblyAI } from "assemblyai";
 import { ClipAnalysisSchema, ClipSchema, type Clip, type AnalyzeStage, type TimedWord } from "@/lib/clips";
 import { ffmpegLocationArgs, resolveBin, run, runYtDlpWithRetry } from "@/lib/bin";
-import { type ChatSpike, formatSpikesForPrompt, detectChatSpikes } from "@/lib/twitch-chat";
+import {
+  type ChatSpike,
+  type AudioWindow,
+  formatSpikesForPrompt,
+  detectChatSpikes,
+  twitchVideoId,
+  spikeWindows,
+} from "@/lib/twitch-chat";
 import { type ClipCount } from "@/lib/sparks";
 
 /* ── Stage 2: download audio with yt-dlp ── */
@@ -63,6 +70,90 @@ export async function extractAudio(sourcePath: string, dir: string): Promise<str
     { stallTimeoutMs: 30_000, maxRunMs: 10 * 60_000 }
   );
   return outPath;
+}
+
+/* ── Segmented audio for long Twitch VODs ──────────────────────────
+ * Full-VOD audio is ~216kbps, so a 10.9h stream is ~1GB and roughly five
+ * minutes of download before transcription even starts — and AssemblyAI then
+ * bills and chews through all 10.9 hours. For long Twitch VODs we already
+ * know where the interesting moments are (chat spikes), so we fetch only
+ * windows around them: ~20 × 60s ≈ 32MB instead of 1GB.
+ *
+ * Deliberately NOT used for YouTube or uploaded files: detectChatSpikes()
+ * returns null for anything that isn't a twitch.tv/videos/ URL, so there
+ * would be no candidate windows and the analysis would find nothing. Those
+ * keep the full-transcript path.
+ */
+
+/** Below this length, full audio is quick enough that segmenting isn't worth
+ *  trading transcript coverage for. */
+const SEGMENT_MIN_VOD_S = 2 * 3600;
+/** Parallel segment downloads / transcriptions. */
+const SEGMENT_CONCURRENCY = 3;
+
+/** Download the audio for one window. Exact range, no padding — see the note
+ *  on resolveSourceSegment in lib/video-cache.ts for why padding is a trap. */
+async function downloadAudioWindow(url: string, dir: string, w: AudioWindow): Promise<string> {
+  const stem = `win-${w.start}-${w.end}`;
+  await runYtDlpWithRetry(
+    [
+      "-f", "bestaudio/best",
+      "--no-playlist",
+      "--socket-timeout", "30",
+      "--retries", "3",
+      "--fragment-retries", "5",
+      ...ffmpegLocationArgs(),
+      "--download-sections", `*${w.start}-${w.end}`,
+      "--force-keyframes-at-cuts",
+      "--concurrent-fragments", "4",
+      "-o", path.join(dir, `${stem}.%(ext)s`),
+      url,
+    ],
+    { stallTimeoutMs: 60_000, maxRunMs: 5 * 60_000 }
+  );
+  const produced = (await readdir(dir)).find((f) => f.startsWith(`${stem}.`));
+  if (!produced) throw new Error(`Segment ${w.start}-${w.end}s produced no audio file.`);
+  return path.join(dir, produced);
+}
+
+/** Run tasks with bounded parallelism, preserving input order in the results. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+/**
+ * Transcribe each window and shift its word timestamps into the VOD's absolute
+ * timeline. Without the shift every clip would point at the wrong moment,
+ * since each segment's transcript starts at zero.
+ */
+async function transcribeWindows(paths: string[], windows: AudioWindow[]): Promise<TimedWord[]> {
+  const perWindow = await mapWithConcurrency(paths, SEGMENT_CONCURRENCY, async (audioPath, i) => {
+    const offsetMs = windows[i].start * 1000;
+    try {
+      const { words } = await transcribe(audioPath);
+      return words.map((w) => ({ ...w, start: w.start + offsetMs, end: w.end + offsetMs }));
+    } catch (err) {
+      // A silent window (transcribe throws on zero words) must not sink the
+      // whole analysis — the other windows still carry the good moments.
+      console.warn(`[analyze] window ${windows[i].start}-${windows[i].end}s produced no transcript:`, err);
+      return [] as TimedWord[];
+    }
+  });
+  return perWindow.flat().sort((a, b) => a.start - b.start);
 }
 
 /* ── Stage 3: transcribe with AssemblyAI ── */
@@ -355,20 +446,65 @@ export async function runAnalysisPipeline(opts: {
 
   memSnapshot("pipeline start");
 
-  progress("download", "running", durationHint ? Math.max(10, Math.round(durationHint / 60)) : undefined);
-  const audioPath = await withMem("download", () =>
-    uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir)
-  );
-  progress("download", "done");
+  // Long Twitch VODs: fetch audio only around chat spikes instead of the whole
+  // stream. Needs the spikes BEFORE downloading, so resolve them up front —
+  // they're cheap (sampled GQL pages) and reused for the prompt later.
+  const canSegment =
+    !uploadedPath &&
+    !!durationHint &&
+    durationHint >= SEGMENT_MIN_VOD_S &&
+    twitchVideoId(url) !== null;
+  let spikesForPlan: ChatSpike[] | null = null;
+  if (canSegment) {
+    spikesForPlan = await (
+      opts.chatSpikesPromise ?? detectChatSpikes(url, durationHint!).catch(() => null)
+    );
+  }
+  const windows =
+    canSegment && spikesForPlan?.length ? spikeWindows(spikesForPlan, durationHint!) : [];
 
-  progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
-  const { words, durationSeconds } = await withMem("transcribe", () => transcribe(audioPath));
+  progress("download", "running", durationHint ? Math.max(10, Math.round(durationHint / 60)) : undefined);
+  let words: TimedWord[];
+  let durationSeconds: number;
+
+  if (windows.length > 0) {
+    const totalWindowS = windows.reduce((sum, w) => sum + (w.end - w.start), 0);
+    console.log(
+      `[analyze] segmented: ${windows.length} windows, ${totalWindowS}s of audio ` +
+        `instead of ${Math.round(durationHint!)}s of full VOD`
+    );
+    const paths = await withMem("download", () =>
+      mapWithConcurrency(windows, SEGMENT_CONCURRENCY, (w) => downloadAudioWindow(url, workDir, w))
+    );
+    progress("download", "done");
+
+    progress("transcribe", "running", Math.max(20, Math.round(totalWindowS * 0.25)));
+    words = await withMem("transcribe", () => transcribeWindows(paths, windows));
+    if (words.length === 0) {
+      throw new Error("Transcription returned no words — the VOD may have no speech.");
+    }
+    // The VOD's real length, not the sampled total: clip bounds and the prompt
+    // both reason about positions in the original stream.
+    durationSeconds = Math.round(durationHint!);
+  } else {
+    const audioPath = await withMem("download", () =>
+      uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir)
+    );
+    progress("download", "done");
+
+    progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
+    const result = await withMem("transcribe", () => transcribe(audioPath));
+    words = result.words;
+    durationSeconds = result.durationSeconds;
+  }
   console.log(`[mem] transcribe produced ${words.length} words`);
   progress("transcribe", "done");
 
   progress("analyze", "running", Math.min(90, 30 + Math.round(durationSeconds / 120)));
   let chatSpikesPromise = opts.chatSpikesPromise;
-  if (!chatSpikesPromise && !uploadedPath) {
+  if (spikesForPlan) {
+    chatSpikesPromise = Promise.resolve(spikesForPlan); // already resolved above
+  } else if (!chatSpikesPromise && !uploadedPath) {
     chatSpikesPromise = detectChatSpikes(url, durationSeconds).catch(() => null);
   }
   const transcriptText = await withMem("format-transcript", async () => formatTranscript(words));
