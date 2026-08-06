@@ -56,7 +56,7 @@ VOD URL
                     { start_seconds, end_seconds, type, viral_score, title, caption, reason }
 ```
 
-Clip types: `CLUTCH` · `FUNNY` · `RAGE` · `UNHINGED` · `HIGHLIGHT`
+Clip types — Gaming: `CLUTCH` · `FUNNY` · `RAGE` · `EPIC` · `FAIL` · `BIG_BRAIN` · `EMOTIONAL` · `SUS`. IRL: `STORY_TIME` · `FUNNY` · `RAGE` · `FAIL` · `AWKWARD` · `PUBLIC_INTERACTION` · `EMOTIONAL` · `SUS`. (`UNHINGED` / `HIGHLIGHT` are legacy.)
 
 Key files:
 

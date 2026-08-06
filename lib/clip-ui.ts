@@ -28,6 +28,10 @@ export const TYPE_STYLES: Record<string, string> = {
   BIG_BRAIN: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   EMOTIONAL: "bg-rose-500/15 text-rose-400 border-rose-500/30",
   SUS: "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30",
+  // IRL-only types
+  STORY_TIME: "bg-teal-500/15 text-teal-400 border-teal-500/30",
+  AWKWARD: "bg-lime-500/15 text-lime-400 border-lime-500/30",
+  PUBLIC_INTERACTION: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
   UNHINGED: "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30",
   HIGHLIGHT: "bg-accent-glow text-accent border-accent/30",
 };
@@ -42,12 +46,18 @@ export const TYPE_BAR_COLORS: Record<string, string> = {
   BIG_BRAIN: "bg-emerald-400",
   EMOTIONAL: "bg-rose-400",
   SUS: "bg-fuchsia-400",
+  // IRL-only types
+  STORY_TIME: "bg-teal-400",
+  AWKWARD: "bg-lime-400",
+  PUBLIC_INTERACTION: "bg-indigo-400",
   UNHINGED: "bg-fuchsia-400",
   HIGHLIGHT: "bg-accent",
 };
 
 export const CLIP_TYPE_ORDER = [
   "CLUTCH", "FUNNY", "RAGE", "EPIC", "FAIL", "BIG_BRAIN", "EMOTIONAL", "SUS",
+  // IRL-only
+  "STORY_TIME", "AWKWARD", "PUBLIC_INTERACTION",
   // legacy
   "UNHINGED", "HIGHLIGHT",
 ];

@@ -23,7 +23,8 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
-import type { AnalyzeResponse, AnalyzeEvent, AnalyzeStage } from "@/lib/clips";
+import type { AnalyzeResponse, AnalyzeEvent, AnalyzeStage, ContentType } from "@/lib/clips";
+import { CONTENT_TYPES, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
 import { findUploadedVideo } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
@@ -71,6 +72,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let uploadId: string | undefined; // set when analyzing an uploaded file instead of a URL
   let durationHint: number | undefined; // optional, from the client's cost preview — used for ETAs
   let clipCount: ClipCount = DEFAULT_CLIP_COUNT;
+  let contentType: ContentType = DEFAULT_CONTENT_TYPE;
   try {
     const body = await req.json();
     url = String(body.url ?? "").trim();
@@ -80,6 +82,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     if (Number.isFinite(hint) && hint > 0) durationHint = hint;
     if ((CLIP_COUNT_OPTIONS as readonly number[]).includes(Number(body.clipCount))) {
       clipCount = Number(body.clipCount) as ClipCount;
+    }
+    if ((CONTENT_TYPES as readonly string[]).includes(body.contentType)) {
+      contentType = body.contentType as ContentType;
     }
   } catch {
     return fail("validate", "Request body must be JSON: { \"url\": \"...\" } or { \"uploadId\": \"...\" }", 400);
@@ -138,7 +143,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const reqId = Math.random().toString(36).slice(2, 8);
   const log = (...args: unknown[]) =>
     console.log(`[analyze ${reqId}]`, new Date().toISOString(), ...args);
-  log("start", uploadId ? `upload:${uploadId}` : url, `clips=${clipCount}`, `hint=${durationHint ?? "-"}s`);
+  log("start", uploadId ? `upload:${uploadId}` : url, `clips=${clipCount}`, `content=${contentType}`, `hint=${durationHint ?? "-"}s`);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -173,6 +178,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           url,
           durationHint,
           clipCount,
+          contentType,
           workDir,
           chatSpikesPromise: spikesPromise,
           onProgress: (progressStage, status, etaSeconds) => {

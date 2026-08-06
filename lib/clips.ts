@@ -25,13 +25,39 @@ export const FORMAT_LABELS: Record<ExportFormat, string> = {
 };
 
 /**
- * The clip categories Klyp's analysis brain (MIDAS) assigns.
- * Keep in sync with the prompt in app/api/analyze/route.ts
- * and the badge colors in components/AnalyzePanel.tsx / lib/clip-ui.ts.
+ * The clip categories Klyp's analysis brain (MIDAS) assigns — the union of
+ * both content types' sets. Keep in sync with the prompt in
+ * lib/analyze-pipeline.ts and the badge colors in components/AnalyzePanel.tsx
+ * / lib/clip-ui.ts.
  * (UNHINGED / HIGHLIGHT are legacy types — old saved clips may still carry them.)
  */
-export const CLIP_TYPES = ["CLUTCH", "FUNNY", "RAGE", "EPIC", "FAIL", "BIG_BRAIN", "EMOTIONAL", "SUS"] as const;
+export const CLIP_TYPES = [
+  "CLUTCH", "FUNNY", "RAGE", "EPIC", "FAIL", "BIG_BRAIN", "EMOTIONAL", "SUS",
+  "STORY_TIME", "AWKWARD", "PUBLIC_INTERACTION",
+] as const;
 export type ClipType = (typeof CLIP_TYPES)[number];
+
+/** VOD content type — chosen by the user on the analyze form, changes which
+ *  clip types MIDAS is allowed to assign (see CLIP_TYPES_BY_CONTENT). */
+export const CONTENT_TYPES = ["gaming", "irl"] as const;
+export type ContentType = (typeof CONTENT_TYPES)[number];
+export const DEFAULT_CONTENT_TYPE: ContentType = "gaming";
+
+export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
+  gaming: "Gaming",
+  irl: "IRL",
+};
+
+/**
+ * Which clip types are valid per content type. CLUTCH and BIG_BRAIN rarely
+ * apply outside gameplay, so IRL swaps them for STORY_TIME / AWKWARD /
+ * PUBLIC_INTERACTION; FUNNY/RAGE/FAIL/EMOTIONAL/SUS are universal. Keep in
+ * sync with the CLIP TYPES prompt section in lib/analyze-pipeline.ts.
+ */
+export const CLIP_TYPES_BY_CONTENT: Record<ContentType, readonly ClipType[]> = {
+  gaming: ["CLUTCH", "FUNNY", "RAGE", "EPIC", "FAIL", "BIG_BRAIN", "EMOTIONAL", "SUS"],
+  irl: ["FUNNY", "RAGE", "FAIL", "EMOTIONAL", "SUS", "STORY_TIME", "AWKWARD", "PUBLIC_INTERACTION"],
+};
 
 /**
  * The 6 detection signals MIDAS scans the transcript for.
@@ -53,7 +79,7 @@ export const ClipSchema = z.object({
   end_seconds: z.number().describe("Clip end time in seconds from the beginning of the VOD"),
   type: z
     .enum(CLIP_TYPES)
-    .describe("The clip category — exactly one of the 8 clip types (CLUTCH/FUNNY/RAGE/EPIC/FAIL/BIG_BRAIN/EMOTIONAL/SUS). Never a signal name."),
+    .describe("The clip category — exactly one of the clip types valid for this VOD's content type (see CLIP_TYPES_BY_CONTENT). Never a signal name."),
   signals: z
     .array(z.enum(CLIP_SIGNALS))
     .min(1)
@@ -81,6 +107,30 @@ export const ClipAnalysisSchema = z.object({
 
 export type Clip = z.infer<typeof ClipSchema>;
 export type ClipAnalysis = z.infer<typeof ClipAnalysisSchema>;
+
+/**
+ * Content-type-scoped variants of ClipSchema/ClipAnalysisSchema, restricting
+ * "type" to exactly the set for that content type. Used both to constrain
+ * Claude's structured output request and to validate its response, so an
+ * IRL analysis can't come back with a CLUTCH clip (or vice versa).
+ */
+export function clipSchemaForContentType(contentType: ContentType) {
+  const types = CLIP_TYPES_BY_CONTENT[contentType] as [ClipType, ...ClipType[]];
+  return ClipSchema.extend({
+    type: z
+      .enum(types)
+      .describe(`The clip category — exactly one of the ${contentType} clip types (${types.join("/")}). Never a signal name.`),
+  });
+}
+
+export function clipAnalysisSchemaForContentType(contentType: ContentType) {
+  return z.object({
+    clips: z
+      .array(clipSchemaForContentType(contentType))
+      .max(20)
+      .describe("The best clippable moments (up to the requested count, only those above the quality floor), ordered by viral_score descending"),
+  });
+}
 
 /** Clip enriched with per-clip word timestamps (added after Claude analysis, not in schema). */
 export type ClipWithWords = Clip & { words: TimedWord[] };

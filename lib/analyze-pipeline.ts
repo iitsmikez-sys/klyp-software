@@ -12,7 +12,16 @@ import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { AssemblyAI } from "assemblyai";
-import { ClipAnalysisSchema, ClipSchema, type Clip, type AnalyzeStage, type TimedWord } from "@/lib/clips";
+import {
+  clipAnalysisSchemaForContentType,
+  clipSchemaForContentType,
+  CLIP_TYPES_BY_CONTENT,
+  DEFAULT_CONTENT_TYPE,
+  type Clip,
+  type AnalyzeStage,
+  type ContentType,
+  type TimedWord,
+} from "@/lib/clips";
 import { ffmpegLocationArgs, resolveBin, run, runYtDlpWithRetry } from "@/lib/bin";
 import {
   type ChatSpike,
@@ -208,14 +217,51 @@ export function formatTranscript(words: TimedWord[]): string {
   return lines.join("\n");
 }
 
+/**
+ * The CLIP TYPES section of the MIDAS prompt, scoped to the VOD's content
+ * type. CLUTCH and BIG_BRAIN rarely apply outside gameplay, so IRL swaps
+ * them for STORY_TIME / AWKWARD / PUBLIC_INTERACTION — see
+ * CLIP_TYPES_BY_CONTENT in lib/clips.ts for the canonical set.
+ */
+function clipTypesSection(contentType: ContentType): string {
+  const body =
+    contentType === "irl"
+      ? `- STORY_TIME — the streamer recounting an interesting story or narrative moment. No punchline required — compelling narrative pull (a good yarn, an escalating anecdote) is enough on its own.
+- FUNNY — comedy: jokes, bits, absurd situations, perfect timing, banter that lands.
+- RAGE — anger and frustration outbursts: genuine tilt, malding, heated venting.
+- FAIL — an embarrassing mistake or a plan collapsing in the funniest or most painful way possible.
+- AWKWARD — cringe or uncomfortable moments: painful silences, secondhand embarrassment, a joke landing wrong, social friction that makes you wince.
+- PUBLIC_INTERACTION — a funny or notable interaction with a stranger or someone in public: a passerby, a store clerk, a random encounter that goes somewhere.
+- EMOTIONAL — genuine feeling: heartfelt reactions, near-tears, gratitude to chat, vulnerable or wholesome moments.
+- SUS — out-of-pocket moments: accidental innuendo, things said that should NOT have been said, "clip that out of context" material.`
+      : `- CLUTCH — high-stakes skilled play under pressure: 1vX wins, last-second saves, impossible comebacks.
+- FUNNY — comedy: jokes, bits, absurd situations, perfect timing, banter that lands.
+- RAGE — anger and frustration outbursts: controller-slam energy, malding, tilted meltdowns.
+- EPIC — jaw-dropping spectacle and peak hype: world-first-feeling moments, massive wins, grand payoffs that aren't primarily about mechanical skill.
+- FAIL — spectacular failure: throwing a won game, embarrassing deaths, plans collapsing in the funniest or most painful way possible.
+- BIG_BRAIN — outsmarting, not outshooting: 200-IQ strategy, insane predictions, galaxy-brain outplays, "he KNEW" moments.
+- EMOTIONAL — genuine feeling: heartfelt reactions, near-tears, gratitude to chat, vulnerable or wholesome moments.
+- SUS — out-of-pocket moments: accidental innuendo, things said that should NOT have been said, "clip that out of context" material.`;
+
+  return `## CLIP TYPES
+
+Assign each clip exactly one type — the DOMINANT flavor of the moment:
+
+${body}
+
+If a moment is both funny and a fail, ask: would TikTok caption this as a fail or as a joke? Pick that one.`;
+}
+
 /* ── Stage 4: find clippable moments with Claude ── */
 export async function findClips(
   transcriptText: string,
   durationSeconds: number,
   chatSpikes: ChatSpike[] | null,
-  clipCount: ClipCount
+  clipCount: ClipCount,
+  contentType: ContentType = DEFAULT_CONTENT_TYPE
 ) {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+  const validTypes = CLIP_TYPES_BY_CONTENT[contentType];
 
   const spikeSection = chatSpikes
     ? `
@@ -238,6 +284,10 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
 
 You are the analysis brain of a professional clipping pipeline. Think of yourself as a veteran short-form editor who has cut thousands of Twitch and YouTube VODs into clips that hit millions of views on TikTok, Shorts, and Reels. Streamers pay for your judgment: you watch hours of footage so they don't have to, and you surface ONLY the moments a top human editor would fight to clip. Your picks go straight into production — precision beats volume, and a mediocre pick wastes a creator's time and money.
+
+## CONTENT TYPE
+
+This VOD is tagged **${contentType === "irl" ? "IRL" : "Gaming"}** content${contentType === "irl" ? " — vlogging, outdoors, public outings, IRL/social streaming, not gameplay" : " — gameplay-focused streaming"}. The CLIP TYPES section below is scoped to this content type — assign ONLY those types, never one from the other content type's set.
 
 ## YOUR INPUT
 
@@ -282,23 +332,10 @@ Signals are your DETECTION layer; the five scoring dimensions remain your JUDGME
 
 IMPORTANT: "signals" is its own output field, separate from "type" (next section). Signal names (REACTION_SPIKE, CHAT_EXPLOSION, UNEXPECTED_TURN, CONFLICT, RELATABLE_QUOTABLE, CHAOS) go ONLY in the signals array — never in the type field.
 
-## CLIP TYPES
-
-Assign each clip exactly one type — the DOMINANT flavor of the moment:
-
-- CLUTCH — high-stakes skilled play under pressure: 1vX wins, last-second saves, impossible comebacks.
-- FUNNY — comedy: jokes, bits, absurd situations, perfect timing, banter that lands.
-- RAGE — anger and frustration outbursts: controller-slam energy, malding, tilted meltdowns.
-- EPIC — jaw-dropping spectacle and peak hype: world-first-feeling moments, massive wins, grand payoffs that aren't primarily about mechanical skill.
-- FAIL — spectacular failure: throwing a won game, embarrassing deaths, plans collapsing in the funniest or most painful way possible.
-- BIG_BRAIN — outsmarting, not outshooting: 200-IQ strategy, insane predictions, galaxy-brain outplays, "he KNEW" moments.
-- EMOTIONAL — genuine feeling: heartfelt reactions, near-tears, gratitude to chat, vulnerable or wholesome moments.
-- SUS — out-of-pocket moments: accidental innuendo, things said that should NOT have been said, "clip that out of context" material.
-
-If a moment is both funny and a fail, ask: would TikTok caption this as a fail or as a joke? Pick that one.
+${clipTypesSection(contentType)}
 
 "type" and "signals" are DIFFERENT fields with DISJOINT vocabularies — never mix them:
-- type: exactly ONE of the 8 clip types above (CLUTCH, FUNNY, RAGE, EPIC, FAIL, BIG_BRAIN, EMOTIONAL, SUS). NEVER a signal name.
+- type: exactly ONE of the ${validTypes.length} clip types above (${validTypes.join(", ")}). NEVER a signal name.
 - signals: one or more of the 6 signal names ONLY. NEVER a clip type.
 
 Correct pairings look like:
@@ -340,7 +377,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
           (chatSpikes ? `\n\n${formatSpikesForPrompt(chatSpikes)}` : ""),
       },
     ],
-    output_config: { format: zodOutputFormat(ClipAnalysisSchema) },
+    output_config: { format: zodOutputFormat(clipAnalysisSchemaForContentType(contentType)) },
   });
 
   // Lenient per-clip validation: messages.parse() rejects the WHOLE response if
@@ -360,10 +397,11 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
     throw new Error("Claude returned output that did not match the expected schema.");
   }
 
+  const clipSchema = clipSchemaForContentType(contentType);
   const clips: Clip[] = [];
   let skipped = 0;
   for (const raw of rawClips) {
-    const result = ClipSchema.safeParse(raw);
+    const result = clipSchema.safeParse(raw);
     if (result.success) {
       clips.push(result.data);
     } else {
@@ -438,10 +476,15 @@ export async function runAnalysisPipeline(opts: {
   durationHint: number | undefined;
   clipCount: ClipCount;
   workDir: string;
+  /** Gaming vs IRL — controls which clip types MIDAS may assign. Defaults to
+   *  gaming for callers that don't have a per-request choice (e.g. the
+   *  auto-clip background worker in lib/vod-poll.ts). */
+  contentType?: ContentType;
   chatSpikesPromise?: Promise<ChatSpike[] | null> | null;
   onProgress?: PipelineProgress;
 }): Promise<PipelineResult> {
   const { uploadedPath, url, durationHint, clipCount, workDir, onProgress } = opts;
+  const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
   const progress: PipelineProgress = onProgress ?? (() => {});
 
   memSnapshot("pipeline start");
@@ -513,7 +556,7 @@ export async function runAnalysisPipeline(opts: {
     chatSpikesPromise ? await chatSpikesPromise : null
   );
   const { clips, skipped } = await withMem("find-clips", () =>
-    findClips(transcriptText, durationSeconds, chatSpikes, clipCount)
+    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType)
   );
   progress("analyze", "done");
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, FormEvent } from "react";
-import type { ClipType, AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat } from "@/lib/clips";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS } from "@/lib/clips";
+import type { ClipType, AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
 import {
   MIN_ANALYZE_COST,
   CLIP_COUNT_OPTIONS,
@@ -37,6 +37,10 @@ const TYPE_STYLES: Record<ClipType, string> = {
   BIG_BRAIN: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   EMOTIONAL: "bg-rose-500/15 text-rose-400 border-rose-500/30",
   SUS: "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30",
+  // IRL-only types
+  STORY_TIME: "bg-teal-500/15 text-teal-400 border-teal-500/30",
+  AWKWARD: "bg-lime-500/15 text-lime-400 border-lime-500/30",
+  PUBLIC_INTERACTION: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
 };
 
 /** Pipeline steps shown in the full-screen progress overlay. */
@@ -111,6 +115,7 @@ export default function AnalyzePanel() {
   const [estimatedSparks, setEstimatedSparks] = useState<number | null>(null);
   const [previewDuration, setPreviewDuration] = useState<number | null>(null);
   const [handle, setHandle] = useState("");
+  const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
   const [zipProgress, setZipProgress] = useState<{ done: number; total: number } | null>(null);
   // File upload flow ("Upload file" mode)
   const [inputMode, setInputMode] = useState<"url" | "file">("url");
@@ -138,14 +143,22 @@ export default function AnalyzePanel() {
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
 
-  // Streamer handle persists across sessions.
+  // Streamer handle + content type persist across sessions.
   useEffect(() => {
     setHandle(localStorage.getItem("klyp-handle") ?? "");
+    const storedContentType = localStorage.getItem("klyp-content-type");
+    if ((CONTENT_TYPES as readonly string[]).includes(storedContentType ?? "")) {
+      setContentType(storedContentType as ContentType);
+    }
   }, []);
   const updateHandle = (value: string) => {
     const clean = value.replace(/^@/, "").replace(/[^A-Za-z0-9_]/g, "").slice(0, 25);
     setHandle(clean);
     localStorage.setItem("klyp-handle", clean);
+  };
+  const updateContentType = (value: ContentType) => {
+    setContentType(value);
+    localStorage.setItem("klyp-content-type", value);
   };
 
   // Probe video duration as the user types/pastes a URL, debounced.
@@ -399,8 +412,8 @@ export default function AnalyzePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           inputMode === "file" && uploadedFile
-            ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount }
-            : { url, durationHint: previewDuration ?? undefined, clipCount }
+            ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType }
+            : { url, durationHint: previewDuration ?? undefined, clipCount, contentType }
         ),
       };
 
@@ -902,6 +915,33 @@ export default function AnalyzePanel() {
               >
                 {n === MAX_CLIP_COUNT ? `${n} MAX` : n}{" "}
                 <span className="font-normal opacity-70">· {CLIP_COUNT_COST[n]}⚡</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Content type — changes which clip types MIDAS looks for */}
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <span
+            className="text-xs text-foreground-muted whitespace-nowrap cursor-help"
+            title="Gaming picks from CLUTCH/EPIC/BIG_BRAIN etc; IRL swaps those for STORY_TIME/AWKWARD/PUBLIC_INTERACTION"
+          >
+            Content type <span className="text-subtle">ⓘ</span>
+          </span>
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {CONTENT_TYPES.map((ct) => (
+              <button
+                key={ct}
+                type="button"
+                onClick={() => updateContentType(ct)}
+                disabled={loading}
+                className={`px-3 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
+                  contentType === ct
+                    ? "bg-accent-glow text-accent"
+                    : "bg-surface-2 text-foreground-muted hover:text-foreground"
+                }`}
+              >
+                {CONTENT_TYPE_LABELS[ct]}
               </button>
             ))}
           </div>
