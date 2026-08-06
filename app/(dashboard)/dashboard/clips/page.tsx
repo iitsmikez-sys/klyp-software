@@ -8,6 +8,7 @@ import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { processingFetch } from "@/lib/processing-api";
+import { getStoredHandle } from "@/lib/streamer-handle";
 import {
   type SavedClip,
   TYPE_STYLES,
@@ -85,6 +86,7 @@ export default function ClipsPage() {
           title: clip.title,
           style: hasWords ? "BOLD" : undefined,
           words: hasWords ? clip.words : undefined,
+          handle: getStoredHandle(),
           aspect_ratio: "9:16",
           upscale: upscale || undefined,
         }),

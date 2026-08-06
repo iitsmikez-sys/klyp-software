@@ -45,12 +45,20 @@ const VOD_URL_PATTERN =
 function handleFilter(handle: string): string {
   return [
     `drawtext=text='@${handle}'`,
-    `font='Arial Bold'`,
+    // DejaVu is installed explicitly on the container (railpack.json) so this
+    // always resolves in production. "Arial Bold" silently fell back to a
+    // serif default everywhere but Windows, and on a Debian image with no
+    // fonts at all drawtext fails hard and kills the whole export. A missing
+    // family degrades to the default font rather than erroring, so this is
+    // safe on dev machines that lack DejaVu.
+    `font='DejaVu Sans'`,
     `fontsize=44`,
-    `fontcolor=white@0.85`,
-    `shadowcolor=black@0.6`,
-    `shadowx=2`,
-    `shadowy=2`,
+    `fontcolor=white@0.95`,
+    // Semi-transparent pill behind the text so it stays legible over bright
+    // or busy footage, where the old drop shadow alone washed out.
+    `box=1`,
+    `boxcolor=black@0.45`,
+    `boxborderw=14`,
     `x=main_w-tw-28`,
     `y=96`,
   ].join(":");

@@ -15,6 +15,7 @@ import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
+import { getStoredHandle } from "@/lib/streamer-handle";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -173,6 +174,7 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
           words: hasWords ? clip.words : undefined,
           hook: selectedHook ?? undefined,
           hook_style: hookStyle,
+          handle: getStoredHandle(),
           aspect_ratio: format,
         }),
       });
