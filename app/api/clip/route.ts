@@ -3,7 +3,10 @@
  *
  * Takes a VOD URL + one clip's timestamps (from /api/analyze) and returns the
  * actual MP4:
- *   1. Download the full video with yt-dlp (cached per-URL, shared with /api/preview)
+ *   1. Download just the needed slice with yt-dlp (see resolveSourceSegment in
+ *      lib/video-cache.ts — downloading the full VOD here used to OOM/exhaust
+ *      disk on multi-hour streams; clips are capped at 3 minutes so a segment
+ *      fetch is always enough)
  *   2. Cut start→end with FFmpeg, center-crop to the selected format (9:16 /
  *      1:1 / 16:9) — or no crop at all for "Original" (native aspect ratio)
  *   3. Burn captions (if style + words provided)
@@ -24,7 +27,7 @@ import {
   type ExportFormat,
   type TimedWord,
 } from "@/lib/clips";
-import { resolveSource, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
+import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { UPSCALE_COST } from "@/lib/sparks";
@@ -285,8 +288,11 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let assDir: string | null = null;
   try {
     const t0 = Date.now();
-    const sourcePath = await resolveSource(url);
-    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    // Fetch only the slice this clip needs, not the whole VOD. The returned
+    // offset is where that slice begins in the original timeline, so the cut
+    // below must seek relative to it (a segment file starts at 0).
+    const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end);
+    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
 
     // ASS PlayRes must match the output resolution so burned text scales with it.
     // "Original" has no fixed dimensions — probe the source for its native size.
@@ -316,7 +322,18 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     }
 
     const t2 = Date.now();
-    clipPath = await cutClip(sourcePath, start, end, isPro, format, assPath, hookAssPath, handle, raw, upscale);
+    clipPath = await cutClip(
+      sourcePath,
+      start - offsetSeconds,
+      end - offsetSeconds,
+      isPro,
+      format,
+      assPath,
+      hookAssPath,
+      handle,
+      raw,
+      upscale
+    );
     log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
 
     // Charge for the upscale only after the render succeeded.
