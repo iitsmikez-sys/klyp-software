@@ -269,6 +269,117 @@ async function ensureCacheSpace(excludeKey: string, aggressive = false): Promise
   }
 }
 
+/* ── Segment downloads ──────────────────────────────────────────────
+ * A preview needs a few seconds of video, not the whole VOD. Fetching the
+ * full source to cut 30s out of it is catastrophic on long streams: a 10.9h
+ * Twitch VOD at 7.4Mbps is ~36.5GB, which is minutes-to-hours of download and
+ * simply doesn't fit on a container whose cache cap is a few GB. yt-dlp's
+ * --download-sections pulls only the range we need — measured at 14.8MB in
+ * 17s for a 30s cut from that same VOD.
+ */
+
+/**
+ * The segment is downloaded as EXACTLY the requested range, with no padding.
+ *
+ * Padding seems helpful but is a trap: --download-sections does not guarantee
+ * the file's timeline starts at the requested second. Measured on one VOD, two
+ * overlapping segments of the same moment disagreed by ~1s, and one file
+ * reported container start_time=1.404 while another reported 0.000. Any
+ * "subtract the pad" arithmetic silently inherits that error and shows the
+ * wrong moment. Fetching the exact range means the caller seeks ~0 and the
+ * segment simply IS the clip, so there is no offset to get wrong.
+ *
+ * Residual keyframe imprecision of roughly a second is inherent to ranged
+ * downloads and applies to the previous full-VOD path too.
+ */
+
+/** A source file plus where it starts in the ORIGINAL VOD timeline. Callers
+ *  must rebase their seek by this offset — a segment file starts at 0, not at
+ *  the clip's absolute timestamp. */
+export type ResolvedSegment = { path: string; offsetSeconds: number };
+
+const segmentInflight = new Map<string, Promise<ResolvedSegment>>();
+
+/**
+ * Resolve just the slice of a VOD needed for [startSeconds, endSeconds].
+ *
+ * Falls back to the already-cached full VOD when one exists (an export may
+ * have fetched it), so this never downloads twice.
+ */
+export async function resolveSourceSegment(
+  ref: string,
+  startSeconds: number,
+  endSeconds: number
+): Promise<ResolvedSegment> {
+  // Uploads are already local — nothing to fetch, timeline is the original.
+  if (isUploadRef(ref)) return { path: await resolveSource(ref), offsetSeconds: 0 };
+
+  const key = createHash("sha1").update(ref).digest("hex");
+  const fullPath = path.join(CACHE_DIR, `${key}.mp4`);
+  if (existsSync(fullPath) && (await stat(fullPath)).size > 0) {
+    log("full VOD already cached — no download", key);
+    return { path: fullPath, offsetSeconds: 0 };
+  }
+
+  const segStart = Math.max(0, Math.floor(startSeconds));
+  const segEnd = Math.ceil(endSeconds);
+  const segPath = path.join(CACHE_DIR, `seg-${key}-${segStart}-${segEnd}.mp4`);
+
+  if (existsSync(segPath) && (await stat(segPath)).size > 0) {
+    log("segment cache hit", key, `${segStart}-${segEnd}s`);
+    return { path: segPath, offsetSeconds: segStart };
+  }
+
+  const existing = segmentInflight.get(segPath);
+  if (existing) return existing;
+
+  const job = (async (): Promise<ResolvedSegment> => {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await ensureCacheSpace(key);
+
+    const startedAt = Date.now();
+    log("segment download start", key, `${segStart}-${segEnd}s`);
+    try {
+      await runYtDlpWithRetry(
+        [
+          "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b",
+          "--merge-output-format", "mp4",
+          "--no-playlist",
+          "--socket-timeout", "30",
+          ...ffmpegLocationArgs(),
+          "--download-sections", `*${segStart}-${segEnd}`,
+          "--force-keyframes-at-cuts",
+          "-o", segPath,
+          ref,
+        ],
+        { stallTimeoutMs: 90_000, maxRunMs: 10 * 60_000 }
+      );
+      if (!existsSync(segPath)) {
+        throw new Error("yt-dlp finished but the segment file was not produced.");
+      }
+      const { size } = await stat(segPath);
+      log(
+        "segment download done",
+        key,
+        `${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+        `${(size / 1e6).toFixed(1)}MB`
+      );
+      return { path: segPath, offsetSeconds: segStart };
+    } catch (err) {
+      log("segment download FAILED", key, err instanceof Error ? err.message : String(err));
+      await unlink(segPath).catch(() => {}); // no partial debris
+      throw err;
+    }
+  })();
+
+  segmentInflight.set(segPath, job);
+  try {
+    return await job;
+  } finally {
+    segmentInflight.delete(segPath);
+  }
+}
+
 const inflightDownloads = new Map<string, Promise<string>>();
 
 export async function ensureSourceVideo(url: string): Promise<string> {

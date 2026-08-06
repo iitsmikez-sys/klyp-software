@@ -7,14 +7,16 @@
  *   - No captions or watermark (canvas overlay handles those in the browser)
  *   - Returns MP4 directly (no attachment header — played inline)
  *
- * First call may be slow if the source video isn't cached yet (triggers full
- * VOD download). Subsequent calls for the same VOD are fast (~5–10s).
+ * Only the needed slice of the source is downloaded (see resolveSourceSegment)
+ * — previewing a 30s clip from a 10.9h VOD fetches ~15MB rather than the ~36GB
+ * full source, which is what used to make the first preview take minutes.
+ * Repeat previews of the same range hit the segment cache.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { rm, readFile } from "fs/promises";
 import path from "path";
 import { resolveBin, run } from "@/lib/bin";
-import { resolveSource, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
+import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
 
@@ -109,11 +111,14 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let previewPath: string | null = null;
   try {
     const t0 = Date.now();
-    const sourcePath = await resolveSource(url);
-    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    // Fetch only the slice this preview needs, not the whole VOD. The returned
+    // offset is where that slice begins in the original timeline, so the cut
+    // below must seek relative to it (a segment file starts at 0).
+    const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end);
+    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
 
     const t1 = Date.now();
-    previewPath = await cutPreview(sourcePath, start, end);
+    previewPath = await cutPreview(sourcePath, start - offsetSeconds, end - offsetSeconds);
     log("preview cut in", `${((Date.now() - t1) / 1000).toFixed(1)}s`);
 
     const fileBuffer = await readFile(previewPath);
