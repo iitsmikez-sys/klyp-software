@@ -309,6 +309,38 @@ export type PipelineResult = {
  * Auth, Sparks, SSE, and DB persistence are the caller's job — see
  * app/api/analyze/route.ts (interactive) and lib/vod-poll.ts (auto-clip).
  */
+/**
+ * Per-stage memory accounting. Logged for every analysis so a future OOM can
+ * be attributed to a specific stage from the logs alone, instead of inferred
+ * from GC dumps after the fact.
+ */
+function memSnapshot(label: string): { heap: number; rss: number } {
+  const m = process.memoryUsage();
+  const heap = m.heapUsed / 1048576;
+  const rss = m.rss / 1048576;
+  const ext = m.external / 1048576;
+  console.log(
+    `[mem] ${label} heap=${heap.toFixed(1)}MB rss=${rss.toFixed(1)}MB external=${ext.toFixed(1)}MB`
+  );
+  return { heap, rss };
+}
+
+/** Run one pipeline stage, logging its heap/RSS delta and wall time. */
+async function withMem<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const before = memSnapshot(`${name} before`);
+  const startedAt = Date.now();
+  try {
+    return await fn();
+  } finally {
+    const after = memSnapshot(`${name} after`);
+    console.log(
+      `[mem] ${name} DELTA heap=${(after.heap - before.heap >= 0 ? "+" : "")}${(after.heap - before.heap).toFixed(1)}MB ` +
+        `rss=${(after.rss - before.rss >= 0 ? "+" : "")}${(after.rss - before.rss).toFixed(1)}MB ` +
+        `in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`
+    );
+  }
+}
+
 export async function runAnalysisPipeline(opts: {
   uploadedPath: string | null;
   url: string;
@@ -321,12 +353,17 @@ export async function runAnalysisPipeline(opts: {
   const { uploadedPath, url, durationHint, clipCount, workDir, onProgress } = opts;
   const progress: PipelineProgress = onProgress ?? (() => {});
 
+  memSnapshot("pipeline start");
+
   progress("download", "running", durationHint ? Math.max(10, Math.round(durationHint / 60)) : undefined);
-  const audioPath = uploadedPath ? await extractAudio(uploadedPath, workDir) : await downloadAudio(url, workDir);
+  const audioPath = await withMem("download", () =>
+    uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir)
+  );
   progress("download", "done");
 
   progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
-  const { words, durationSeconds } = await transcribe(audioPath);
+  const { words, durationSeconds } = await withMem("transcribe", () => transcribe(audioPath));
+  console.log(`[mem] transcribe produced ${words.length} words`);
   progress("transcribe", "done");
 
   progress("analyze", "running", Math.min(90, 30 + Math.round(durationSeconds / 120)));
@@ -334,15 +371,21 @@ export async function runAnalysisPipeline(opts: {
   if (!chatSpikesPromise && !uploadedPath) {
     chatSpikesPromise = detectChatSpikes(url, durationSeconds).catch(() => null);
   }
-  const transcriptText = formatTranscript(words);
-  const chatSpikes = chatSpikesPromise ? await chatSpikesPromise : null;
-  const { clips, skipped } = await findClips(transcriptText, durationSeconds, chatSpikes, clipCount);
+  const transcriptText = await withMem("format-transcript", async () => formatTranscript(words));
+  console.log(`[mem] transcript is ${(transcriptText.length / 1048576).toFixed(1)}MB of text`);
+  const chatSpikes = await withMem("chat-spikes", async () =>
+    chatSpikesPromise ? await chatSpikesPromise : null
+  );
+  const { clips, skipped } = await withMem("find-clips", () =>
+    findClips(transcriptText, durationSeconds, chatSpikes, clipCount)
+  );
   progress("analyze", "done");
 
   const clipsWithWords = clips.map((clip) => ({
     ...clip,
     words: words.filter((w) => w.start >= clip.start_seconds * 1000 - 200 && w.start < clip.end_seconds * 1000),
   }));
+  memSnapshot("pipeline end");
 
   return { clips: clipsWithWords, skipped, durationSeconds, transcriptChars: transcriptText.length };
 }

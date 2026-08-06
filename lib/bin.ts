@@ -9,14 +9,48 @@ export type RunOptions = {
   maxRunMs?: number;
 };
 
-/** Kill a process and (on Windows) its whole tree — yt-dlp spawns ffmpeg children. */
+/**
+ * Kill a process AND its children. yt-dlp spawns ffmpeg, and killing only the
+ * parent leaves ffmpeg alive holding the stdout/stderr pipes it inherited —
+ * which means the parent's 'close' event never fires, the promise never
+ * settles, and the request wedges forever while the orphan keeps writing.
+ * That is exactly what hung a job for 10 hours and then OOM'd the container.
+ *
+ * On Unix this needs the child to be its own process-group leader — see
+ * `detached` in spawnProcess() — so a negative pid signals the whole group.
+ */
 function killTree(proc: ChildProcess) {
-  if (process.platform === "win32" && proc.pid) {
+  if (!proc.pid) return;
+  if (process.platform === "win32") {
     spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"], { windowsHide: true });
-  } else {
-    proc.kill("SIGKILL");
+    return;
+  }
+  try {
+    process.kill(-proc.pid, "SIGKILL"); // whole process group
+  } catch {
+    try {
+      proc.kill("SIGKILL"); // group is gone; fall back to the process itself
+    } catch {
+      // already dead — nothing to do
+    }
   }
 }
+
+/**
+ * Cap on retained child output. We only ever report the last few hundred
+ * characters, but an orphaned grandchild can emit progress lines for hours —
+ * appending them unbounded is what grew the heap to ~475MB and crashed the
+ * container. Keeping a bounded tail makes that leak structurally impossible.
+ */
+const MAX_RETAINED_OUTPUT = 16 * 1024;
+
+function appendCapped(buf: string, chunk: string): string {
+  const next = buf + chunk;
+  return next.length > MAX_RETAINED_OUTPUT ? next.slice(-MAX_RETAINED_OUTPUT) : next;
+}
+
+/** Grace period for stdio to flush after 'exit' before we settle without 'close'. */
+const CLOSE_GRACE_MS = 3000;
 
 /**
  * Detects a disk-full failure from process stderr. Both yt-dlp and ffmpeg
@@ -92,51 +126,44 @@ export function resolveBin(name: "yt-dlp" | "ffmpeg" | "ffprobe"): string {
   return name;
 }
 
-/** Like run(), but resolves with the process's stdout. Supports the same timeouts. */
-export function runCapture(bin: string, args: string[], opts: RunOptions = {}): Promise<string> {
+/**
+ * Shared spawn core for run()/runCapture().
+ *
+ * Guarantees the returned promise ALWAYS settles:
+ *   - the child is its own process group, so killTree() reaps grandchildren
+ *   - settlement is driven by 'exit' (which fires when the process dies) with
+ *     'close' only preferred when it arrives first, so a grandchild holding
+ *     the inherited pipes open can no longer wedge us
+ *   - retained output is bounded, so a chatty orphan can't grow the heap
+ */
+function spawnProcess(bin: string, args: string[], opts: RunOptions): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(bin, args, { windowsHide: true });
+    const proc = spawn(bin, args, {
+      windowsHide: true,
+      // Unix: make the child a process-group leader so killTree() can signal
+      // the entire group (yt-dlp + the ffmpeg it spawns).
+      detached: process.platform !== "win32",
+    });
+
     let stdout = "";
     let stderr = "";
     let killReason: string | null = null;
+    let settled = false;
 
     let stallTimer: NodeJS.Timeout | undefined;
-    const resetStall = () => {
-      if (!opts.stallTimeoutMs) return;
-      clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => {
-        killReason = `stalled — no output for ${Math.round(opts.stallTimeoutMs! / 1000)}s`;
-        killTree(proc);
-      }, opts.stallTimeoutMs);
-    };
-    resetStall();
-    const maxTimer = opts.maxRunMs
-      ? setTimeout(() => {
-          killReason = `timed out after ${Math.round(opts.maxRunMs! / 1000)}s`;
-          killTree(proc);
-        }, opts.maxRunMs)
-      : undefined;
+    let maxTimer: NodeJS.Timeout | undefined;
+    let graceTimer: NodeJS.Timeout | undefined;
 
-    proc.stdout.on("data", (d: Buffer) => {
-      stdout += d.toString();
-      resetStall();
-    });
-    proc.stderr.on("data", (d: Buffer) => {
-      stderr += d.toString();
-      resetStall();
-    });
-    proc.on("error", (err: Error) => {
+    const cleanup = () => {
       clearTimeout(stallTimer);
       clearTimeout(maxTimer);
-      reject(
-        err.message.includes("ENOENT")
-          ? new Error(`${path.basename(bin)} is not installed or not on PATH.`)
-          : err
-      );
-    });
-    proc.on("close", (code: number | null) => {
-      clearTimeout(stallTimer);
-      clearTimeout(maxTimer);
+      clearTimeout(graceTimer);
+    };
+
+    const conclude = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       if (killReason) {
         reject(new Error(`${path.basename(bin)} ${killReason}. stderr: ${stderr.slice(-300)}`));
       } else if (code === 0) {
@@ -149,18 +176,15 @@ export function runCapture(bin: string, args: string[], opts: RunOptions = {}): 
             : new Error(`${path.basename(bin)} exited with code ${code}: ${tail}`)
         );
       }
-    });
-  });
-}
+    };
 
-/** Spawn a process and resolve on exit 0, reject with stderr tail otherwise. */
-export function run(bin: string, args: string[], opts: RunOptions = {}): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(bin, args, { windowsHide: true });
-    let stderr = "";
-    let killReason: string | null = null;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
 
-    let stallTimer: NodeJS.Timeout | undefined;
     const resetStall = () => {
       if (!opts.stallTimeoutMs) return;
       clearTimeout(stallTimer);
@@ -170,44 +194,51 @@ export function run(bin: string, args: string[], opts: RunOptions = {}): Promise
       }, opts.stallTimeoutMs);
     };
     resetStall();
-    const maxTimer = opts.maxRunMs
-      ? setTimeout(() => {
-          killReason = `timed out after ${Math.round(opts.maxRunMs! / 1000)}s`;
-          killTree(proc);
-        }, opts.maxRunMs)
-      : undefined;
 
-    proc.stdout.on("data", resetStall);
-    proc.stderr.on("data", (d: Buffer) => {
-      stderr += d.toString();
+    if (opts.maxRunMs) {
+      maxTimer = setTimeout(() => {
+        killReason = `timed out after ${Math.round(opts.maxRunMs! / 1000)}s`;
+        killTree(proc);
+      }, opts.maxRunMs);
+    }
+
+    proc.stdout.on("data", (d: Buffer) => {
+      stdout = appendCapped(stdout, d.toString());
       resetStall();
     });
+    proc.stderr.on("data", (d: Buffer) => {
+      stderr = appendCapped(stderr, d.toString());
+      resetStall();
+    });
+
     proc.on("error", (err: Error) => {
-      clearTimeout(stallTimer);
-      clearTimeout(maxTimer);
-      reject(
+      fail(
         err.message.includes("ENOENT")
           ? new Error(`${path.basename(bin)} is not installed or not on PATH.`)
           : err
       );
     });
-    proc.on("close", (code: number | null) => {
+
+    // 'close' waits for every inherited pipe to close, which an orphaned
+    // grandchild can delay indefinitely. 'exit' fires as soon as the process
+    // itself is gone, so use it as a backstop after a short flush grace.
+    proc.on("exit", (code: number | null) => {
       clearTimeout(stallTimer);
       clearTimeout(maxTimer);
-      if (killReason) {
-        reject(new Error(`${path.basename(bin)} ${killReason}. stderr: ${stderr.slice(-300)}`));
-      } else if (code === 0) {
-        resolve();
-      } else {
-        const tail = stderr.slice(-500);
-        reject(
-          isDiskSpaceError(tail)
-            ? new Error(`${path.basename(bin)} ${DISK_SPACE_ERROR_MESSAGE}`)
-            : new Error(`${path.basename(bin)} exited with code ${code}: ${tail}`)
-        );
-      }
+      graceTimer = setTimeout(() => conclude(code), CLOSE_GRACE_MS);
     });
+    proc.on("close", (code: number | null) => conclude(code));
   });
+}
+
+/** Like run(), but resolves with the process's stdout. Supports the same timeouts. */
+export function runCapture(bin: string, args: string[], opts: RunOptions = {}): Promise<string> {
+  return spawnProcess(bin, args, opts);
+}
+
+/** Spawn a process and resolve on exit 0, reject with stderr tail otherwise. */
+export async function run(bin: string, args: string[], opts: RunOptions = {}): Promise<void> {
+  await spawnProcess(bin, args, opts);
 }
 
 /** Failure signatures from yt-dlp that are almost always transient throttling, not a real block. */
