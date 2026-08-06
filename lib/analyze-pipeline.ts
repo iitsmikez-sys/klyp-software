@@ -13,7 +13,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { AssemblyAI } from "assemblyai";
 import { ClipAnalysisSchema, ClipSchema, type Clip, type AnalyzeStage, type TimedWord } from "@/lib/clips";
-import { resolveBin, run, runYtDlpWithRetry } from "@/lib/bin";
+import { ffmpegLocationArgs, resolveBin, run, runYtDlpWithRetry } from "@/lib/bin";
 import { type ChatSpike, formatSpikesForPrompt, detectChatSpikes } from "@/lib/twitch-chat";
 import { type ClipCount } from "@/lib/sparks";
 
@@ -32,7 +32,7 @@ export async function downloadAudio(url: string, dir: string): Promise<string> {
       "--socket-timeout", "30",
       "--retries", "3",
       "--fragment-retries", "5",
-      "--ffmpeg-location", resolveBin("ffmpeg"),
+      ...ffmpegLocationArgs(),
       "--concurrent-fragments", "4",
       "-o", path.join(dir, "audio.%(ext)s"),
       url,

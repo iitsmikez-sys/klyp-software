@@ -27,6 +27,23 @@ function isDiskSpaceError(text: string): boolean {
   return /no space left on device|not enough space|disk full|enospc|free disk space/i.test(text);
 }
 
+/**
+ * `--ffmpeg-location` arguments for yt-dlp — empty when we couldn't resolve a
+ * real path.
+ *
+ * yt-dlp treats this flag's value as a filesystem path, NOT a command to look
+ * up on PATH. Passing the bare name "ffmpeg" made it log
+ * `WARNING: ffmpeg-location ffmpeg does not exist! Continuing without ffmpeg`
+ * and then run with no ffmpeg at all — which fails every m3u8/HLS download,
+ * i.e. every Twitch VOD, with "m3u8 download detected but ffmpeg could not be
+ * found". Omitting the flag entirely is strictly better than passing a bogus
+ * path: yt-dlp then finds ffmpeg on PATH by itself.
+ */
+export function ffmpegLocationArgs(): string[] {
+  const resolved = resolveBin("ffmpeg");
+  return path.isAbsolute(resolved) && existsSync(resolved) ? ["--ffmpeg-location", resolved] : [];
+}
+
 /** True if a thrown error is a disk-full failure — lets callers free space and retry. */
 export function isDiskFullError(err: unknown): boolean {
   return isDiskSpaceError(err instanceof Error ? err.message : String(err));
@@ -52,6 +69,17 @@ export function resolveBin(name: "yt-dlp" | "ffmpeg" | "ffprobe"): string {
       "Microsoft", "WinGet", "Links", `${name}.exe`
     );
     if (existsSync(shim)) return shim;
+  }
+
+  // Unix: resolve to a real absolute path. Railpack installs apt packages
+  // into /usr/bin and the yt-dlp postinstall drops its binary in /app/bin.
+  // Returning the bare name here is what broke every Twitch VOD — see
+  // ffmpegLocationArgs() below.
+  if (process.platform !== "win32") {
+    for (const dir of ["/app/bin", "/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin"]) {
+      const candidate = path.join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
   }
 
   if (name === "ffprobe") {

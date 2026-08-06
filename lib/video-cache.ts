@@ -8,7 +8,7 @@ import { mkdir, readdir, stat, statfs, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { isDiskFullError, resolveBin, runYtDlpWithRetry } from "@/lib/bin";
+import { ffmpegLocationArgs, isDiskFullError, runYtDlpWithRetry } from "@/lib/bin";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
 
@@ -306,7 +306,7 @@ export async function ensureSourceVideo(url: string): Promise<string> {
           "--merge-output-format", "mp4",
           "--no-playlist",
           "--socket-timeout", "30",
-          "--ffmpeg-location", resolveBin("ffmpeg"),
+          ...ffmpegLocationArgs(),
           "-o", outPath,
           url,
         ],
