@@ -186,6 +186,32 @@ export function run(bin: string, args: string[], opts: RunOptions = {}): Promise
 const TRANSIENT_YTDLP_ERROR = /HTTP Error 403|HTTP Error 429|Read timed out|Connection reset|Temporary failure|stalled — no output/i;
 
 /**
+ * Narrow yt-dlp output down to what actually failed.
+ *
+ * yt-dlp prefixes fatal failures with "ERROR:" and non-fatal noise with
+ * "WARNING:". Classifying on the raw stderr tail let a benign warning
+ * masquerade as the cause — a Twitch VOD emits
+ * `WARNING: Unable to download JSON metadata: HTTP Error 403` on perfectly
+ * successful downloads, so ANY later failure on that VOD matched the 403
+ * branch and got reported as rate limiting.
+ */
+function fatalText(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const errors = lines.filter((l) => /^\s*ERROR:/i.test(l));
+  if (errors.length) return errors.join("\n");
+  return lines.filter((l) => !/^\s*WARNING:/i.test(l)).join("\n");
+}
+
+/** Friendly wording for a transient failure that still names the real cause. */
+function transientMessage(raw: string): string {
+  const detail = (fatalText(raw).match(/ERROR:.*/i)?.[0] ?? "").trim().slice(0, 200);
+  return (
+    "The video host rejected or throttled this download — wait a moment and try again." +
+    (detail ? ` (yt-dlp: ${detail})` : "")
+  );
+}
+
+/**
  * Like run(), but retries once on yt-dlp's transient throttling errors (YouTube's
  * bot-detection intermittently 403s a fresh request that succeeds moments later).
  * A stalled download (killed by stallTimeoutMs) counts as transient too.
@@ -204,16 +230,18 @@ export async function runYtDlpWithRetry(
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Always log what yt-dlp actually said. The friendly message below
+      // replaces it, and without this line the real cause never reaches the
+      // logs at all — which is exactly what made a Twitch 403 undiagnosable.
+      console.error("[yt-dlp] attempt", attempt + 1, "failed:", message);
       // Check disk-full FIRST. A download that wedges because the drive is
       // full gets killed by stallTimeoutMs, which looks "transient" — and
-      // was then reported as "YouTube is rate-limiting downloads", sending
-      // people chasing a throttling problem they don't have.
+      // was then reported as rate limiting, sending people chasing a
+      // throttling problem they don't have.
       if (isDiskSpaceError(message)) throw err;
-      const transient = TRANSIENT_YTDLP_ERROR.test(message);
+      const transient = TRANSIENT_YTDLP_ERROR.test(fatalText(message));
       if (!transient || attempt >= retries) {
-        throw transient
-          ? new Error("YouTube is rate-limiting downloads right now — please wait a moment and try again.")
-          : err;
+        throw transient ? new Error(transientMessage(message)) : err;
       }
       await new Promise((r) => setTimeout(r, delayMs));
     }
