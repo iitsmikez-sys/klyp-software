@@ -90,6 +90,13 @@ export default function AnalyzePanel() {
   const [loading, setLoading] = useState(false);
   const [stages, setStages] = useState<StageStates>(INITIAL_STAGES);
   const [etaRemaining, setEtaRemaining] = useState<number | null>(null);
+  /** When the current stage started, so we can show real elapsed time instead
+   *  of a countdown that just sits at "almost done…" once its estimate runs out. */
+  const [stageStartedAt, setStageStartedAt] = useState<number | null>(null);
+  const [stageElapsed, setStageElapsed] = useState(0);
+  /** Re-arms the no-progress watchdog. Called ONLY on real progress events —
+   *  never on heartbeats, which is the whole point (see the stream loop). */
+  const rearmProgressWatchdog = useRef<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clips, setClips] = useState<ClipWithWords[] | null>(null);
   const [clipStyles, setClipStyles] = useState<Record<number, CaptionStyle>>({});
@@ -275,6 +282,14 @@ export default function AnalyzePanel() {
     return () => clearInterval(tick);
   }, [loading, etaRemaining !== null]);
 
+  // Track real elapsed time in the current stage. The ETA is only an estimate;
+  // once it hits zero the elapsed clock is the only honest thing we can show.
+  useEffect(() => {
+    if (!loading || stageStartedAt === null) return;
+    const tick = setInterval(() => setStageElapsed(Math.floor((Date.now() - stageStartedAt) / 1000)), 1000);
+    return () => clearInterval(tick);
+  }, [loading, stageStartedAt]);
+
   const saveClipsToSupabase = async (vodUrl: string, clipsToSave: ClipWithWords[]) => {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -301,15 +316,20 @@ export default function AnalyzePanel() {
 
   const handleEvent = (event: AnalyzeEvent) => {
     if (event.type === "progress") {
+      // Real forward motion — the only thing that should reset the stall watchdog.
+      rearmProgressWatchdog.current?.();
       setStages((prev) => ({ ...prev, [event.stage]: event.status }));
       if (event.status === "running") {
         setEtaRemaining(event.etaSeconds ?? null);
+        setStageStartedAt(Date.now());
+        setStageElapsed(0);
       }
       return;
     }
     if (event.type === "result") {
       setStages((prev) => ({ ...prev, done: "done" }));
       setEtaRemaining(null);
+      setStageStartedAt(null);
       setClips(event.clips);
       // Default each clip to the user's preferred style (Settings → Clip Defaults).
       const stored = localStorage.getItem("klyp-default-style");
@@ -368,6 +388,8 @@ export default function AnalyzePanel() {
     setAnalysisNote(null);
     setStages({ ...INITIAL_STAGES });
     setEtaRemaining(null);
+    setStageStartedAt(null);
+    setStageElapsed(0);
     setReconnectAttempt(null);
     let retriedConnect = false;
 
@@ -411,11 +433,21 @@ export default function AnalyzePanel() {
       // The server heartbeats every 10s — if nothing arrives for 45s the
       // connection is dead, so cancel the read instead of spinning forever.
       const WATCHDOG_MS = 45_000;
+      // Separate, much longer watchdog for *progress*. The heartbeat above
+      // proves only that the socket is alive — it fires on a timer that knows
+      // nothing about the pipeline, so a wedged job keeps the connection
+      // looking perfectly healthy forever. This one is reset ONLY by real
+      // progress events, so a stage that stops advancing is caught even while
+      // pings keep arriving. Generous, because transcribing a multi-hour VOD
+      // legitimately runs long without emitting anything.
+      const NO_PROGRESS_MS = 30 * 60_000;
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let watchdogFired = false;
+      let stalledFired = false;
       let watchdog: ReturnType<typeof setTimeout> | undefined;
+      let progressWatchdog: ReturnType<typeof setTimeout> | undefined;
       const armWatchdog = () => {
         clearTimeout(watchdog);
         watchdog = setTimeout(() => {
@@ -423,7 +455,16 @@ export default function AnalyzePanel() {
           reader.cancel().catch(() => {});
         }, WATCHDOG_MS);
       };
+      const armProgressWatchdog = () => {
+        clearTimeout(progressWatchdog);
+        progressWatchdog = setTimeout(() => {
+          stalledFired = true;
+          reader.cancel().catch(() => {});
+        }, NO_PROGRESS_MS);
+      };
+      rearmProgressWatchdog.current = armProgressWatchdog;
       armWatchdog();
+      armProgressWatchdog();
 
       try {
       while (true) {
@@ -444,10 +485,16 @@ export default function AnalyzePanel() {
       }
       } finally {
         clearTimeout(watchdog);
+        clearTimeout(progressWatchdog);
+        rearmProgressWatchdog.current = null;
       }
       if (watchdogFired) {
         setError(
           "Analysis timed out — no response from the server for 45 seconds. Check the dev server terminal for [analyze] logs and try again."
+        );
+      } else if (stalledFired) {
+        setError(
+          "Analysis stalled — the server stayed connected but stopped making progress for 30 minutes, so it was almost certainly stuck. Nothing was lost; try again."
         );
       }
     } catch {
@@ -658,11 +705,17 @@ export default function AnalyzePanel() {
                       </p>
                       {status === "running" && step.key !== "done" && (
                         <p className="text-xs text-accent mt-0.5">
-                          {etaRemaining === null
-                            ? "working…"
-                            : etaRemaining > 0
+                          {/* Once the estimate runs out, show real elapsed time.
+                              The old "almost done…" was a static string that sat
+                              there indefinitely — it read as progress while the
+                              backend was wedged, which is worse than no text. */}
+                          {etaRemaining !== null && etaRemaining > 0
                             ? `≈ ${etaRemaining >= 60 ? `${Math.ceil(etaRemaining / 60)} min` : `${etaRemaining}s`} remaining`
-                            : "almost done…"}
+                            : stageElapsed >= 60
+                            ? `still working — ${Math.floor(stageElapsed / 60)}m ${stageElapsed % 60}s elapsed`
+                            : stageElapsed > 0
+                            ? `still working — ${stageElapsed}s elapsed`
+                            : "working…"}
                         </p>
                       )}
                     </div>
