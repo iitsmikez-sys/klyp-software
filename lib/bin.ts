@@ -241,8 +241,23 @@ export async function run(bin: string, args: string[], opts: RunOptions = {}): P
   await spawnProcess(bin, args, opts);
 }
 
-/** Failure signatures from yt-dlp that are almost always transient throttling, not a real block. */
-const TRANSIENT_YTDLP_ERROR = /HTTP Error 403|HTTP Error 429|Read timed out|Connection reset|Temporary failure|stalled — no output/i;
+/** Failure signatures that mean the video host rejected/throttled the request. */
+const TRANSIENT_THROTTLE_ERROR = /HTTP Error 403|HTTP Error 429|Read timed out|Connection reset|Temporary failure/i;
+/**
+ * Failure signatures that mean our own process got killed rather than
+ * failing on its own — a stall (our watchdog) or ffmpeg dying to a signal
+ * (negative exit code: SIGKILL/-9 from an OOM reaper, SIGSEGV, etc). These
+ * are usually a brief resource blip on the container, not a deterministic
+ * problem with the request, so a retry a few seconds later typically works —
+ * confirmed live: an isolated ffmpeg -9 on a 44s /api/preview segment (an
+ * unremarkable download, nowhere near the container's memory ceiling) died
+ * instantly and was never retried because this regex didn't recognize it.
+ */
+const TRANSIENT_KILL_ERROR = /stalled — no output|ffmpeg exited with code -\d+/i;
+const TRANSIENT_YTDLP_ERROR = new RegExp(
+  `${TRANSIENT_THROTTLE_ERROR.source}|${TRANSIENT_KILL_ERROR.source}`,
+  "i"
+);
 
 /**
  * Narrow yt-dlp output down to what actually failed.
@@ -263,11 +278,14 @@ function fatalText(text: string): string {
 
 /** Friendly wording for a transient failure that still names the real cause. */
 function transientMessage(raw: string): string {
-  const detail = (fatalText(raw).match(/ERROR:.*/i)?.[0] ?? "").trim().slice(0, 200);
-  return (
-    "The video host rejected or throttled this download — wait a moment and try again." +
-    (detail ? ` (yt-dlp: ${detail})` : "")
-  );
+  const text = fatalText(raw);
+  const detail = (text.match(/ERROR:.*/i)?.[0] ?? "").trim().slice(0, 200);
+  // A kill (stall/SIGKILL) is our process dying, not the host rejecting us —
+  // don't blame "the video host" for something that happened on our end.
+  const base = TRANSIENT_KILL_ERROR.test(text) && !TRANSIENT_THROTTLE_ERROR.test(text)
+    ? "The download hit a brief hiccup and was interrupted — retrying usually fixes this."
+    : "The video host rejected or throttled this download — wait a moment and try again.";
+  return base + (detail ? ` (yt-dlp: ${detail})` : "");
 }
 
 /**
