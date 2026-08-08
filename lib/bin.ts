@@ -1,6 +1,34 @@
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
+import os from "os";
 import path from "path";
+
+/**
+ * Proof for the ffmpeg -9 kills on /api/preview (2026-08-08): the exact same
+ * segment, same args, completed cleanly in 21s on a 24-core dev machine but
+ * died to SIGKILL within ~7s on every attempt on Railway (2 vCPU per
+ * `railway metrics`). libx264 auto-detects thread/lookahead-buffer count from
+ * the HOST's full core count, not the container's cgroup CPU quota — on a
+ * shared host with far more cores than the container is actually allotted,
+ * that overcommits memory almost immediately and gets OOM-killed long before
+ * any output is written (size stays 0kB). Logged once per boot so a future
+ * container's real os.cpus().length is on record instead of inferred.
+ */
+console.log(`[bin] container reports ${os.cpus().length} logical CPU(s) (os.cpus().length)`);
+
+/**
+ * Thread cap passed to every ffmpeg invocation (directly, and via yt-dlp's
+ * --postprocessor-args) to stop libx264 from overcommitting threads/lookahead
+ * buffers based on the host's core count instead of this container's actual
+ * CPU allocation. Override with FFMPEG_THREADS if the service's vCPU limit
+ * changes — keep it in sync with the Railway service's CPU limit.
+ */
+export const FFMPEG_THREADS = Number(process.env.FFMPEG_THREADS) || 2;
+
+/** --postprocessor-args for yt-dlp's internal ffmpeg calls (merge, force-keyframe re-encode). */
+export function ytDlpThreadCapArgs(): string[] {
+  return ["--postprocessor-args", `ffmpeg:-threads ${FFMPEG_THREADS}`];
+}
 
 export type RunOptions = {
   /** Kill the process if it emits no stdout/stderr for this long (stalled). */
@@ -276,15 +304,22 @@ function fatalText(text: string): string {
   return lines.filter((l) => !/^\s*WARNING:/i.test(l)).join("\n");
 }
 
-/** Friendly wording for a transient failure that still names the real cause. */
+/**
+ * Friendly wording for a transient failure that still names the real cause.
+ * Only shown after the automatic retry has ALREADY been attempted and ALSO
+ * failed — so it must not claim retrying will help; that already happened
+ * and didn't. ("retrying usually fixes this" claimed exactly that and was
+ * wrong every time this fired on the ffmpeg-thread-overcommit bug — same
+ * failure, twice, back to back.)
+ */
 function transientMessage(raw: string): string {
   const text = fatalText(raw);
   const detail = (text.match(/ERROR:.*/i)?.[0] ?? "").trim().slice(0, 200);
   // A kill (stall/SIGKILL) is our process dying, not the host rejecting us —
   // don't blame "the video host" for something that happened on our end.
   const base = TRANSIENT_KILL_ERROR.test(text) && !TRANSIENT_THROTTLE_ERROR.test(text)
-    ? "The download hit a brief hiccup and was interrupted — retrying usually fixes this."
-    : "The video host rejected or throttled this download — wait a moment and try again.";
+    ? "This download was interrupted twice in a row by a server-side resource issue, not something wrong with the video. Try again in a bit — if it keeps failing on the same clip, that's worth reporting."
+    : "The video host rejected or throttled this download twice in a row — wait a few minutes before trying again.";
   return base + (detail ? ` (yt-dlp: ${detail})` : "");
 }
 

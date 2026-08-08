@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { resolveBin, run, runCapture } from "@/lib/bin";
+import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
 import { generateAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
@@ -141,6 +141,7 @@ async function cutClip(
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "23",
+    "-threads", String(FFMPEG_THREADS),
     "-c:a", "aac",
     "-b:a", "128k",
     "-movflags", "+faststart",

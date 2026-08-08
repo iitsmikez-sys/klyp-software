@@ -8,7 +8,7 @@ import { mkdir, readdir, stat, statfs, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { ffmpegLocationArgs, isDiskFullError, runYtDlpWithRetry } from "@/lib/bin";
+import { ffmpegLocationArgs, isDiskFullError, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
 
@@ -347,6 +347,7 @@ export async function resolveSourceSegment(
           "--no-playlist",
           "--socket-timeout", "30",
           ...ffmpegLocationArgs(),
+          ...ytDlpThreadCapArgs(),
           "--download-sections", `*${segStart}-${segEnd}`,
           "--force-keyframes-at-cuts",
           "-o", segPath,
@@ -418,6 +419,7 @@ export async function ensureSourceVideo(url: string): Promise<string> {
           "--no-playlist",
           "--socket-timeout", "30",
           ...ffmpegLocationArgs(),
+          ...ytDlpThreadCapArgs(),
           "-o", outPath,
           url,
         ],

@@ -22,7 +22,7 @@ import {
   type ContentType,
   type TimedWord,
 } from "@/lib/clips";
-import { ffmpegLocationArgs, resolveBin, run, runYtDlpWithRetry } from "@/lib/bin";
+import { ffmpegLocationArgs, resolveBin, run, runYtDlpWithRetry, ytDlpThreadCapArgs, FFMPEG_THREADS } from "@/lib/bin";
 import {
   type ChatSpike,
   type AudioWindow,
@@ -49,6 +49,7 @@ export async function downloadAudio(url: string, dir: string): Promise<string> {
       "--retries", "3",
       "--fragment-retries", "5",
       ...ffmpegLocationArgs(),
+      ...ytDlpThreadCapArgs(),
       "--concurrent-fragments", "4",
       "-o", path.join(dir, "audio.%(ext)s"),
       url,
@@ -72,6 +73,7 @@ export async function extractAudio(sourcePath: string, dir: string): Promise<str
       "-vn",
       "-c:a", "aac",
       "-b:a", "96k",
+      "-threads", String(FFMPEG_THREADS),
       "-y",
       outPath,
     ],
@@ -112,6 +114,7 @@ async function downloadAudioWindow(url: string, dir: string, w: AudioWindow): Pr
       "--retries", "3",
       "--fragment-retries", "5",
       ...ffmpegLocationArgs(),
+      ...ytDlpThreadCapArgs(),
       "--download-sections", `*${w.start}-${w.end}`,
       "--force-keyframes-at-cuts",
       "--concurrent-fragments", "4",
