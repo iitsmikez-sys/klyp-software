@@ -421,6 +421,11 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
   // the final output order is correct regardless of what order Claude used.
   clips.sort((a, b) => b.viral_score - a.viral_score);
 
+  console.log(
+    `[analyze] content=${contentType} types:`,
+    clips.map((c) => c.type).join(", ") || "(none)"
+  );
+
   return { clips, skipped };
 }
 
