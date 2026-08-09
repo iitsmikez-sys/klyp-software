@@ -15,18 +15,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rm, readFile } from "fs/promises";
 import path from "path";
-import { resolveBin, run } from "@/lib/bin";
+import { resolveBin, run, FFMPEG_THREADS } from "@/lib/bin";
 import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { VOD_URL_PATTERN } from "@/lib/clips";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export const OPTIONS = corsPreflight;
-
-const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
 async function cutPreview(
   sourcePath: string,
@@ -48,6 +46,7 @@ async function cutPreview(
     "-c:v", "libx264",
     "-preset", "ultrafast",
     "-crf", "30",
+    "-threads", String(FFMPEG_THREADS),
     "-c:a", "aac",
     "-b:a", "64k",
     "-movflags", "+faststart",

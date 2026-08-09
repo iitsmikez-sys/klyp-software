@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, FormEvent } from "react";
 import type { ClipType, AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, VOD_URL_PATTERN } from "@/lib/clips";
 import {
   MIN_ANALYZE_COST,
   CLIP_COUNT_OPTIONS,
@@ -18,9 +18,6 @@ import ClipPreview from "./ClipPreview";
 import ProGateModal from "./ProGateModal";
 import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
-
-const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
 /** Export can include a first-time source download + full-quality burn — generous but finite. */
 const EXPORT_TIMEOUT_MS = 10 * 60_000;
@@ -748,7 +745,7 @@ export default function AnalyzePanel() {
       <div className="bg-surface border border-border rounded-xl p-6">
         <h2 className="font-syne text-lg font-semibold text-foreground mb-1">Analyze a VOD</h2>
         <p className="text-sm text-foreground-muted mb-4">
-          Paste a YouTube/Twitch VOD URL or upload a video file. Klyp will find the 5 most clippable moments.
+          Paste a YouTube/Twitch/Kick VOD URL or upload a video file. Klyp will find the 5 most clippable moments.
         </p>
 
         {/* Input mode toggle */}
@@ -778,7 +775,7 @@ export default function AnalyzePanel() {
                 required
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=… or https://www.twitch.tv/videos/…"
+                placeholder="https://www.youtube.com/watch?v=… , twitch.tv/videos/… , or kick.com/…/videos/…"
                 disabled={loading || outOfSparks}
                 className="flex-1 px-4 py-2.5 rounded-lg bg-surface-2 border border-border text-sm text-foreground placeholder:text-subtle focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
               />

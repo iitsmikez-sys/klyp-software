@@ -90,10 +90,18 @@ export async function extractAudio(sourcePath: string, dir: string): Promise<str
  * know where the interesting moments are (chat spikes), so we fetch only
  * windows around them: ~20 × 60s ≈ 32MB instead of 1GB.
  *
- * Deliberately NOT used for YouTube or uploaded files: detectChatSpikes()
+ * Deliberately NOT used for YouTube, Kick, or uploaded files: detectChatSpikes()
  * returns null for anything that isn't a twitch.tv/videos/ URL, so there
  * would be no candidate windows and the analysis would find nothing. Those
  * keep the full-transcript path.
+ *
+ * Kick specifically has no equivalent to Twitch's chat-replay GQL query —
+ * checked 2026-08: Kick exposes no API for historical/past chat at all, only
+ * a live Pusher WebSocket feed you'd have to be connected to *during* the
+ * broadcast to capture. There's no way to retroactively pull chat density
+ * for an already-recorded VOD, so Kick can't get chat-spike detection without
+ * Klyp running its own always-on chat archiver — full-transcript analysis is
+ * the only option, not a gap to "fix" later.
  */
 
 /** Below this length, full audio is quick enough that segmenting isn't worth

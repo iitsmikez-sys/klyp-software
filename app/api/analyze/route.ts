@@ -24,7 +24,7 @@ import { tmpdir } from "os";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AnalyzeResponse, AnalyzeEvent, AnalyzeStage, ContentType } from "@/lib/clips";
-import { CONTENT_TYPES, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
+import { CONTENT_TYPES, DEFAULT_CONTENT_TYPE, VOD_URL_PATTERN } from "@/lib/clips";
 import { findUploadedVideo } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
@@ -45,9 +45,6 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export const OPTIONS = corsPreflight;
-
-const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
 type FailStage = Extract<AnalyzeResponse, { ok: false }>["stage"];
 
@@ -91,7 +88,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
 
   if (!uploadId && !VOD_URL_PATTERN.test(url)) {
-    return fail("validate", "Please provide a valid YouTube video or Twitch VOD URL.", 400);
+    return fail("validate", "Please provide a valid YouTube, Twitch, or Kick VOD URL.", 400);
   }
 
   let uploadedPath: string | null = null;
