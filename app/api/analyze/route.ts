@@ -39,6 +39,7 @@ import {
 } from "@/lib/sparks";
 import { detectChatSpikes, type ChatSpike } from "@/lib/twitch-chat";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
+import { saveTranscript } from "@/lib/transcripts";
 
 export const runtime = "nodejs";
 // Allow up to 5 minutes — download + transcription of a long VOD is slow.
@@ -73,6 +74,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let durationHint: number | undefined; // optional, from the client's cost preview — used for ETAs
   let clipCount: ClipCount = DEFAULT_CLIP_COUNT;
   let contentType: ContentType = DEFAULT_CONTENT_TYPE;
+  let keyword: string | undefined; // optional — weights matching transcript moments higher (see lib/analyze-pipeline.ts)
   try {
     const body = await req.json();
     url = String(body.url ?? "").trim();
@@ -86,6 +88,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     if ((CONTENT_TYPES as readonly string[]).includes(body.contentType)) {
       contentType = body.contentType as ContentType;
     }
+    const rawKeyword = String(body.keyword ?? "").trim().slice(0, 100);
+    if (rawKeyword) keyword = rawKeyword;
   } catch {
     return fail("validate", "Request body must be JSON: { \"url\": \"...\" } or { \"uploadId\": \"...\" }", 400);
   }
@@ -143,7 +147,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const reqId = Math.random().toString(36).slice(2, 8);
   const log = (...args: unknown[]) =>
     console.log(`[analyze ${reqId}]`, new Date().toISOString(), ...args);
-  log("start", uploadId ? `upload:${uploadId}` : url, `clips=${clipCount}`, `content=${contentType}`, `hint=${durationHint ?? "-"}s`);
+  log("start", uploadId ? `upload:${uploadId}` : url, `clips=${clipCount}`, `content=${contentType}`, `keyword=${keyword ?? "-"}`, `hint=${durationHint ?? "-"}s`);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -173,12 +177,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           : null;
 
         log("pipeline: started", uploadedPath ? "(upload)" : "(yt-dlp)");
-        const { clips: clipsWithWords, skipped, durationSeconds, transcriptChars } = await runAnalysisPipeline({
+        const { clips: clipsWithWords, skipped, durationSeconds, transcriptChars, words } = await runAnalysisPipeline({
           uploadedPath,
           url,
           durationHint,
           clipCount,
           contentType,
+          keyword,
           workDir,
           chatSpikesPromise: spikesPromise,
           onProgress: (progressStage, status, etaSeconds) => {
@@ -194,6 +199,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         log(
           "pipeline: done —",
           `${clipsWithWords.length}/${clipCount} clips${skipped > 0 ? ` (${skipped} malformed clip${skipped === 1 ? "" : "s"} skipped)` : ""}`
+        );
+
+        // Best-effort: persist the transcript for future keyword search.
+        // Never blocks or fails the analysis response — the migration that
+        // creates this table may not be applied yet (see migration 006).
+        saveTranscript(token!, { url: uploadId ? `upload:${uploadId}` : url, durationSeconds, words }).catch((err) =>
+          log("transcript save failed (non-fatal):", err instanceof Error ? err.message : String(err))
         );
 
         // Deduct Sparks server-side: VOD length cost + clip cost prorated by

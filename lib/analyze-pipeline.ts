@@ -221,6 +221,82 @@ export function formatTranscript(words: TimedWord[]): string {
 }
 
 /**
+ * Locate every spoken mention of a keyword/phrase in the transcript, word-
+ * boundary matched and case-insensitive. Returns the VOD-timeline second of
+ * each mention, deduped and sorted — this is the deterministic signal fed
+ * into the MIDAS prompt (see keywordSection in findClips) so the model
+ * weights those moments during its own scoring pass, rather than us
+ * filtering its output after the fact.
+ */
+export function findKeywordMatches(words: TimedWord[], keyword: string): number[] {
+  const trimmed = keyword.trim();
+  if (!trimmed || words.length === 0) return [];
+
+  // Join into one searchable string, tracking which word owns each char
+  // offset, so a match position maps back to a timestamp.
+  let text = "";
+  const offsets: { charStart: number; word: TimedWord }[] = [];
+  for (const w of words) {
+    offsets.push({ charStart: text.length, word: w });
+    text += w.text + " ";
+  }
+
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`\\b${escaped}\\b`, "gi");
+
+  const seconds = new Set<number>();
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(text))) {
+    // Walk offsets to find the last one starting at or before the match —
+    // that's the word the match falls inside.
+    let owner = offsets[0]?.word;
+    for (const o of offsets) {
+      if (o.charStart > m.index) break;
+      owner = o.word;
+    }
+    if (owner) seconds.add(Math.round(owner.start / 1000));
+    // Zero-width safety: a pattern that can match an empty string would
+    // otherwise loop forever at the same index.
+    if (m[0].length === 0) pattern.lastIndex++;
+  }
+  return Array.from(seconds).sort((a, b) => a - b);
+}
+
+/** Render keyword-match timestamps as a MIDAS prompt block instructing the
+ *  model to weight — not just filter for — moments near each mention. */
+function formatKeywordSection(keyword: string, matchSeconds: number[]): string {
+  const stamp = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+      : `${m}:${String(sec).padStart(2, "0")}`;
+  };
+
+  if (matchSeconds.length === 0) {
+    return `
+
+## KEYWORD FOCUS
+
+The user searched for "${keyword}" — it does not appear anywhere in this transcript (checked word-by-word, not a judgment call). Do not force a clip toward it; select your best moments overall using the normal process below.`;
+  }
+
+  const lines = matchSeconds.map((s) => `[${stamp(s)}] "${keyword}" spoken`);
+  return `
+
+## KEYWORD FOCUS
+
+The user specifically wants clips related to "${keyword}". The transcript mentions it at these exact timestamps (word-matched, not inferred):
+${lines.join("\n")}
+
+- Treat a nearby keyword mention as a strong additional signal on top of your normal five-dimension scoring — between two otherwise-comparable candidates, prefer the one near a mention.
+- A mention is a targeting signal, not a quality override: don't inflate viral_score for a low-energy, context-free namedrop just because it matches. Score it honestly; the keyword breaks ties and nudges genuinely-close candidates over the quality floor, it doesn't replace judgment.
+- Still scan the ENTIRE transcript per your normal process below — the keyword is additional signal on top of that scan, not a restriction to only these timestamps. A clearly superior moment elsewhere in the VOD still wins.
+- If nothing near a mention clears the quality floor, do not pad the results — return your best moments overall instead.`;
+}
+
+/**
  * The CLIP TYPES section of the MIDAS prompt, scoped to the VOD's content
  * type. CLUTCH and BIG_BRAIN rarely apply outside gameplay, so IRL swaps
  * them for STORY_TIME / AWKWARD / PUBLIC_INTERACTION — see
@@ -261,7 +337,9 @@ export async function findClips(
   durationSeconds: number,
   chatSpikes: ChatSpike[] | null,
   clipCount: ClipCount,
-  contentType: ContentType = DEFAULT_CONTENT_TYPE
+  contentType: ContentType = DEFAULT_CONTENT_TYPE,
+  keyword?: string,
+  keywordMatchSeconds: number[] = []
 ) {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
   const validTypes = CLIP_TYPES_BY_CONTENT[contentType];
@@ -279,6 +357,8 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
 - A spike is evidence, not a verdict: only pick the moment if the transcript supports a self-contained clip. Never clip a spike whose cause isn't visible in the transcript.
 - Absence of a spike does not disqualify a moment — quiet-audience gems still clip well.`
     : "";
+
+  const keywordSection = keyword?.trim() ? formatKeywordSection(keyword.trim(), keywordMatchSeconds) : "";
 
   const response = await client.messages.create({
     model: "claude-opus-4-8",
@@ -371,7 +451,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 - From your full Phase 1 candidate pool, return the TOP ${clipCount} by viral_score, highest first — never the first ${clipCount} you happened to find while scanning. A late-VOD 88 always beats an early-VOD 74, full stop.
 - QUALITY FLOOR: include a clip ONLY if its viral_score is 65 or higher. If the VOD has just 3 genuinely great moments, return 3 — NEVER pad the list with filler to hit the count. The streamer is charged per clip returned; a weak clip costs them money and trust.
 - Prefer variety ONLY as a tiebreaker between near-identical scores (within ~2 points): a wall of RAGE clips from one VOD is a worse deliverable than a spread of types. Variety is NEVER a reason to drop a higher-scoring moment for a lower-scoring one — score ranking always wins.
-- Do not pick overlapping or near-duplicate moments; if one moment produces two candidate windows, pick the better cut.${spikeSection}`,
+- Do not pick overlapping or near-duplicate moments; if one moment produces two candidate windows, pick the better cut.${spikeSection}${keywordSection}`,
     messages: [
       {
         role: "user",
@@ -439,6 +519,9 @@ export type PipelineResult = {
   skipped: number;
   durationSeconds: number;
   transcriptChars: number;
+  /** Full VOD-level word transcript — returned so the caller can persist it
+   *  (see lib/transcripts.ts). Not scoped to any single clip. */
+  words: TimedWord[];
 };
 
 /**
@@ -488,11 +571,17 @@ export async function runAnalysisPipeline(opts: {
    *  gaming for callers that don't have a per-request choice (e.g. the
    *  auto-clip background worker in lib/vod-poll.ts). */
   contentType?: ContentType;
+  /** Optional keyword/phrase from the analyze form — when set, moments near
+   *  a spoken mention are weighted higher during clip selection (see
+   *  findKeywordMatches / formatKeywordSection). Undefined falls back to
+   *  scanning the whole VOD for the best overall moments, unchanged. */
+  keyword?: string;
   chatSpikesPromise?: Promise<ChatSpike[] | null> | null;
   onProgress?: PipelineProgress;
 }): Promise<PipelineResult> {
   const { uploadedPath, url, durationHint, clipCount, workDir, onProgress } = opts;
   const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
+  const keyword = opts.keyword;
   const progress: PipelineProgress = onProgress ?? (() => {});
 
   memSnapshot("pipeline start");
@@ -563,8 +652,16 @@ export async function runAnalysisPipeline(opts: {
   const chatSpikes = await withMem("chat-spikes", async () =>
     chatSpikesPromise ? await chatSpikesPromise : null
   );
+  // NOTE: on the segmented long-VOD path (windows.length > 0 above), `words`
+  // only covers the chat-spike-sampled windows, not the full VOD — a keyword
+  // mentioned outside those windows won't be found. Same tradeoff the
+  // segmented path already makes for transcript coverage generally.
+  const keywordMatchSeconds = keyword ? findKeywordMatches(words, keyword) : [];
+  if (keyword) {
+    console.log(`[analyze] keyword="${keyword}" matched ${keywordMatchSeconds.length} time(s) in transcript`);
+  }
   const { clips, skipped } = await withMem("find-clips", () =>
-    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType)
+    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds)
   );
   progress("analyze", "done");
 
@@ -574,5 +671,5 @@ export async function runAnalysisPipeline(opts: {
   }));
   memSnapshot("pipeline end");
 
-  return { clips: clipsWithWords, skipped, durationSeconds, transcriptChars: transcriptText.length };
+  return { clips: clipsWithWords, skipped, durationSeconds, transcriptChars: transcriptText.length, words };
 }

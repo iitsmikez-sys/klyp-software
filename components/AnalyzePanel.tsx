@@ -18,6 +18,7 @@ import ClipPreview from "./ClipPreview";
 import ProGateModal from "./ProGateModal";
 import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
+import { getStoredHandle } from "@/lib/streamer-handle";
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
@@ -114,7 +115,7 @@ export default function AnalyzePanel() {
   const [estimating, setEstimating] = useState(false);
   const [estimatedSparks, setEstimatedSparks] = useState<number | null>(null);
   const [previewDuration, setPreviewDuration] = useState<number | null>(null);
-  const [handle, setHandle] = useState("");
+  const [keyword, setKeyword] = useState("");
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
   const [zipProgress, setZipProgress] = useState<{ done: number; total: number } | null>(null);
   // File upload flow ("Upload file" mode)
@@ -143,19 +144,15 @@ export default function AnalyzePanel() {
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
 
-  // Streamer handle + content type persist across sessions.
+  // Content type persists across sessions — keyword is per-analysis, so it
+  // intentionally does NOT persist (a stale keyword lingering onto an
+  // unrelated VOD would be a confusing default).
   useEffect(() => {
-    setHandle(localStorage.getItem("klyp-handle") ?? "");
     const storedContentType = localStorage.getItem("klyp-content-type");
     if ((CONTENT_TYPES as readonly string[]).includes(storedContentType ?? "")) {
       setContentType(storedContentType as ContentType);
     }
   }, []);
-  const updateHandle = (value: string) => {
-    const clean = value.replace(/^@/, "").replace(/[^A-Za-z0-9_]/g, "").slice(0, 25);
-    setHandle(clean);
-    localStorage.setItem("klyp-handle", clean);
-  };
   const updateContentType = (value: ContentType) => {
     setContentType(value);
     localStorage.setItem("klyp-content-type", value);
@@ -412,8 +409,8 @@ export default function AnalyzePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           inputMode === "file" && uploadedFile
-            ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType }
-            : { url, durationHint: previewDuration ?? undefined, clipCount, contentType }
+            ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType, keyword: keyword.trim() || undefined }
+            : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined }
         ),
       };
 
@@ -551,7 +548,7 @@ export default function AnalyzePanel() {
               title: clip.title,
               style,
               words: clip.words,
-              handle: handle || undefined,
+              handle: getStoredHandle(),
               hook: clipHooks[index] ?? undefined,
               // Keep the burn identical to the preview overlay (black pill bar).
               hook_style: "IMPACT",
@@ -947,25 +944,26 @@ export default function AnalyzePanel() {
           </div>
         </div>
 
-        {/* Streamer handle — burned into the corner of every export */}
+        {/* Keyword or topic — weights matching transcript moments higher when picking clips */}
         <div className="flex items-center gap-2 mt-3">
-          <label htmlFor="klyp-handle" className="text-xs text-foreground-muted whitespace-nowrap">
-            Streamer handle
+          <label htmlFor="klyp-keyword" className="text-xs text-foreground-muted whitespace-nowrap">
+            Keyword or topic
           </label>
-          <div className="flex items-center gap-0 px-3 py-1.5 rounded-lg bg-surface-2 border border-border focus-within:border-accent transition-colors">
-            <span className="text-xs text-subtle">@</span>
+          <div className="flex items-center px-3 py-1.5 rounded-lg bg-surface-2 border border-border focus-within:border-accent transition-colors">
             <input
-              id="klyp-handle"
+              id="klyp-keyword"
               type="text"
-              value={handle}
-              onChange={(e) => updateHandle(e.target.value)}
-              placeholder="yourname"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value.slice(0, 100))}
+              placeholder="e.g. pool, Kai, funny moment"
               disabled={loading}
-              className="w-32 bg-transparent text-xs text-foreground placeholder:text-subtle focus:outline-none disabled:opacity-50"
+              className="w-48 bg-transparent text-xs text-foreground placeholder:text-subtle focus:outline-none disabled:opacity-50"
             />
           </div>
           <span className="text-[10px] text-subtle">
-            {handle ? `@${handle} will be burned into your clips` : "optional — shown in the clip corner"}
+            {keyword.trim()
+              ? `moments mentioning "${keyword.trim()}" are weighted higher`
+              : "optional — leave blank to scan the whole VOD for best moments"}
           </span>
         </div>
 

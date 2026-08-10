@@ -11,7 +11,10 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Profile } from "@/lib/tier";
 
-function tokenClient(token: string) {
+/** Shared anon-key client scoped to a user's bearer token — exported for
+ *  other lib/*-from-token.ts helpers (e.g. lib/transcripts.ts) so they don't
+ *  each reimplement the same RLS-scoped client construction. */
+export function tokenClient(token: string) {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
