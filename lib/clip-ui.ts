@@ -72,22 +72,16 @@ export function fmtTime(totalSeconds: number) {
     : `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-export function platformName(url: string): "Twitch" | "YouTube" | "Kick" | "VOD" {
+export function platformName(url: string): "Twitch" | "YouTube" | "VOD" {
   try {
     const host = new URL(url).hostname;
     if (host.includes("twitch")) return "Twitch";
     if (host.includes("youtube") || host.includes("youtu.be")) return "YouTube";
-    if (host.includes("kick.com")) return "Kick";
   } catch { /* fall through */ }
   return "VOD";
 }
 
-/**
- * Deep-link into the source VOD at a clip's start time. Kick falls through
- * to the plain URL (no offset) — its deep-link scheme takes an absolute
- * ISO-8601 timestamp (?time=2024-03-29T22:00:33Z), not a seconds offset, and
- * we don't have the VOD's real-world start time on hand to compute one.
- */
+/** Deep-link into the source VOD at a clip's start time. */
 export function vodLinkAt(url: string, startSeconds: number): string {
   const s = Math.max(0, Math.floor(startSeconds));
   const platform = platformName(url);

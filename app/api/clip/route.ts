@@ -23,7 +23,6 @@ import {
   CAPTION_STYLES,
   EXPORT_FORMATS,
   FORMAT_DIMENSIONS,
-  VOD_URL_PATTERN,
   type CaptionStyle,
   type ExportFormat,
   type TimedWord,
@@ -38,6 +37,9 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export const OPTIONS = corsPreflight;
+
+const VOD_URL_PATTERN =
+  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
 /**
  * Static streamer-handle overlay, top-right corner. The handle is validated

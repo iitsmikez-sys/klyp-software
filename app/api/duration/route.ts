@@ -10,12 +10,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveBin, runCapture } from "@/lib/bin";
 import { estimateSparks } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
-import { VOD_URL_PATTERN } from "@/lib/clips";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export const OPTIONS = corsPreflight;
+
+const VOD_URL_PATTERN =
+  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
 const durationCache = new Map<string, number>();
 

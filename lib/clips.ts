@@ -3,23 +3,6 @@ import { z } from "zod";
 /** Word-level timestamp from AssemblyAI (milliseconds). */
 export type TimedWord = { text: string; start: number; end: number };
 
-/**
- * Recognized VOD URL formats — shared by every route that validates a VOD
- * URL (analyze/clip/preview/duration) and the frontend form, so they can
- * never drift out of sync with each other.
- *
- * Kick VODs live at kick.com/<channel>/videos/<uuid> (the UUID replaced an
- * older numeric-id format after a Kick site change, per yt-dlp's kick:vod
- * extractor). yt-dlp support for it is CURRENTLY BROKEN upstream as of
- * 2026-08 (Kick changed how VOD URLs/metadata are generated; yt-dlp issue
- * #17284, fix PR #17322 open but unmerged) — recognizing the URL here is
- * correct and gets Klyp the fix for free once that PR ships and the
- * container's yt-dlp (pulled at build time from GitHub's latest release)
- * picks it up, but actual downloads will 404 at the yt-dlp layer until then.
- */
-export const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/[\w-]+\/videos\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
-
 export const CAPTION_STYLES = ["BOLD", "CLEAN", "KLYP"] as const;
 export type CaptionStyle = (typeof CAPTION_STYLES)[number];
 
