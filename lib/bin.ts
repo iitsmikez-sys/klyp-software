@@ -25,9 +25,27 @@ console.log(`[bin] container reports ${os.cpus().length} logical CPU(s) (os.cpus
  */
 export const FFMPEG_THREADS = Number(process.env.FFMPEG_THREADS) || 2;
 
-/** --postprocessor-args for yt-dlp's internal ffmpeg calls (merge, force-keyframe re-encode). */
+/**
+ * Thread-cap args for every yt-dlp-invoked ffmpeg process. There are TWO
+ * distinct ffmpeg call sites inside yt-dlp and they take the cap through
+ * DIFFERENT flags — this is the actual bug behind the recurring -9 kills on
+ * /api/preview (2026-08-10), confirmed live: with --download-sections +
+ * --force-keyframes-at-cuts (used by resolveSourceSegment / the audio-window
+ * downloader), yt-dlp does the keyframe-accurate cut via its ffmpeg-based
+ * DOWNLOADER, not a postprocessor. --postprocessor-args never reaches that
+ * process — verified with --verbose: libx264 banner still read `threads=24`
+ * with only --postprocessor-args set, and only dropped to `threads=2` once
+ * --downloader-args was added. --postprocessor-args is still needed for the
+ * OTHER ffmpeg call site (the post-download bestvideo+bestaudio merge, e.g.
+ * on ensureSourceVideo's full-download path, which doesn't go through the
+ * downloader). Passing both is safe — whichever one a given yt-dlp
+ * invocation doesn't use is simply ignored.
+ */
 export function ytDlpThreadCapArgs(): string[] {
-  return ["--postprocessor-args", `ffmpeg:-threads ${FFMPEG_THREADS}`];
+  return [
+    "--downloader-args", `ffmpeg:-threads ${FFMPEG_THREADS}`,
+    "--postprocessor-args", `ffmpeg:-threads ${FFMPEG_THREADS}`,
+  ];
 }
 
 export type RunOptions = {
