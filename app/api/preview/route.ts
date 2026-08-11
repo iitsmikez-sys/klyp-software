@@ -17,6 +17,7 @@ import { rm, readFile } from "fs/promises";
 import path from "path";
 import { resolveBin, run, FFMPEG_THREADS } from "@/lib/bin";
 import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
+import { runQueued } from "@/lib/job-queue";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
 
@@ -112,15 +113,21 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let previewPath: string | null = null;
   try {
     const t0 = Date.now();
-    // Fetch only the slice this preview needs, not the whole VOD. The returned
-    // offset is where that slice begins in the original timeline, so the cut
-    // below must seek relative to it (a segment file starts at 0).
-    const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end);
-    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
+    // Concurrency-capped: the download (yt-dlp) + encode (ffmpeg) below are
+    // the actual CPU/memory-heavy work — the response streaming after it is
+    // cheap I/O and stays outside the queued slot.
+    previewPath = await runQueued(`preview:${reqId}`, async () => {
+      // Fetch only the slice this preview needs, not the whole VOD. The returned
+      // offset is where that slice begins in the original timeline, so the cut
+      // below must seek relative to it (a segment file starts at 0).
+      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end);
+      log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
 
-    const t1 = Date.now();
-    previewPath = await cutPreview(sourcePath, start - offsetSeconds, end - offsetSeconds);
-    log("preview cut in", `${((Date.now() - t1) / 1000).toFixed(1)}s`);
+      const t1 = Date.now();
+      const result = await cutPreview(sourcePath, start - offsetSeconds, end - offsetSeconds);
+      log("preview cut in", `${((Date.now() - t1) / 1000).toFixed(1)}s`);
+      return result;
+    });
 
     const fileBuffer = await readFile(previewPath);
     log("done, total", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `${(fileBuffer.byteLength / 1e6).toFixed(1)}MB`);

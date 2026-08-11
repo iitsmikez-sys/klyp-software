@@ -28,6 +28,7 @@ import {
   type TimedWord,
 } from "@/lib/clips";
 import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
+import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { UPSCALE_COST } from "@/lib/sparks";
@@ -289,53 +290,59 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let assDir: string | null = null;
   try {
     const t0 = Date.now();
-    // Fetch only the slice this clip needs, not the whole VOD. The returned
-    // offset is where that slice begins in the original timeline, so the cut
-    // below must seek relative to it (a segment file starts at 0).
-    const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end);
-    log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
+    // Concurrency-capped: the download (yt-dlp) + encode (ffmpeg) below are
+    // the actual CPU/memory-heavy work — the sparks charge and response
+    // streaming after it are cheap I/O and stay outside the queued slot.
+    clipPath = await runQueued(`clip:${reqId}`, async () => {
+      // Fetch only the slice this clip needs, not the whole VOD. The returned
+      // offset is where that slice begins in the original timeline, so the cut
+      // below must seek relative to it (a segment file starts at 0).
+      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end);
+      log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
 
-    // ASS PlayRes must match the output resolution so burned text scales with it.
-    // "Original" has no fixed dimensions — probe the source for its native size.
-    let res: { w: number; h: number };
-    if (format === "Original") {
-      const t1 = Date.now();
-      res = await probeVideoSize(sourcePath);
-      log("probed source size", `${res.w}x${res.h}`, `in ${((Date.now() - t1) / 1000).toFixed(1)}s`);
-    } else {
-      res = FORMAT_DIMENSIONS[format];
-    }
-    if (upscale) res = { w: res.w * 2, h: res.h * 2 };
+      // ASS PlayRes must match the output resolution so burned text scales with it.
+      // "Original" has no fixed dimensions — probe the source for its native size.
+      let res: { w: number; h: number };
+      if (format === "Original") {
+        const t1 = Date.now();
+        res = await probeVideoSize(sourcePath);
+        log("probed source size", `${res.w}x${res.h}`, `in ${((Date.now() - t1) / 1000).toFixed(1)}s`);
+      } else {
+        res = FORMAT_DIMENSIONS[format];
+      }
+      if (upscale) res = { w: res.w * 2, h: res.h * 2 };
 
-    let assPath: string | undefined;
-    let hookAssPath: string | undefined;
-    if ((style && words && words.length > 0) || hook) {
-      assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
-    }
-    if (style && words && words.length > 0) {
-      assPath = path.join(assDir!, "captions.ass");
-      const assContent = generateAss(words, start * 1000, end * 1000, style, res);
-      await writeFile(assPath, assContent, "utf-8");
-    }
-    if (hook) {
-      hookAssPath = path.join(assDir!, "hook.ass");
-      await writeFile(hookAssPath, generateHookAss(hook, res, hookStyle), "utf-8");
-    }
+      let assPath: string | undefined;
+      let hookAssPath: string | undefined;
+      if ((style && words && words.length > 0) || hook) {
+        assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
+      }
+      if (style && words && words.length > 0) {
+        assPath = path.join(assDir!, "captions.ass");
+        const assContent = generateAss(words, start * 1000, end * 1000, style, res);
+        await writeFile(assPath, assContent, "utf-8");
+      }
+      if (hook) {
+        hookAssPath = path.join(assDir!, "hook.ass");
+        await writeFile(hookAssPath, generateHookAss(hook, res, hookStyle), "utf-8");
+      }
 
-    const t2 = Date.now();
-    clipPath = await cutClip(
-      sourcePath,
-      start - offsetSeconds,
-      end - offsetSeconds,
-      isPro,
-      format,
-      assPath,
-      hookAssPath,
-      handle,
-      raw,
-      upscale
-    );
-    log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
+      const t2 = Date.now();
+      const result = await cutClip(
+        sourcePath,
+        start - offsetSeconds,
+        end - offsetSeconds,
+        isPro,
+        format,
+        assPath,
+        hookAssPath,
+        handle,
+        raw,
+        upscale
+      );
+      log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
+      return result;
+    });
 
     // Charge for the upscale only after the render succeeded.
     if (upscale) {

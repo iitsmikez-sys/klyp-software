@@ -40,6 +40,7 @@ import {
 import { detectChatSpikes, type ChatSpike } from "@/lib/twitch-chat";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
 import { saveTranscript } from "@/lib/transcripts";
+import { runQueued } from "@/lib/job-queue";
 
 export const runtime = "nodejs";
 // Allow up to 5 minutes — download + transcription of a long VOD is slow.
@@ -177,25 +178,33 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           : null;
 
         log("pipeline: started", uploadedPath ? "(upload)" : "(yt-dlp)");
-        const { clips: clipsWithWords, skipped, durationSeconds, transcriptChars, words } = await runAnalysisPipeline({
-          uploadedPath,
-          url,
-          durationHint,
-          clipCount,
-          contentType,
-          keyword,
-          workDir,
-          chatSpikesPromise: spikesPromise,
-          onProgress: (progressStage, status, etaSeconds) => {
-            if (status === "running") {
-              stage = progressStage;
-              stageStarted = Date.now();
-            } else {
-              log(`${progressStage}: done in`, elapsed());
-            }
-            send({ type: "progress", stage: progressStage, status, etaSeconds });
-          },
-        });
+        // Concurrency-capped: shares the same pool as /api/clip and
+        // /api/preview, so the container never runs more than
+        // MAX_CONCURRENT_JOBS yt-dlp+ffmpeg pipelines at once regardless of
+        // which route they came from.
+        const { clips: clipsWithWords, skipped, durationSeconds, transcriptChars, words } = await runQueued(
+          `analyze:${reqId}`,
+          () =>
+            runAnalysisPipeline({
+              uploadedPath,
+              url,
+              durationHint,
+              clipCount,
+              contentType,
+              keyword,
+              workDir,
+              chatSpikesPromise: spikesPromise,
+              onProgress: (progressStage, status, etaSeconds) => {
+                if (status === "running") {
+                  stage = progressStage;
+                  stageStarted = Date.now();
+                } else {
+                  log(`${progressStage}: done in`, elapsed());
+                }
+                send({ type: "progress", stage: progressStage, status, etaSeconds });
+              },
+            })
+        );
         log(
           "pipeline: done —",
           `${clipsWithWords.length}/${clipCount} clips${skipped > 0 ? ` (${skipped} malformed clip${skipped === 1 ? "" : "s"} skipped)` : ""}`
