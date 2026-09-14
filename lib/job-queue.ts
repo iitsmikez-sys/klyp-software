@@ -14,6 +14,17 @@
 
 const MAX_CONCURRENT_JOBS = Number(process.env.MAX_CONCURRENT_JOBS) || 2;
 
+/**
+ * Cap on how long a job can sit in the FIFO queue waiting for a free slot.
+ * Every job that actually STARTS is already bounded by its own
+ * stallTimeoutMs/maxRunMs (see lib/bin.ts) — but nothing previously bounded
+ * the wait *before* that, so a burst of analyze/preview/clip requests could
+ * leave a later request queued indefinitely with no error and no feedback,
+ * which is exactly what made a busy container's "Burning & exporting…"
+ * spinner look permanently hung instead of just waiting its turn.
+ */
+const MAX_QUEUE_WAIT_MS = Number(process.env.MAX_QUEUE_WAIT_MS) || 6 * 60_000;
+
 type QueuedJob = {
   id: string;
   label: string;
@@ -56,11 +67,13 @@ export function runQueued<T>(label: string, fn: () => Promise<T>): Promise<T> {
   }
 
   return new Promise<T>((resolve, reject) => {
-    queue.push({
+    let waitTimer: NodeJS.Timeout;
+    const job: QueuedJob = {
       id,
       label,
       queuedAt,
       start: () => {
+        clearTimeout(waitTimer);
         const waitedMs = Date.now() - queuedAt;
         if (waitedMs > 50) {
           console.log(`[queue] ${id} (${label}) started after waiting ${waitedMs}ms`);
@@ -72,7 +85,26 @@ export function runQueued<T>(label: string, fn: () => Promise<T>): Promise<T> {
             pump();
           });
       },
-    });
+    };
+    // Gives up waiting (rather than resolving/rejecting via fn()) only if the
+    // job is still sitting in the queue when this fires — a job already
+    // pulled off by pump() has cleared this timer in start() above.
+    waitTimer = setTimeout(() => {
+      const idx = queue.indexOf(job);
+      if (idx === -1) return;
+      queue.splice(idx, 1);
+      const waitedMs = Date.now() - queuedAt;
+      console.log(
+        `[queue] ${id} (${label}) gave up after waiting ${Math.round(waitedMs / 1000)}s — ` +
+          `${running}/${MAX_CONCURRENT_JOBS} slots busy, ${queue.length} still waiting`
+      );
+      reject(
+        new Error(
+          `The server is too busy to start this right now (waited ${Math.round(waitedMs / 1000)}s for a free slot). Try again in a minute.`
+        )
+      );
+    }, MAX_QUEUE_WAIT_MS);
+    queue.push(job);
     pump();
   });
 }
