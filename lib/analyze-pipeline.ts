@@ -11,6 +11,7 @@ import { readdir } from "fs/promises";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { logAnthropicRateLimits } from "@/lib/anthropic-rate-limits";
 import { AssemblyAI } from "assemblyai";
 import {
   clipAnalysisSchemaForContentType,
@@ -360,7 +361,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
 
   const keywordSection = keyword?.trim() ? formatKeywordSection(keyword.trim(), keywordMatchSeconds) : "";
 
-  const response = await client.messages.create({
+  const { data: response, response: rawResponse } = await client.messages.create({
     model: "claude-opus-4-8",
     max_tokens: 16000,
     thinking: { type: "adaptive" },
@@ -402,18 +403,24 @@ Calibrate honestly. 90+ means "this could genuinely go viral" — most VODs have
 
 ## THE 6 SIGNALS OF A CLIPPABLE MOMENT
 
-Do NOT just pick moments that feel generically "interesting." Run six deliberate detection passes over the transcript — one per signal below — and collect candidates from each pass before scoring anything. Every clip you return must be triggered by at least one signal, reported in its "signals" field (most dominant first).
+Do NOT just pick moments that feel generically "interesting." Run six deliberate detection passes over the transcript — one per signal below, in this priority order — and collect candidates from each pass before scoring anything. When two candidates are otherwise comparable, prefer the one triggered by the higher-priority signal. Every clip you return must be triggered by at least one signal, reported in its "signals" field (most dominant first).
 
-1. REACTION_SPIKE — a genuine, extreme reaction (shock, rage, joy, disgust) that erupts within ~2 seconds of its trigger. In transcript: sudden screaming, sentences cut off mid-word, cursing bursts, "NO WAY"/"WHAT", instant tone whiplash from calm to explosive. Delayed or performed reactions don't count.
-2. CHAT_EXPLOSION — the live audience erupting: chat message-rate spiking far above the stream's baseline. Assign this signal ONLY when chat replay spike data is present in your input AND a spike aligns with the moment (chat lags the cause by 5-15 seconds — anchor on the cause). If no chat data was provided, never assign this signal.
-3. UNEXPECTED_TURN — a setup followed by a twist or payoff, ideally landing 15-45 seconds after the setup: a confident claim that immediately backfires, a plan that inverts, a prediction that comes true absurdly fast. The clip must contain BOTH the setup and the payoff.
-4. CONFLICT — callouts, arguments, beef between people in or around the stream: streamer vs teammate, streamer vs chat, trash talk that escalates, genuine tension. Real friction only — scripted bits belong under other signals.
-5. RELATABLE_QUOTABLE — a standalone one-liner, hot take, or observation that would work as a screenshot or text post with no video. Big energy NOT required — deadpan delivery counts. Test: would this line work as a tweet?
+1. UNEXPECTED_TURN — a setup followed by a twist or payoff, ideally landing 15-45 seconds after the setup: a confident claim that immediately backfires, a plan that inverts, a prediction that comes true absurdly fast. The clip must contain BOTH the setup and the payoff — a setup with no payoff isn't a clip, it's dead air; do not select it.
+2. REACTION_SPIKE — a genuine, extreme reaction (shock, laughter, rage, disgust) that erupts within ~2 seconds of its trigger. In transcript: sudden screaming, sentences cut off mid-word, cursing bursts, laughter breaking through speech, "NO WAY"/"WHAT", instant tone whiplash from calm to explosive. Delayed or performed reactions don't count.
+3. RELATABLE_QUOTABLE — a standalone one-liner, hot take, or observation that would work as a screenshot or text post with no video, roughly under 10 words. Big energy NOT required — deadpan delivery counts. Test: would this line work as a tweet?
+4. CHAT_EXPLOSION — the live audience erupting: chat message-rate spiking far above the stream's baseline. Assign this signal ONLY when chat replay spike data is present in your input AND a spike aligns with the moment (chat lags the cause by 5-15 seconds — anchor on the cause). If no chat data was provided, never assign this signal.
+5. CONFLICT — callouts, arguments, beef between people in or around the stream: streamer vs teammate, streamer vs chat, trash talk that escalates, genuine tension. Weight it higher when the tension resolves in a way nobody saw coming (an apology that lands sideways, the argument flipping into laughter, a comeback that ends it cold) rather than fizzling out or resolving exactly as expected. Real friction only — scripted bits belong under other signals.
 6. CHAOS — bizarre, random, or off-topic moments unrelated to the main stream content: non-sequiturs, absurd tangents, unexplainable events, "why is this happening" energy.
+
+DEPRIORITIZE — these rarely make good clips even when nothing about them is technically wrong:
+- Slow builds: a moment that needs a long runway to get anywhere. If the payoff doesn't land within roughly the first 45 seconds, it's a weak candidate no matter what happens after.
+- Setup without payoff: a promising claim, bet, or buildup that the transcript never resolves. Half a moment is not a moment — this is UNEXPECTED_TURN's own rule above, generalized to every signal.
+- Anything that would only work by stretching past ~90 seconds. The 15-60s boundary below already enforces a hard cap tighter than this — don't reach for a marginal moment that only makes sense if you imagine a longer window than you're allowed to cut.
+- Calm, low-energy talking with no reaction, tension, or punchline. A streamer explaining something clearly but flatly, in a level conversational tone, is not a clip — it never goes viral no matter how interesting the content is. If nothing in the signal list above actually fires on a moment, that absence is usually exactly this: skip it. Never select a moment on vibes alone; every clip needs a real, identifiable trigger.
 
 Signals are your DETECTION layer; the five scoring dimensions remain your JUDGMENT layer. A moment found by any signal still has to earn its viral_score and clear the quality floor.
 
-IMPORTANT: "signals" is its own output field, separate from "type" (next section). Signal names (REACTION_SPIKE, CHAT_EXPLOSION, UNEXPECTED_TURN, CONFLICT, RELATABLE_QUOTABLE, CHAOS) go ONLY in the signals array — never in the type field.
+IMPORTANT: "signals" is its own output field, separate from "type" (next section). Signal names (UNEXPECTED_TURN, REACTION_SPIKE, RELATABLE_QUOTABLE, CHAT_EXPLOSION, CONFLICT, CHAOS) go ONLY in the signals array — never in the type field.
 
 ${clipTypesSection(contentType)}
 
@@ -461,7 +468,9 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
       },
     ],
     output_config: { format: zodOutputFormat(clipAnalysisSchemaForContentType(contentType)) },
-  });
+  }).withResponse();
+
+  logAnthropicRateLimits(rawResponse.headers, "findClips");
 
   // Lenient per-clip validation: messages.parse() rejects the WHOLE response if
   // any single clip is malformed (e.g. a signal name in the "type" field), which
@@ -503,6 +512,29 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
   // descending, but model compliance isn't guaranteed — always re-sort here so
   // the final output order is correct regardless of what order Claude used.
   clips.sort((a, b) => b.viral_score - a.viral_score);
+
+  // Safety net #2: the prompt also asks Claude not to return overlapping or
+  // near-duplicate moments, but it sometimes returns several clips anchored
+  // within seconds of each other (e.g. 4 clips all starting around 2:40:40).
+  // Greedily keep the highest-scoring clip in each 60s start-time window and
+  // drop the rest — clips is already sorted by viral_score descending, so the
+  // first clip claiming a window is always its best one.
+  const DEDUPE_WINDOW_S = 60;
+  const deduped: Clip[] = [];
+  for (const clip of clips) {
+    const collides = deduped.some(
+      (kept) => Math.abs(kept.start_seconds - clip.start_seconds) < DEDUPE_WINDOW_S
+    );
+    if (!collides) deduped.push(clip);
+  }
+  const duplicatesDropped = clips.length - deduped.length;
+  if (duplicatesDropped > 0) {
+    console.log(
+      `[analyze] dropped ${duplicatesDropped} clip(s) within ${DEDUPE_WINDOW_S}s of a higher-scoring clip`
+    );
+  }
+  clips.length = 0;
+  clips.push(...deduped);
 
   console.log(
     `[analyze] content=${contentType} types:`,

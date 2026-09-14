@@ -309,7 +309,17 @@ const segmentInflight = new Map<string, Promise<ResolvedSegment>>();
 export async function resolveSourceSegment(
   ref: string,
   startSeconds: number,
-  endSeconds: number
+  endSeconds: number,
+  /**
+   * Cap on the fetched source's height, passed straight into yt-dlp's format
+   * filter. /api/preview passes 480 — its output is downscaled to 540×960
+   * anyway (ultrafast/crf30, "visual quality doesn't matter"), so fetching
+   * and keyframe-re-encoding 1080p source for it just burns time on pixels
+   * that get thrown away. /api/clip needs full quality and keeps the 1080
+   * default. Baked into the cache key so a low-res preview segment is never
+   * handed to an export that needs real quality.
+   */
+  maxHeight = 1080
 ): Promise<ResolvedSegment> {
   // Uploads are already local — nothing to fetch, timeline is the original.
   if (isUploadRef(ref)) return { path: await resolveSource(ref), offsetSeconds: 0 };
@@ -323,7 +333,10 @@ export async function resolveSourceSegment(
 
   const segStart = Math.max(0, Math.floor(startSeconds));
   const segEnd = Math.ceil(endSeconds);
-  const segPath = path.join(CACHE_DIR, `seg-${key}-${segStart}-${segEnd}.mp4`);
+  const segPath = path.join(
+    CACHE_DIR,
+    `seg-${key}-${segStart}-${segEnd}${maxHeight !== 1080 ? `-h${maxHeight}` : ""}.mp4`
+  );
 
   if (existsSync(segPath) && (await stat(segPath)).size > 0) {
     log("segment cache hit", key, `${segStart}-${segEnd}s`);
@@ -338,11 +351,11 @@ export async function resolveSourceSegment(
     await ensureCacheSpace(key);
 
     const startedAt = Date.now();
-    log("segment download start", key, `${segStart}-${segEnd}s`);
+    log("segment download start", key, `${segStart}-${segEnd}s`, `maxHeight=${maxHeight}`);
     try {
       await runYtDlpWithRetry(
         [
-          "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b",
+          "-f", `bv*[height<=${maxHeight}][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=${maxHeight}]+ba/b`,
           "--merge-output-format", "mp4",
           "--no-playlist",
           "--socket-timeout", "30",
