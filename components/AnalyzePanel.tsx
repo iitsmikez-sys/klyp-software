@@ -945,11 +945,11 @@ export default function AnalyzePanel() {
         </div>
 
         {/* Keyword or topic — weights matching transcript moments higher when picking clips */}
-        <div className="flex items-center gap-2 mt-3">
+        <div className="flex flex-wrap items-center gap-2 mt-3">
           <label htmlFor="klyp-keyword" className="text-xs text-foreground-muted whitespace-nowrap">
             Keyword or topic
           </label>
-          <div className="flex items-center px-3 py-1.5 rounded-lg bg-surface-2 border border-border focus-within:border-accent transition-colors">
+          <div className="flex items-center px-3 py-1.5 rounded-lg bg-surface-2 border border-border focus-within:border-accent transition-colors w-full sm:w-48">
             <input
               id="klyp-keyword"
               type="text"
@@ -957,7 +957,7 @@ export default function AnalyzePanel() {
               onChange={(e) => setKeyword(e.target.value.slice(0, 100))}
               placeholder="e.g. pool, Kai, funny moment"
               disabled={loading}
-              className="w-48 bg-transparent text-xs text-foreground placeholder:text-subtle focus:outline-none disabled:opacity-50"
+              className="w-full bg-transparent text-xs text-foreground placeholder:text-subtle focus:outline-none disabled:opacity-50"
             />
           </div>
           <span className="text-[10px] text-subtle">

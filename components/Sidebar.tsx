@@ -80,6 +80,9 @@ interface UserInfo {
   initial: string;
 }
 
+/** Shared by Sidebar (desktop) and MobileNav (bottom bar, <768px) so both stay in sync. */
+export { navItems };
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -104,7 +107,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="flex flex-col w-60 min-h-screen bg-surface border-r border-border shrink-0">
+    <aside className="hidden md:flex flex-col w-60 min-h-screen bg-surface border-r border-border shrink-0">
       <div className="flex items-center justify-between px-6 h-16 border-b border-border">
         <Logo size="md" />
         <NotificationBell />

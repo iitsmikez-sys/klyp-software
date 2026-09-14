@@ -12,10 +12,10 @@ const statCards = [
 
 export default function DashboardPage() {
   return (
-    <div className="p-8 max-w-6xl mx-auto animate-fade-in">
-      <header className="mb-8 flex items-start justify-between gap-4">
+    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto animate-fade-in">
+      <header className="mb-8 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
-          <h1 className="font-syne text-3xl font-bold text-foreground">Dashboard</h1>
+          <h1 className="font-syne text-2xl sm:text-3xl font-bold text-foreground">Dashboard</h1>
           <p className="text-foreground-muted mt-1 text-sm">
             Connect a stream to start generating clips automatically.
           </p>
@@ -28,11 +28,11 @@ export default function DashboardPage() {
 
       <AnalyzePanel />
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-8">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 mb-8">
         {statCards.map((card) => (
           <div
             key={card.label}
-            className="bg-surface border border-border rounded-xl p-5"
+            className="bg-surface border border-border rounded-xl p-4 sm:p-5"
           >
             <p className="text-xs text-foreground-muted uppercase tracking-wider font-medium">
               {card.label}
