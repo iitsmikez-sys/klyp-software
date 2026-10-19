@@ -24,6 +24,7 @@ const config: Config = {
       fontFamily: {
         syne: ["var(--font-syne)", "sans-serif"],
         sans: ["var(--font-dm-sans)", "sans-serif"],
+        geist: ["var(--font-geist)", "sans-serif"],
       },
       boxShadow: {
         "accent-glow": "0 0 24px rgba(0, 229, 160, 0.2)",

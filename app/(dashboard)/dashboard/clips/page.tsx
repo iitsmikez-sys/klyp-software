@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import SavedClipEditor from "@/components/SavedClipEditor";
 import ClipThumbnail from "@/components/ClipThumbnail";
+import ClipPreviewModal from "@/components/ClipPreviewModal";
 import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { processingFetch } from "@/lib/processing-api";
+import { type ExportState, exportFilename, downloadExport } from "@/lib/clip-export";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import {
   type SavedClip,
@@ -38,11 +39,17 @@ export default function ClipsPage() {
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortKey>("newest");
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** Clip shown in the centred preview dialog — the grid behind is untouched. */
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  /** Open the dialog straight to Details — the ⋯ menu's editing actions live there. */
+  const [previewDetails, setPreviewDetails] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
+  /** Per-clip export progress. Lives here so closing the dialog mid-render
+   *  neither cancels the export nor loses the finished file. */
+  const [exports, setExports] = useState<Record<string, ExportState>>({});
   const { tier, refresh } = useSparks();
   const isPro = tier === "pro";
 
@@ -72,9 +79,16 @@ export default function ClipsPage() {
   };
 
   /** Render + download a clip with sensible defaults (BOLD captions if saved). */
-  const quickExport = async (clip: SavedClip, upscale = false) => {
+  /**
+   * Render a clip's MP4 and keep it. Opening the preview must never start this
+   * on its own, so it only runs from an explicit "Create clip". The finished
+   * file is held as an object URL, which flips the button to "Download clip"
+   * and lets a second click re-save it without another server render.
+   */
+  const createClip = async (clip: SavedClip, upscale = false) => {
     if (workingId) return;
     setWorkingId(clip.id);
+    setExports((prev) => ({ ...prev, [clip.id]: { status: "working" } }));
     try {
       const hasWords = Array.isArray(clip.words) && clip.words.length > 0;
       const res = await processingFetch("/api/clip", {
@@ -97,18 +111,19 @@ export default function ClipsPage() {
         throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
       }
       const blob = await res.blob();
-      const safe = clip.title.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_").slice(0, 60);
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = (safe || "klyp_clip") + (upscale ? "_4k" : "") + ".mp4";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
+      const state: ExportState = {
+        status: "ready",
+        objectUrl: URL.createObjectURL(blob),
+        filename: exportFilename(clip.title, upscale ? "_4k" : ""),
+      };
+      setExports((prev) => ({ ...prev, [clip.id]: state }));
+      // The click that asked for it is still the user's intent to save.
+      downloadExport(state);
       if (upscale) refresh(); // Sparks were spent server-side
     } catch (err) {
-      flash(err instanceof Error ? err.message : "Export failed.");
+      const message = err instanceof Error ? err.message : "Export failed.";
+      setExports((prev) => ({ ...prev, [clip.id]: { status: "error", error: message } }));
+      flash(message);
     } finally {
       setWorkingId(null);
     }
@@ -154,23 +169,23 @@ export default function ClipsPage() {
     },
     {
       icon: "⬇️", label: "Download HD", pro: false,
-      run: (clip) => quickExport(clip),
+      run: (clip) => createClip(clip),
     },
     {
       icon: "⬆️", label: "Upscale & Download", pro: true, hint: `${UPSCALE_COST}⚡`,
-      run: (clip) => quickExport(clip, true),
+      run: (clip) => createClip(clip, true),
     },
     {
       icon: "✂️", label: "Edit Clip", pro: true,
-      run: (clip) => setExpandedId(clip.id),
+      run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
     },
     {
       icon: "🎤", label: "AI Hook", pro: true,
-      run: (clip) => setExpandedId(clip.id),
+      run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
     },
     {
       icon: "📐", label: "Export Formats", pro: true,
-      run: (clip) => setExpandedId(clip.id),
+      run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
     },
     {
       icon: "🗑️", label: "Remove Watermark", pro: true,
@@ -207,6 +222,20 @@ export default function ClipsPage() {
     }
     return list;
   }, [clips, typeFilter, search, sort]);
+
+  const previewClip = useMemo(
+    () => clips.find((c) => c.id === previewId) ?? null,
+    [clips, previewId]
+  );
+
+  // Finished exports hold blobs in memory until the page goes away.
+  const exportsRef = useRef(exports);
+  exportsRef.current = exports;
+  useEffect(() => () => {
+    for (const state of Object.values(exportsRef.current)) {
+      if (state.status === "ready") URL.revokeObjectURL(state.objectUrl);
+    }
+  }, []);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -321,20 +350,13 @@ export default function ClipsPage() {
           {filtered.map((clip) => (
             <div
               key={clip.id}
-              onClick={() => setExpandedId(expandedId === clip.id ? null : clip.id)}
-              className={`bg-surface border rounded-xl p-4 flex flex-col transition-colors group cursor-pointer ${
-                expandedId === clip.id
-                  ? "border-accent/40 lg:col-span-2"
-                  : "border-border hover:border-accent/30"
-              }`}
+              onClick={() => { setPreviewId(clip.id); setPreviewDetails(false); }}
+              className="bg-surface border border-border rounded-xl p-4 flex flex-col transition-colors group cursor-pointer hover:border-accent/30"
             >
-              {/* 16:9 poster — play expands the card into SavedClipEditor, which
-                  mounts the real player, so the poster steps aside there. */}
-              {expandedId !== clip.id && (
-                <div className="mb-3">
-                  <ClipThumbnail clip={clip} onPlay={() => setExpandedId(clip.id)} />
-                </div>
-              )}
+              {/* 16:9 poster — play opens the centred preview dialog. */}
+              <div className="mb-3">
+                <ClipThumbnail clip={clip} onPlay={() => { setPreviewId(clip.id); setPreviewDetails(false); }} />
+              </div>
 
               <div className="flex items-center justify-between gap-3 mb-2.5">
                 <span className={`px-2.5 py-1 rounded-md border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
@@ -345,14 +367,6 @@ export default function ClipsPage() {
                   <span className={`font-syne text-xl font-bold ${clip.viral_score >= 85 ? "text-accent" : "text-foreground"}`}>
                     {clip.viral_score}
                   </span>
-                  <svg
-                    width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                    className={`text-foreground-muted transition-transform ${expandedId === clip.id ? "rotate-180" : ""}`}
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-
                   {/* ⋯ actions menu */}
                   <div className="relative">
                     <button
@@ -400,7 +414,7 @@ export default function ClipsPage() {
 
               <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{clip.title}</h3>
               {clip.caption && (
-                <p className={`text-[15px] leading-relaxed text-foreground-muted mb-3 ${expandedId === clip.id ? "" : "line-clamp-2"}`}>
+                <p className="text-[15px] leading-relaxed text-foreground-muted mb-3 line-clamp-2">
                   {clip.caption}
                 </p>
               )}
@@ -421,22 +435,38 @@ export default function ClipsPage() {
                 {/* Clips are stored as VOD timestamps, not files — this renders
                     the MP4 on demand via /api/clip, hence "Create clip". */}
                 <button
-                  onClick={(e) => { e.stopPropagation(); quickExport(clip); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const done = exports[clip.id];
+                    if (done?.status === "ready") downloadExport(done);
+                    else createClip(clip);
+                  }}
                   disabled={workingId === clip.id}
                   title="Render this clip from the source VOD and download it"
                   className="basis-full sm:basis-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim shadow-accent-glow-sm transition-colors disabled:opacity-60 disabled:shadow-none"
                 >
-                  {workingId === clip.id ? (
+                  {exports[clip.id]?.status === "working" ? (
                     <>
                       <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
                       Creating…
                     </>
-                  ) : (
+                  ) : exports[clip.id]?.status === "ready" ? (
                     <>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                         <polyline points="7 10 12 15 17 10" />
                         <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Download clip
+                    </>
+                  ) : (
+                    <>
+                      {/* scissors */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
+                        <line x1="20" y1="4" x2="8.12" y2="15.88" />
+                        <line x1="14.47" y1="14.48" x2="20" y2="20" />
+                        <line x1="8.12" y1="8.12" x2="12" y2="12" />
                       </svg>
                       Create clip
                     </>
@@ -481,8 +511,6 @@ export default function ClipsPage() {
                 </button>
               </div>
 
-              {/* Expanded editor — preview, hook, styles, format, export */}
-              {expandedId === clip.id && <SavedClipEditor clip={clip} />}
             </div>
           ))}
         </div>
@@ -491,6 +519,20 @@ export default function ClipsPage() {
       {/* Click-away closes the actions menu */}
       {menuOpenId && (
         <div className="fixed inset-0 z-20" onClick={() => setMenuOpenId(null)} />
+      )}
+
+      {previewClip && (
+        <ClipPreviewModal
+          clip={previewClip}
+          onClose={() => { setPreviewId(null); setPreviewDetails(false); }}
+          initialDetailsOpen={previewDetails}
+          exportState={exports[previewClip.id]}
+          onCreateClip={() => createClip(previewClip)}
+          onDownloadClip={() => {
+            const done = exports[previewClip.id];
+            if (done) downloadExport(done);
+          }}
+        />
       )}
 
       {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Syne, DM_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 const syne = Syne({
@@ -16,6 +17,13 @@ const dmSans = DM_Sans({
   display: "swap",
 });
 
+/** Geist — modal/dialog typography. The variable file already shipped in app/fonts. */
+const geist = localFont({
+  src: "./fonts/GeistVF.woff",
+  variable: "--font-geist",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Klyp — AI Video Clips for Streamers",
   description:
@@ -29,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${syne.variable} ${dmSans.variable}`}>
+    <html lang="en" className={`${syne.variable} ${dmSans.variable} ${geist.variable}`}>
       <body className="bg-background text-foreground font-sans antialiased">
         {children}
       </body>

@@ -32,7 +32,16 @@ const VOD_URL_PATTERN =
 async function cutPreview(
   sourcePath: string,
   startSeconds: number,
-  endSeconds: number
+  endSeconds: number,
+  /**
+   * False keeps the source's own aspect ratio (capped to 720p tall) instead of
+   * cropping to 9:16. The clip modal shows the moment as it was streamed —
+   * cropping a 16:9 gameplay clip to vertical there would hide most of the
+   * frame. The 9:16 crop stays the default: the caption/hook overlays in
+   * ClipPreview and SavedClipEditor are positioned for a vertical frame, and
+   * it mirrors what a 9:16 export produces.
+   */
+  crop: boolean
 ): Promise<string> {
   const duration = endSeconds - startSeconds;
   const outPath = path.join(
@@ -45,7 +54,10 @@ async function cutPreview(
     "-t", String(duration),
     "-i", sourcePath,
     // Half resolution — fast to encode, still looks fine in the player.
-    "-vf", "scale=540:960:force_original_aspect_ratio=increase,crop=540:960",
+    // -2 keeps the computed side even, which libx264 requires.
+    "-vf", crop
+      ? "scale=540:960:force_original_aspect_ratio=increase,crop=540:960"
+      : "scale=-2:720:force_original_aspect_ratio=decrease",
     "-c:v", "libx264",
     "-preset", "ultrafast",
     "-crf", "30",
@@ -76,12 +88,14 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const reqId = Math.random().toString(36).slice(2, 8);
   const log = (...args: unknown[]) => console.log(`[preview ${reqId}]`, new Date().toISOString(), ...args);
 
-  let url: string, start: number, end: number;
+  let url: string, start: number, end: number, crop: boolean;
   try {
     const body = await req.json();
     url = String(body.url ?? "").trim();
     start = Number(body.start_seconds);
     end = Number(body.end_seconds);
+    // Existing callers send no "crop" and keep the 9:16 behaviour they expect.
+    crop = body.crop !== false;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
@@ -109,7 +123,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "You must be signed in to preview clips." }, { status: 401 });
   }
 
-  log("start", url.slice(0, 100), `${start}-${end}s`);
+  log("start", url.slice(0, 100), `${start}-${end}s`, crop ? "9:16" : "source-aspect");
   let previewPath: string | null = null;
   try {
     const t0 = Date.now();
@@ -126,7 +140,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
 
       const t1 = Date.now();
-      const result = await cutPreview(sourcePath, start - offsetSeconds, end - offsetSeconds);
+      const result = await cutPreview(sourcePath, start - offsetSeconds, end - offsetSeconds, crop);
       log("preview cut in", `${((Date.now() - t1) / 1000).toFixed(1)}s`);
       return result;
     });

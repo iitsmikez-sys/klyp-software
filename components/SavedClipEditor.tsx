@@ -35,7 +35,11 @@ function fmtClipTime(seconds: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
+export default function SavedClipEditor({
+  clip,
+  /** The preview dialog renders its own player, so it suppresses this one. */
+  hidePreview = false,
+}: { clip: SavedClip; hidePreview?: boolean }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -255,6 +259,8 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
 
       {/* ── Editing controls (right) ── */}
       <div className="space-y-4">
+      {!hidePreview && (
+      <>
       {/* Preview player */}
       <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: "9/16", maxHeight: 380 }}>
         {loadingPreview && (
@@ -291,6 +297,8 @@ export default function SavedClipEditor({ clip }: { clip: SavedClip }) {
       <p className="text-[10px] text-subtle text-center -mt-2">
         Hook shown live — captions are burned in on export.
       </p>
+      </>
+      )}
 
       {/* Hook options */}
       <div>
