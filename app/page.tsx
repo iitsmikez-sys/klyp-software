@@ -6,116 +6,212 @@ import FAQ from "@/components/FAQ";
 import PricingSection from "@/components/PricingSection";
 import Hero3D from "@/components/Hero3D";
 import Stars from "@/components/Stars";
-import Equalizer from "@/components/Equalizer";
 import Waitlist from "@/components/Waitlist";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
+import ClipFlowDemo from "@/components/ClipFlowDemo";
 
-/* ─── Features ─── */
+/* ─── Features ───
+ * Descriptions stay short here; each one states only what the product does
+ * today. Anything not yet built carries a badge rather than present tense. */
 const features: {
   icon: React.ReactNode;
   title: string;
   desc: string;
+  /** Small, concrete preview of the feature — real vocabulary, no mock metrics. */
+  preview: React.ReactNode;
   cta?: { label: string; href: string };
   badge?: string;
 }[] = [
   {
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
         <path d="M12 8v4l3 3" />
       </svg>
     ),
-    title: "AI Viral Moment Detection",
-    desc: "Paste a VOD link and Klyp's AI scans the whole stream — transcript plus Twitch chat spikes — and hands you the 5 most clippable moments, scored out of 100.",
+    title: "AI moment detection",
+    desc: "Klyp reads the whole transcript and hands back your most clippable moments, each scored out of 100.",
+    preview: (
+      <div className="flex items-center gap-2">
+        {[
+          ["FUNNY", "bg-sky-500/15 text-sky-400 border-sky-500/30"],
+          ["CLUTCH", "bg-amber-500/15 text-amber-400 border-amber-500/30"],
+          ["FAIL", "bg-orange-500/15 text-orange-400 border-orange-500/30"],
+        ].map(([label, style]) => (
+          <span key={label} className={`px-2 py-0.5 rounded border text-[10px] font-bold tracking-wide ${style}`}>
+            {label}
+          </span>
+        ))}
+      </div>
+    ),
     cta: { label: "Try it now", href: "/dashboard" },
   },
   {
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="23 7 16 12 23 17 23 7" />
         <rect x="1" y="5" width="15" height="14" rx="2" />
       </svg>
     ),
-    title: "Auto Captions",
-    desc: "Word-perfect captions burned straight into the video in 3 caption styles — BOLD, CLEAN, and the Klyp signature green. Preview before you export.",
+    title: "Auto captions",
+    desc: "Word-level captions burned into the video, in three styles. Preview before you export.",
+    preview: (
+      <div className="flex items-center gap-2">
+        {["BOLD", "CLEAN", "⚡ KLYP"].map((s, i) => (
+          <span
+            key={s}
+            className={`px-2 py-0.5 rounded border text-[10px] font-bold tracking-wide ${
+              i === 0 ? "bg-accent-glow border-accent/50 text-accent" : "border-border text-foreground-muted"
+            }`}
+          >
+            {s}
+          </span>
+        ))}
+      </div>
+    ),
     cta: { label: "Try it now", href: "/dashboard" },
   },
   {
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 20h9" />
         <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
       </svg>
     ),
-    title: "Hook Generator",
-    desc: "Every clip comes with 3 AI-written opening hooks built to stop the scroll. Pick your favorite and it's burned over the first seconds of the clip.",
+    title: "Hook generator",
+    desc: "Three AI-written opening lines per clip. Pick one and it's burned over the first seconds.",
+    preview: (
+      <div className="space-y-1">
+        {["Option 1", "Option 2", "Option 3"].map((o, i) => (
+          <div
+            key={o}
+            className={`h-1.5 rounded-full ${i === 0 ? "bg-accent/70 w-3/4" : "bg-border w-1/2"}`}
+          />
+        ))}
+      </div>
+    ),
     cta: { label: "Try it now", href: "/dashboard" },
   },
   {
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="3" width="20" height="14" rx="2" />
         <path d="M8 21h8M12 17v4" />
       </svg>
     ),
-    title: "Multi-Platform Export",
-    desc: "One clip, three formats: 9:16 vertical for TikTok, Reels & Shorts, 1:1 square for the Instagram feed, and 16:9 for YouTube. Pick per clip before you download.",
+    title: "Every aspect ratio",
+    desc: "One clip, exported 9:16, 1:1 or 16:9 — or left at the source's own ratio.",
+    preview: (
+      <div className="flex items-end gap-2">
+        {[
+          ["9:16", "w-4 h-7"],
+          ["1:1", "w-6 h-6"],
+          ["16:9", "w-9 h-5"],
+        ].map(([label, size]) => (
+          <div key={label} className="flex flex-col items-center gap-1">
+            <div className={`${size} rounded border border-accent/40 bg-accent-glow`} />
+            <span className="text-[9px] font-mono text-foreground-muted">{label}</span>
+          </div>
+        ))}
+      </div>
+    ),
     cta: { label: "Try it now", href: "/dashboard" },
   },
   {
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <line x1="18" y1="20" x2="18" y2="10" />
         <line x1="12" y1="20" x2="12" y2="4" />
         <line x1="6" y1="20" x2="6" y2="14" />
       </svg>
     ),
-    title: "Creator Analytics",
-    desc: "Track everything you've clipped — viral score averages, your most common clip types, weekly output, and your top performers, all in one view.",
+    title: "Your clipping stats",
+    desc: "Average viral score, your most common clip types, and weekly output in one view.",
+    preview: (
+      <div className="flex items-end gap-1.5 h-9">
+        {[40, 70, 55, 90, 65, 80].map((h, i) => (
+          <div key={i} className="flex-1 rounded-sm bg-accent/50" style={{ height: `${h}%` }} />
+        ))}
+      </div>
+    ),
     cta: { label: "See your stats", href: "/dashboard/analytics" },
   },
   {
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 2H3v16h5v4l4-4h5l4-4V2z" />
       </svg>
     ),
-    title: "Workflow Automation",
-    desc: "Connect your Twitch or YouTube channel and Klyp will auto-clip every new VOD the moment it drops — no pasting links, ever.",
+    title: "Auto-clip your VODs",
+    desc: "Connect your Twitch channel and Klyp analyses each new VOD once your stream ends.",
+    preview: (
+      <div className="flex items-center gap-2 text-[11px] text-foreground-muted">
+        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+        Watching for new VODs
+      </div>
+    ),
     cta: { label: "Connect your channel", href: "/dashboard/streams" },
-    badge: "Coming soon",
+    badge: "Twitch only",
   },
 ];
 
-/* ─── Steps ─── */
+/* ─── Steps ───
+ * Auto-clipping runs off Twitch EventSub + Get Videos (lib/vod-poll.ts), so
+ * these describe the Twitch path rather than promising every platform. */
 const steps = [
   {
     num: "01",
     title: "Connect your channel",
-    desc: "Link your Twitch, YouTube, or Kick account in under 60 seconds. No downloads, no OBS plugins.",
+    desc: "Link your Twitch account in under a minute. Nothing to install, no OBS plugins.",
+    visual: (
+      <div className="flex items-center justify-center gap-2">
+        <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-400 text-[11px] font-bold">
+          Twitch
+        </span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00E5A0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </div>
+    ),
   },
   {
     num: "02",
     title: "Stream like you always do",
-    desc: "Klyp runs server-side. There's nothing to install or remember — just go live and play your game.",
+    desc: "Klyp runs server-side. There's nothing to remember — just go live and play.",
+    visual: (
+      <div className="flex items-center justify-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+        <span className="text-[11px] font-bold text-foreground-muted tracking-wide">LIVE</span>
+      </div>
+    ),
   },
   {
     num: "03",
-    title: "Wake up to your best clips",
-    desc: "After your stream, your top moments are clipped, trimmed, and waiting in your dashboard — ready to post.",
+    title: "Your clips are waiting",
+    desc: "Once your stream ends, Klyp analyses the VOD and your best moments land in the dashboard.",
+    visual: (
+      <div className="flex items-center justify-center gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="w-4 h-7 rounded border border-accent/40 bg-accent-glow"
+            style={{ opacity: 1 - i * 0.25 }}
+          />
+        ))}
+      </div>
+    ),
   },
 ];
 
-
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col font-geist">
       <AmbientAudio />
 
       {/* ── Nav ── */}
-      <nav className="sticky top-0 z-50 flex items-center justify-between px-8 h-16 border-b border-border bg-background/80 backdrop-blur-md">
-        <div className="flex items-center gap-1.5 sm:gap-2">
+      <nav className="sticky top-0 z-50 flex items-center justify-between gap-4 px-5 sm:px-8 h-16 border-b border-border bg-background/80 backdrop-blur-md">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           <Image
             src="/mascot.png"
             alt=""
@@ -126,189 +222,192 @@ export default function LandingPage() {
           />
           <Logo size="md" />
         </div>
+
+        <div className="hidden md:flex items-center gap-7">
+          {[
+            ["Features", "#features"],
+            ["How it works", "#how-it-works"],
+            ["Pricing", "#pricing"],
+          ].map(([label, href]) => (
+            <a
+              key={label}
+              href={href}
+              className="text-[15px] text-foreground-muted hover:text-foreground transition-colors"
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+
         <NavButtons />
       </nav>
 
-      {/* ── Hero ── */}
-      <section className="relative flex flex-col items-center justify-center text-center px-6 pt-28 pb-24 overflow-hidden">
+      {/* ── Hero — the 3D play button, particles and grid floor live here ── */}
+      <section className="relative flex flex-col items-center justify-center text-center px-6 pt-24 pb-20 overflow-hidden">
         <Hero3D />
+        {/* Readability scrim: darkens the animation directly behind the copy
+            without flattening the glow at the edges of the section. */}
+        <div
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(ellipse 60% 50% at 50% 42%, rgba(6,6,8,0.88) 0%, rgba(6,6,8,0.6) 45%, rgba(6,6,8,0) 100%)",
+          }}
+        />
+
         <div className="relative z-10 flex flex-col items-center w-full">
-        <FadeIn delay={0}>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-glow border border-accent/20 mb-8">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-            <span className="text-accent text-xs font-medium font-syne tracking-wide">
-              AI-powered clipping for streamers
-            </span>
-          </div>
-        </FadeIn>
-
-        <FadeIn delay={0.08}>
-          <h1 className="font-syne text-5xl md:text-7xl font-bold text-foreground leading-tight text-balance max-w-4xl">
-            Your best moments,{" "}
-            <span className="text-accent">clipped automatically</span>
-          </h1>
-        </FadeIn>
-
-        <FadeIn delay={0.16}>
-          <p className="mt-6 text-lg text-foreground-muted max-w-xl text-balance">
-            Klyp watches your streams in real time and uses AI to find, cut, and
-            export your most engaging clips — so you can focus on playing.
-          </p>
-        </FadeIn>
-
-        <FadeIn delay={0.22}>
-          <div className="flex flex-col sm:flex-row items-center gap-4 mt-10">
-            <Link
-              href="/login"
-              className="px-6 py-3 rounded-xl bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow"
-            >
-              Start clipping for free
-            </Link>
-            <Link
-              href="/dashboard"
-              className="px-6 py-3 rounded-xl bg-surface-2 border border-border text-foreground text-sm font-medium hover:border-subtle transition-colors"
-            >
-              View demo dashboard →
-            </Link>
-          </div>
-        </FadeIn>
-
-        {/* Mock preview */}
-        <FadeIn delay={0.3} className="mt-20 w-full max-w-5xl">
-          <div className="rounded-2xl bg-surface border border-border overflow-hidden shadow-2xl">
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-border bg-surface-2">
-              <span className="w-3 h-3 rounded-full bg-border" />
-              <span className="w-3 h-3 rounded-full bg-border" />
-              <span className="w-3 h-3 rounded-full bg-border" />
-              <span className="ml-3 text-xs text-foreground-muted">klyp.app/dashboard</span>
+          <FadeIn delay={0}>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-glow border border-accent/20 mb-8">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+              <span className="text-accent text-[13px] font-medium tracking-wide">
+                AI-powered clipping for streamers
+              </span>
             </div>
-            <div className="flex h-64">
-              <div className="w-48 border-r border-border bg-surface p-4 flex flex-col gap-2">
-                {["Dashboard", "My Clips", "Streams", "Analytics"].map((item) => (
-                  <div
-                    key={item}
-                    className={`h-8 rounded-lg px-3 flex items-center text-xs ${
-                      item === "Dashboard" ? "bg-accent-glow text-accent" : "text-foreground-muted"
-                    }`}
-                  >
-                    {item}
-                  </div>
-                ))}
-              </div>
-              <div className="flex-1 p-6 grid grid-cols-4 gap-3 content-start">
-                {["Clips", "Hours", "Score", "Streams"].map((label) => (
-                  <div key={label} className="bg-surface-2 border border-border rounded-xl p-3">
-                    <p className="text-xs text-foreground-muted">{label}</p>
-                    <p className="font-syne text-2xl font-bold text-foreground mt-1">—</p>
-                  </div>
-                ))}
-                <div className="col-span-4 bg-surface-2 border border-border rounded-xl p-4 flex items-center justify-center gap-5">
-                  <Equalizer className="hidden sm:flex flex-1 max-w-[160px]" />
-                  <p className="text-xs text-foreground-muted whitespace-nowrap">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent animate-pulse mr-2 align-middle" />
-                    Analyzing stream audio…
-                  </p>
-                  <Equalizer className="hidden sm:flex flex-1 max-w-[160px]" />
-                </div>
-              </div>
+          </FadeIn>
+
+          <FadeIn delay={0.08}>
+            <h1 className="font-geist text-5xl md:text-7xl font-bold text-white leading-[1.05] tracking-tight text-balance max-w-4xl">
+              Your best moments,{" "}
+              <span className="text-accent">clipped automatically</span>
+            </h1>
+          </FadeIn>
+
+          <FadeIn delay={0.16}>
+            <p className="mt-6 text-lg md:text-xl text-foreground-muted max-w-2xl text-balance leading-relaxed">
+              Klyp watches your streams in real time and uses AI to find, cut, and
+              export your most engaging clips — so you can focus on playing.
+            </p>
+          </FadeIn>
+
+          <FadeIn delay={0.22}>
+            <div className="flex flex-col sm:flex-row items-center gap-4 mt-10">
+              <Link
+                href="/login"
+                className="px-7 py-3.5 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim transition-colors shadow-accent-glow"
+              >
+                Start clipping for free
+              </Link>
+              <Link
+                href="/dashboard"
+                className="px-7 py-3.5 rounded-xl bg-surface-2/90 backdrop-blur-sm border border-border text-foreground text-base font-medium hover:border-subtle transition-colors"
+              >
+                View demo dashboard →
+              </Link>
             </div>
-          </div>
-        </FadeIn>
+          </FadeIn>
+
+          <FadeIn delay={0.28}>
+            <p className="mt-4 text-sm text-foreground-muted">
+              No credit card required. Free plan includes 60 Sparks a month.
+            </p>
+          </FadeIn>
         </div>
       </section>
 
-      {/* ── Trusted by bar ── */}
-      <FadeIn>
-        <div className="border-y border-border py-8 px-6">
-          <p className="text-center text-xs text-foreground-muted uppercase tracking-widest mb-6 font-medium">
-            Trusted by streamers on
-          </p>
-          <div className="flex items-center justify-center gap-12 flex-wrap opacity-40">
-            {["Twitch", "YouTube", "Kick", "TikTok"].map((name) => (
-              <span key={name} className="font-syne font-bold text-lg text-foreground">
-                {name}
-              </span>
-            ))}
-          </div>
-        </div>
-      </FadeIn>
-
-      {/* ── Features ── */}
-      <section className="relative px-6 py-24 w-full overflow-hidden">
-        <Stars />
-        <div className="relative z-10 max-w-6xl mx-auto w-full">
-        <FadeIn>
-          <div className="text-center mb-16">
-            <p className="text-accent text-xs font-semibold font-syne uppercase tracking-widest mb-3">
-              Features
-            </p>
-            <h2 className="font-syne text-4xl md:text-5xl font-bold text-foreground">
-              Everything you need to grow
-            </h2>
-            <p className="mt-4 text-foreground-muted max-w-xl mx-auto">
-              Stop clipping manually. Klyp handles the whole pipeline — from detection to export.
-            </p>
+      {/* ── VOD → clips ── */}
+      <section className="relative px-6 pb-24 -mt-4">
+        <FadeIn className="max-w-6xl mx-auto w-full">
+          <div className="rounded-3xl bg-surface/90 backdrop-blur-md border border-border p-5 sm:p-8 shadow-2xl">
+            <div className="text-center mb-8">
+              <h2 className="font-geist text-2xl sm:text-3xl font-bold text-white">
+                One VOD in. A week of shorts out.
+              </h2>
+              <p className="mt-2 text-base text-foreground-muted max-w-xl mx-auto">
+                Paste a Twitch or YouTube VOD and Klyp returns the moments worth posting,
+                cut and formatted for vertical.
+              </p>
+            </div>
+            <ClipFlowDemo />
           </div>
         </FadeIn>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {features.map((f, i) => (
-            <FadeIn key={f.title} delay={i * 0.07}>
-              <div className="lift h-full flex flex-col bg-surface border border-border rounded-2xl p-6 hover:border-accent/30 group">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-accent-glow flex items-center justify-center text-accent group-hover:shadow-accent-glow-sm transition-shadow">
-                    {f.icon}
-                  </div>
-                  {f.badge && (
-                    <span className="px-2 py-1 rounded-full bg-surface-2 border border-border text-[10px] font-bold font-syne text-foreground-muted uppercase tracking-wide">
-                      {f.badge}
-                    </span>
-                  )}
-                </div>
-                <h3 className="font-syne text-base font-semibold text-foreground mb-2">{f.title}</h3>
-                <p className="text-sm text-foreground-muted leading-relaxed flex-1">{f.desc}</p>
-                {f.cta && (
-                  <Link
-                    href={f.cta.href}
-                    className="inline-flex items-center gap-1 mt-4 text-sm font-bold font-syne text-accent hover:gap-2 transition-all"
-                  >
-                    {f.cta.label} →
-                  </Link>
-                )}
-              </div>
-            </FadeIn>
-          ))}
-        </div>
-        </div>
       </section>
 
       {/* ── How it works ── */}
-      <section className="relative px-6 py-24 bg-surface border-y border-border overflow-hidden">
+      <section
+        id="how-it-works"
+        className="relative px-6 py-24 bg-surface border-y border-border overflow-hidden scroll-mt-16"
+      >
         <Stars density={0.7} />
         <div className="relative z-10 max-w-5xl mx-auto w-full">
           <FadeIn>
-            <div className="text-center mb-16">
-              <p className="text-accent text-xs font-semibold font-syne uppercase tracking-widest mb-3">
+            <div className="text-center mb-14">
+              <p className="text-accent text-[13px] font-semibold uppercase tracking-widest mb-3">
                 How it works
               </p>
-              <h2 className="font-syne text-4xl md:text-5xl font-bold text-foreground">
-                Set up in 60 seconds
+              <h2 className="font-geist text-4xl md:text-5xl font-bold text-white tracking-tight">
+                Set up once, then forget it
               </h2>
             </div>
           </FadeIn>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-            {/* connector line — desktop only */}
-            <div className="hidden md:block absolute top-8 left-[calc(16.67%+1rem)] right-[calc(16.67%+1rem)] h-px bg-gradient-to-r from-border via-accent/30 to-border" />
-
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {steps.map((step, i) => (
               <FadeIn key={step.num} delay={i * 0.12}>
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-accent-glow border border-accent/20 flex items-center justify-center mb-6 relative z-10">
-                    <span className="font-syne text-xl font-bold text-accent">{step.num}</span>
+                <div className="h-full flex flex-col rounded-2xl bg-background/80 backdrop-blur-sm border border-border p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <span className="w-11 h-11 rounded-xl bg-accent-glow border border-accent/20 flex items-center justify-center font-geist text-base font-bold text-accent">
+                      {step.num}
+                    </span>
+                    {step.visual}
                   </div>
-                  <h3 className="font-syne text-lg font-semibold text-foreground mb-3">{step.title}</h3>
-                  <p className="text-sm text-foreground-muted leading-relaxed">{step.desc}</p>
+                  <h3 className="font-geist text-lg font-semibold text-white mb-2">{step.title}</h3>
+                  <p className="text-[15px] text-foreground-muted leading-relaxed">{step.desc}</p>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Features ── */}
+      <section id="features" className="relative px-6 py-24 w-full overflow-hidden scroll-mt-16">
+        <Stars />
+        <div className="relative z-10 max-w-6xl mx-auto w-full">
+          <FadeIn>
+            <div className="text-center mb-14">
+              <p className="text-accent text-[13px] font-semibold uppercase tracking-widest mb-3">
+                Features
+              </p>
+              <h2 className="font-geist text-4xl md:text-5xl font-bold text-white tracking-tight">
+                Everything you need to grow
+              </h2>
+              <p className="mt-4 text-base text-foreground-muted max-w-xl mx-auto">
+                Stop clipping manually. Klyp handles the whole pipeline — from detection to export.
+              </p>
+            </div>
+          </FadeIn>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {features.map((f, i) => (
+              <FadeIn key={f.title} delay={i * 0.07}>
+                <div className="lift h-full flex flex-col bg-surface/95 backdrop-blur-sm border border-border rounded-2xl p-6 hover:border-accent/30 group">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-accent-glow flex items-center justify-center text-accent group-hover:shadow-accent-glow-sm transition-shadow">
+                      {f.icon}
+                    </div>
+                    {f.badge && (
+                      <span className="px-2 py-1 rounded-full bg-surface-2 border border-border text-[10px] font-bold text-foreground-muted uppercase tracking-wide">
+                        {f.badge}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-geist text-lg font-semibold text-white mb-2">{f.title}</h3>
+                  <p className="text-[15px] text-foreground-muted leading-relaxed flex-1">{f.desc}</p>
+
+                  {/* Product preview strip */}
+                  <div className="mt-5 pt-4 border-t border-border min-h-[46px] flex items-center">
+                    {f.preview}
+                  </div>
+
+                  {f.cta && (
+                    <Link
+                      href={f.cta.href}
+                      className="inline-flex items-center gap-1 mt-4 text-[15px] font-bold text-accent hover:gap-2 transition-all"
+                    >
+                      {f.cta.label} →
+                    </Link>
+                  )}
                 </div>
               </FadeIn>
             ))}
@@ -317,17 +416,19 @@ export default function LandingPage() {
       </section>
 
       {/* ── Pricing ── */}
-      <PricingSection />
+      <div id="pricing" className="scroll-mt-16">
+        <PricingSection />
+      </div>
 
       {/* ── FAQ ── */}
       <section className="px-6 py-24 bg-surface border-y border-border">
         <div className="max-w-3xl mx-auto w-full">
           <FadeIn>
             <div className="text-center mb-12">
-              <p className="text-accent text-xs font-semibold font-syne uppercase tracking-widest mb-3">
+              <p className="text-accent text-[13px] font-semibold uppercase tracking-widest mb-3">
                 FAQ
               </p>
-              <h2 className="font-syne text-4xl md:text-5xl font-bold text-foreground">
+              <h2 className="font-geist text-4xl md:text-5xl font-bold text-white tracking-tight">
                 Common questions
               </h2>
             </div>
@@ -345,46 +446,51 @@ export default function LandingPage() {
       {/* ── Final CTA ── */}
       <section className="px-6 py-32 relative overflow-hidden">
         <Stars density={0.8} />
-        {/* radial glow */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-[600px] h-[400px] rounded-full bg-accent opacity-[0.06] blur-[120px]" />
         </div>
 
         <FadeIn className="relative z-10 text-center max-w-3xl mx-auto">
-          <h2 className="font-syne text-4xl md:text-6xl font-bold text-foreground leading-tight mb-6">
+          <h2 className="font-geist text-4xl md:text-6xl font-bold text-white leading-tight tracking-tight mb-6">
             Start turning streams into{" "}
             <span className="text-accent">viral clips</span> today
           </h2>
-          <p className="text-foreground-muted text-lg mb-10 max-w-xl mx-auto">
-            Join thousands of streamers using Klyp to grow their audience on
-            autopilot. No credit card required.
+          <p className="text-foreground-muted text-lg mb-10 max-w-xl mx-auto leading-relaxed">
+            Paste your first VOD and see what Klyp pulls out of it. The free plan
+            includes 60 Sparks a month — no credit card needed.
           </p>
           <Link
             href="/login"
-            className="inline-block px-8 py-4 rounded-2xl bg-accent text-background text-base font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow"
+            className="inline-block px-8 py-4 rounded-2xl bg-accent text-background text-base font-bold hover:bg-accent-dim transition-colors shadow-accent-glow"
           >
             Get started for free →
           </Link>
-          <p className="mt-4 text-xs text-foreground-muted">
+          <p className="mt-4 text-sm text-foreground-muted">
             Free forever · No credit card · Cancel anytime
           </p>
         </FadeIn>
       </section>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-border px-8 py-8">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <Logo size="sm" />
-          <div className="flex items-center gap-6 text-xs text-foreground-muted">
-            {["Privacy", "Terms", "Status", "Twitter / X"].map((l) => (
-              <a key={l} href="#" className="hover:text-foreground transition-colors">
-                {l}
+      <footer className="border-t border-border px-6 sm:px-8 py-10">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5">
+          <div className="flex items-center gap-2">
+            <Logo size="sm" />
+          </div>
+          <div className="flex items-center gap-6 text-sm text-foreground-muted">
+            {[
+              ["Features", "#features"],
+              ["How it works", "#how-it-works"],
+              ["Pricing", "#pricing"],
+            ].map(([label, href]) => (
+              <a key={label} href={href} className="hover:text-foreground transition-colors">
+                {label}
               </a>
             ))}
           </div>
-          <p className="text-xs text-foreground-muted">© 2026 Klyp. All rights reserved.</p>
+          <p className="text-sm text-foreground-muted">© 2026 Klyp. All rights reserved.</p>
         </div>
-        <p className="max-w-6xl mx-auto mt-4 text-[10px] text-subtle text-center md:text-left">
+        <p className="max-w-6xl mx-auto mt-5 text-xs text-subtle text-center md:text-left">
           Music: &quot;Floating Cities&quot; by Kevin MacLeod (incompetech.com) — Licensed under CC BY 4.0
         </p>
       </footer>

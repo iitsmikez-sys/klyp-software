@@ -41,6 +41,9 @@ function buildPlayButton() {
     emissiveIntensity: 0.55,
     metalness: 0.35,
     roughness: 0.25,
+    // Sits behind the headline, so it reads as depth rather than foreground.
+    transparent: true,
+    opacity: 0.7,
   });
   const tri = new THREE.Mesh(triGeo, triMat);
   group.add(tri);
@@ -171,12 +174,17 @@ export default function Hero3D() {
     window.addEventListener("pointermove", onPointer);
     if (isMobile) window.addEventListener("deviceorientation", onTilt);
 
-    // Size to container
+    // Size to container. On a tall, narrow viewport a 50deg camera makes the
+    // button swallow the hero, so shrink it toward the aspect ratio instead of
+    // letting it cover the headline.
+    let fitScale = 1;
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = mount;
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      fitScale = THREE.MathUtils.clamp(camera.aspect * 0.78, 0.42, 1);
+      button.scale.setScalar(fitScale);
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -208,8 +216,8 @@ export default function Hero3D() {
       const pulse = 0.55 + Math.sin(t * 2.2) * 0.25;
       triMat.emissiveIntensity = pulse;
       ringMat.emissiveIntensity = pulse * 0.55;
-      halo.material.opacity = 0.7 + Math.sin(t * 2.2) * 0.2;
-      halo.scale.setScalar(9 + Math.sin(t * 2.2) * 0.5);
+      halo.material.opacity = (0.7 + Math.sin(t * 2.2) * 0.2) * (0.55 + fitScale * 0.45);
+      halo.scale.setScalar((9 + Math.sin(t * 2.2) * 0.5) * fitScale);
 
       // Drift particles upward, wrap around
       const pos = pGeo.attributes.position as THREE.BufferAttribute;
