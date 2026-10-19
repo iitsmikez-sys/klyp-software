@@ -662,7 +662,7 @@ export default function AnalyzePanel() {
   };
 
   return (
-    <section className="mb-8">
+    <section>
       {/* ── Full-screen pipeline progress overlay ── */}
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
@@ -743,11 +743,10 @@ export default function AnalyzePanel() {
 
       {/* VOD input — URL paste or file upload */}
       <div className="bg-surface border border-border rounded-xl p-6">
-        <h2 className="font-syne text-lg font-semibold text-foreground mb-1">Analyze a VOD</h2>
-        <p className="text-sm text-foreground-muted mb-4">
-          Paste a YouTube/Twitch VOD URL or upload a video file. Klyp will find the 5 most clippable moments.
+        <h2 className="font-geist text-xl font-bold text-white mb-1">Analyze a VOD</h2>
+        <p className="text-[15px] text-foreground-muted mb-4">
+          Paste a video link or upload a file to find your best moments.
         </p>
-
         {/* Input mode toggle */}
         <div className="flex rounded-lg border border-border overflow-hidden w-fit mb-3">
           {([["url", "Paste URL"], ["file", "Upload file"]] as const).map(([mode, label]) => (
@@ -756,7 +755,7 @@ export default function AnalyzePanel() {
               type="button"
               onClick={() => switchMode(mode)}
               disabled={loading}
-              className={`px-4 py-2 text-xs font-bold font-syne transition-colors disabled:opacity-50 ${
+              className={`px-4 py-2.5 text-sm font-bold transition-colors disabled:opacity-50 ${
                 inputMode === mode
                   ? "bg-accent-glow text-accent"
                   : "bg-surface-2 text-foreground-muted hover:text-foreground"
@@ -777,12 +776,12 @@ export default function AnalyzePanel() {
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://www.youtube.com/watch?v=… or https://www.twitch.tv/videos/…"
                 disabled={loading || outOfSparks}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-surface-2 border border-border text-sm text-foreground placeholder:text-subtle focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-3 rounded-lg bg-surface-2 border border-border text-[15px] text-foreground placeholder:text-foreground-muted focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={loading || !url || outOfSparks || cantAfford}
-                className="px-6 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none whitespace-nowrap"
+                className="px-7 py-3 rounded-lg bg-accent text-background text-[15px] font-bold hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none whitespace-nowrap"
               >
                 {loading ? "Analyzing…" : "Find clips"}
               </button>
@@ -947,7 +946,7 @@ export default function AnalyzePanel() {
         {/* Keyword or topic — weights matching transcript moments higher when picking clips */}
         <div className="flex flex-wrap items-center gap-2 mt-3">
           <label htmlFor="klyp-keyword" className="text-sm text-foreground whitespace-nowrap">
-            Keyword or topic
+            Keyword or topic (optional)
           </label>
           <div className="flex items-center px-3 py-1.5 rounded-lg bg-surface-2 border border-border focus-within:border-accent transition-colors w-full sm:w-48">
             <input
@@ -963,7 +962,7 @@ export default function AnalyzePanel() {
           <span className="text-xs text-foreground-muted">
             {keyword.trim()
               ? `moments mentioning "${keyword.trim()}" are weighted higher`
-              : "optional — leave blank to scan the whole VOD for best moments"}
+              : "Leave blank to find the best moments."}
           </span>
         </div>
 

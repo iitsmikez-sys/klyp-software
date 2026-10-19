@@ -9,7 +9,8 @@ import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { processingFetch } from "@/lib/processing-api";
-import { type ExportState, exportFilename, downloadExport } from "@/lib/clip-export";
+import { downloadExport } from "@/lib/clip-export";
+import { useClipExports } from "@/components/useClipExports";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import {
   type SavedClip,
@@ -46,11 +47,11 @@ export default function ClipsPage() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [workingId, setWorkingId] = useState<string | null>(null);
-  /** Per-clip export progress. Lives here so closing the dialog mid-render
-   *  neither cancels the export nor loses the finished file. */
-  const [exports, setExports] = useState<Record<string, ExportState>>({});
+
+
   const { tier, refresh } = useSparks();
+  // Shared with the dashboard's Saved Clips so both behave identically.
+  const { exports, workingId, createClip, createOrDownload } = useClipExports(refresh);
   const isPro = tier === "pro";
 
   useEffect(() => {
@@ -79,56 +80,6 @@ export default function ClipsPage() {
   };
 
   /** Render + download a clip with sensible defaults (BOLD captions if saved). */
-  /**
-   * Render a clip's MP4 and keep it. Opening the preview must never start this
-   * on its own, so it only runs from an explicit "Create clip". The finished
-   * file is held as an object URL, which flips the button to "Download clip"
-   * and lets a second click re-save it without another server render.
-   */
-  const createClip = async (clip: SavedClip, upscale = false) => {
-    if (workingId) return;
-    setWorkingId(clip.id);
-    setExports((prev) => ({ ...prev, [clip.id]: { status: "working" } }));
-    try {
-      const hasWords = Array.isArray(clip.words) && clip.words.length > 0;
-      const res = await processingFetch("/api/clip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: clip.url,
-          start_seconds: clip.start_seconds,
-          end_seconds: clip.end_seconds,
-          title: clip.title,
-          style: hasWords ? "BOLD" : undefined,
-          words: hasWords ? clip.words : undefined,
-          handle: getStoredHandle(),
-          aspect_ratio: "9:16",
-          upscale: upscale || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
-      }
-      const blob = await res.blob();
-      const state: ExportState = {
-        status: "ready",
-        objectUrl: URL.createObjectURL(blob),
-        filename: exportFilename(clip.title, upscale ? "_4k" : ""),
-      };
-      setExports((prev) => ({ ...prev, [clip.id]: state }));
-      // The click that asked for it is still the user's intent to save.
-      downloadExport(state);
-      if (upscale) refresh(); // Sparks were spent server-side
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Export failed.";
-      setExports((prev) => ({ ...prev, [clip.id]: { status: "error", error: message } }));
-      flash(message);
-    } finally {
-      setWorkingId(null);
-    }
-  };
-
   const duplicateClip = async (clip: SavedClip) => {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -169,11 +120,11 @@ export default function ClipsPage() {
     },
     {
       icon: "⬇️", label: "Download HD", pro: false,
-      run: (clip) => createClip(clip),
+      run: (clip) => { createClip(clip).then((err) => err && flash(err)); },
     },
     {
       icon: "⬆️", label: "Upscale & Download", pro: true, hint: `${UPSCALE_COST}⚡`,
-      run: (clip) => createClip(clip, true),
+      run: (clip) => { createClip(clip, true).then((err) => err && flash(err)); },
     },
     {
       icon: "✂️", label: "Edit Clip", pro: true,
@@ -227,15 +178,6 @@ export default function ClipsPage() {
     () => clips.find((c) => c.id === previewId) ?? null,
     [clips, previewId]
   );
-
-  // Finished exports hold blobs in memory until the page goes away.
-  const exportsRef = useRef(exports);
-  exportsRef.current = exports;
-  useEffect(() => () => {
-    for (const state of Object.values(exportsRef.current)) {
-      if (state.status === "ready") URL.revokeObjectURL(state.objectUrl);
-    }
-  }, []);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -437,9 +379,7 @@ export default function ClipsPage() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    const done = exports[clip.id];
-                    if (done?.status === "ready") downloadExport(done);
-                    else createClip(clip);
+                    createOrDownload(clip).then((err) => err && flash(err));
                   }}
                   disabled={workingId === clip.id}
                   title="Render this clip from the source VOD and download it"
@@ -527,7 +467,7 @@ export default function ClipsPage() {
           onClose={() => { setPreviewId(null); setPreviewDetails(false); }}
           initialDetailsOpen={previewDetails}
           exportState={exports[previewClip.id]}
-          onCreateClip={() => createClip(previewClip)}
+          onCreateClip={() => { createClip(previewClip).then((err) => err && flash(err)); }}
           onDownloadClip={() => {
             const done = exports[previewClip.id];
             if (done) downloadExport(done);
