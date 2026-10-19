@@ -97,28 +97,6 @@ export function vodLinkAt(url: string, startSeconds: number): string {
   return url;
 }
 
-/** VOD id from a Twitch video URL (twitch.tv/videos/123456789), or null. */
-export function twitchVodId(url: string): string | null {
-  const match = url.match(/twitch\.tv\/videos\/(\d+)/i);
-  return match ? match[1] : null;
-}
-
-/** Video id from a YouTube watch/short URL, or null. */
-export function youtubeVideoId(url: string): string | null {
-  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/i);
-  return match ? match[1] : null;
-}
-
-/**
- * Source-video thumbnail we can resolve without a server round-trip. YouTube
- * serves a predictable 16:9 still per video id; Twitch needs a Helix lookup
- * (see /api/vod-thumbnails), so it returns null here.
- */
-export function localThumbnailUrl(url: string): string | null {
-  const ytId = youtubeVideoId(url);
-  return ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : null;
-}
-
 /** Clip length in seconds, clamped at 0 for any malformed row. */
 export function clipDuration(clip: Pick<SavedClip, "start_seconds" | "end_seconds">): number {
   return Math.max(0, clip.end_seconds - clip.start_seconds);

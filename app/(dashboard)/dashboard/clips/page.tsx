@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import SavedClipEditor from "@/components/SavedClipEditor";
@@ -18,7 +18,6 @@ import {
   fmtDate,
   platformName,
   vodLinkAt,
-  localThumbnailUrl,
 } from "@/lib/clip-ui";
 
 type SortKey = "newest" | "score";
@@ -44,10 +43,6 @@ export default function ClipsPage() {
   const [proGateOpen, setProGateOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
-  /** Source-VOD poster per clip URL — null means "none available, use the fallback". */
-  const [thumbnails, setThumbnails] = useState<Record<string, string | null>>({});
-  /** VOD URLs already resolved (or in flight), so list edits don't re-request. */
-  const requestedThumbs = useRef<Set<string>>(new Set());
   const { tier, refresh } = useSparks();
   const isPro = tier === "pro";
 
@@ -62,49 +57,6 @@ export default function ClipsPage() {
         setLoading(false);
       });
   }, []);
-
-  /**
-   * Resolve a poster per distinct source VOD. YouTube is derivable from the
-   * URL alone; Twitch needs a Helix lookup, which /api/vod-thumbnails batches
-   * into a single request for the whole page. Clips with no resolvable poster
-   * (uploads, unprocessed VODs) stay null and render the fallback.
-   */
-  useEffect(() => {
-    if (clips.length === 0) return;
-    const urls = Array.from(new Set(clips.map((c) => c.url)));
-
-    const local: Record<string, string | null> = {};
-    const needsLookup: string[] = [];
-    for (const url of urls) {
-      // `clips` changes on every delete/duplicate — only resolve what's new.
-      if (requestedThumbs.current.has(url)) continue;
-      requestedThumbs.current.add(url);
-      const direct = localThumbnailUrl(url);
-      if (direct) local[url] = direct;
-      else if (!url.startsWith("upload:")) needsLookup.push(url);
-      else local[url] = null;
-    }
-    if (Object.keys(local).length > 0) setThumbnails((prev) => ({ ...local, ...prev }));
-    if (needsLookup.length === 0) return;
-
-    // Deliberately not abortable: merging posters is idempotent, and under
-    // StrictMode's double-invoked effects an abort would throw away the only
-    // request the ref guard above lets through.
-    fetch("/api/vod-thumbnails", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ urls: needsLookup }),
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data?.thumbnails) throw new Error("no thumbnails");
-        setThumbnails((prev) => ({ ...prev, ...data.thumbnails }));
-      })
-      .catch(() => {
-        // Let a later render retry rather than leaving these stuck unresolved.
-        for (const url of needsLookup) requestedThumbs.current.delete(url);
-      });
-  }, [clips]);
 
   const deleteClip = async (id: string) => {
     setDeletingId(id);
@@ -380,11 +332,7 @@ export default function ClipsPage() {
                   mounts the real player, so the poster steps aside there. */}
               {expandedId !== clip.id && (
                 <div className="mb-3">
-                  <ClipThumbnail
-                    clip={clip}
-                    thumbnailUrl={thumbnails[clip.url] ?? null}
-                    onPlay={() => setExpandedId(clip.id)}
-                  />
+                  <ClipThumbnail clip={clip} onPlay={() => setExpandedId(clip.id)} />
                 </div>
               )}
 
