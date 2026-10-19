@@ -128,6 +128,8 @@ export type TwitchVideo = {
   url: string;
   duration: string; // e.g. "3h21m10s", "45m10s", "10s"
   created_at: string;
+  /** Templated URL with literal %{width}/%{height} placeholders — see twitchThumbnailAt(). */
+  thumbnail_url?: string;
 };
 
 /** Parses Twitch's "3h21m10s" duration format into seconds. */
@@ -144,6 +146,29 @@ export async function getLatestVod(broadcasterId: string): Promise<TwitchVideo |
   if (!res.ok) throw new Error(`Twitch Get Videos failed: HTTP ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { data: TwitchVideo[] };
   return data.data[0] ?? null;
+}
+
+/**
+ * Look up VODs by id — Helix /videos accepts up to 100 `id` params per call,
+ * so a whole My Clips page resolves in one request.
+ */
+export async function getVideosByIds(ids: string[]): Promise<TwitchVideo[]> {
+  if (ids.length === 0) return [];
+  const query = ids.slice(0, 100).map((id) => `id=${encodeURIComponent(id)}`).join("&");
+  const res = await helix(`/videos?${query}`);
+  if (!res.ok) throw new Error(`Twitch Get Videos failed: HTTP ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { data: TwitchVideo[] };
+  return data.data;
+}
+
+/**
+ * Fills Twitch's %{width}x%{height} thumbnail template. Returns null for VODs
+ * whose thumbnail hasn't been generated yet — Twitch serves a "404_processing"
+ * placeholder there, which we'd rather render as our own fallback.
+ */
+export function twitchThumbnailAt(template: string | undefined, width: number, height: number): string | null {
+  if (!template || template.includes("404_processing")) return null;
+  return template.replace("%{width}", String(width)).replace("%{height}", String(height));
 }
 
 /* ── EventSub subscription management (app access token) ── */

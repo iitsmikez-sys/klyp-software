@@ -892,10 +892,10 @@ export default function AnalyzePanel() {
         {/* Clip count selector */}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <span
-            className="text-xs text-foreground-muted whitespace-nowrap cursor-help"
+            className="text-sm text-foreground whitespace-nowrap cursor-help"
             title="We only return clips worth posting — if your VOD doesn't have 10 great moments you'll get fewer"
           >
-            How many clips? <span className="text-subtle">ⓘ</span>
+            How many clips? <span className="text-foreground-muted">ⓘ</span>
           </span>
           <div className="flex rounded-lg border border-border overflow-hidden">
             {CLIP_COUNT_OPTIONS.map((n) => (
@@ -904,14 +904,14 @@ export default function AnalyzePanel() {
                 type="button"
                 onClick={() => setClipCount(n)}
                 disabled={loading}
-                className={`px-3 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
+                className={`px-3 py-1.5 text-xs font-bold font-syne transition-colors disabled:opacity-50 ${
                   clipCount === n
                     ? "bg-accent-glow text-accent"
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
                 }`}
               >
                 {n === MAX_CLIP_COUNT ? `${n} MAX` : n}{" "}
-                <span className="font-normal opacity-70">· {CLIP_COUNT_COST[n]}⚡</span>
+                <span className="font-normal opacity-90">· {CLIP_COUNT_COST[n]}⚡</span>
               </button>
             ))}
           </div>
@@ -920,10 +920,10 @@ export default function AnalyzePanel() {
         {/* Content type — changes which clip types MIDAS looks for */}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <span
-            className="text-xs text-foreground-muted whitespace-nowrap cursor-help"
+            className="text-sm text-foreground whitespace-nowrap cursor-help"
             title="Gaming picks from CLUTCH/EPIC/BIG_BRAIN etc; IRL swaps those for STORY_TIME/AWKWARD/PUBLIC_INTERACTION"
           >
-            Content type <span className="text-subtle">ⓘ</span>
+            Content type <span className="text-foreground-muted">ⓘ</span>
           </span>
           <div className="flex rounded-lg border border-border overflow-hidden">
             {CONTENT_TYPES.map((ct) => (
@@ -932,7 +932,7 @@ export default function AnalyzePanel() {
                 type="button"
                 onClick={() => updateContentType(ct)}
                 disabled={loading}
-                className={`px-3 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
+                className={`px-3 py-1.5 text-xs font-bold font-syne transition-colors disabled:opacity-50 ${
                   contentType === ct
                     ? "bg-accent-glow text-accent"
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
@@ -946,7 +946,7 @@ export default function AnalyzePanel() {
 
         {/* Keyword or topic — weights matching transcript moments higher when picking clips */}
         <div className="flex flex-wrap items-center gap-2 mt-3">
-          <label htmlFor="klyp-keyword" className="text-xs text-foreground-muted whitespace-nowrap">
+          <label htmlFor="klyp-keyword" className="text-sm text-foreground whitespace-nowrap">
             Keyword or topic
           </label>
           <div className="flex items-center px-3 py-1.5 rounded-lg bg-surface-2 border border-border focus-within:border-accent transition-colors w-full sm:w-48">
@@ -957,10 +957,10 @@ export default function AnalyzePanel() {
               onChange={(e) => setKeyword(e.target.value.slice(0, 100))}
               placeholder="e.g. pool, Kai, funny moment"
               disabled={loading}
-              className="w-full bg-transparent text-xs text-foreground placeholder:text-subtle focus:outline-none disabled:opacity-50"
+              className="w-full bg-transparent text-sm text-foreground placeholder:text-foreground-muted focus:outline-none disabled:opacity-50"
             />
           </div>
-          <span className="text-[10px] text-subtle">
+          <span className="text-xs text-foreground-muted">
             {keyword.trim()
               ? `moments mentioning "${keyword.trim()}" are weighted higher`
               : "optional — leave blank to scan the whole VOD for best moments"}
@@ -969,8 +969,8 @@ export default function AnalyzePanel() {
 
         {/* Sparks cost preview */}
         {!outOfSparks && (estimating || estimatedSparks !== null) && (
-          <div className="flex items-center gap-1.5 mt-3 text-sm">
-            <SparkIcon size={13} className="text-accent" />
+          <div className="flex items-center gap-1.5 mt-3 text-[15px]">
+            <SparkIcon size={15} className="text-accent" />
             {estimating ? (
               <span className="text-foreground-muted">Checking video length…</span>
             ) : (
@@ -1186,7 +1186,7 @@ export default function AnalyzePanel() {
                       );
                     })}
                   </div>
-                  <span className="text-[10px] text-subtle">
+                  <span className="text-xs text-foreground-muted">
                     {FORMAT_LABELS[clipFormats[i] ?? "9:16"]}
                   </span>
                 </div>

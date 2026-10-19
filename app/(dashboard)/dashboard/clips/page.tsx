@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import SavedClipEditor from "@/components/SavedClipEditor";
+import ClipThumbnail from "@/components/ClipThumbnail";
 import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
 import { UPSCALE_COST } from "@/lib/sparks";
@@ -17,6 +18,7 @@ import {
   fmtDate,
   platformName,
   vodLinkAt,
+  localThumbnailUrl,
 } from "@/lib/clip-ui";
 
 type SortKey = "newest" | "score";
@@ -42,6 +44,10 @@ export default function ClipsPage() {
   const [proGateOpen, setProGateOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
+  /** Source-VOD poster per clip URL — null means "none available, use the fallback". */
+  const [thumbnails, setThumbnails] = useState<Record<string, string | null>>({});
+  /** VOD URLs already resolved (or in flight), so list edits don't re-request. */
+  const requestedThumbs = useRef<Set<string>>(new Set());
   const { tier, refresh } = useSparks();
   const isPro = tier === "pro";
 
@@ -56,6 +62,46 @@ export default function ClipsPage() {
         setLoading(false);
       });
   }, []);
+
+  /**
+   * Resolve a poster per distinct source VOD. YouTube is derivable from the
+   * URL alone; Twitch needs a Helix lookup, which /api/vod-thumbnails batches
+   * into a single request for the whole page. Clips with no resolvable poster
+   * (uploads, unprocessed VODs) stay null and render the fallback.
+   */
+  useEffect(() => {
+    if (clips.length === 0) return;
+    const urls = Array.from(new Set(clips.map((c) => c.url)));
+
+    const local: Record<string, string | null> = {};
+    const needsLookup: string[] = [];
+    for (const url of urls) {
+      // `clips` changes on every delete/duplicate — only resolve what's new.
+      if (requestedThumbs.current.has(url)) continue;
+      requestedThumbs.current.add(url);
+      const direct = localThumbnailUrl(url);
+      if (direct) local[url] = direct;
+      else if (!url.startsWith("upload:")) needsLookup.push(url);
+      else local[url] = null;
+    }
+    if (Object.keys(local).length > 0) setThumbnails((prev) => ({ ...local, ...prev }));
+    if (needsLookup.length === 0) return;
+
+    let cancelled = false;
+    fetch("/api/vod-thumbnails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls: needsLookup }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.thumbnails) return;
+        setThumbnails((prev) => ({ ...prev, ...data.thumbnails }));
+      })
+      .catch(() => { /* fallback artwork covers it */ });
+
+    return () => { cancelled = true; };
+  }, [clips]);
 
   const deleteClip = async (id: string) => {
     setDeletingId(id);
@@ -321,19 +367,31 @@ export default function ClipsPage() {
             <div
               key={clip.id}
               onClick={() => setExpandedId(expandedId === clip.id ? null : clip.id)}
-              className={`bg-surface border rounded-xl p-5 transition-colors group cursor-pointer ${
+              className={`bg-surface border rounded-xl p-4 flex flex-col transition-colors group cursor-pointer ${
                 expandedId === clip.id
                   ? "border-accent/40 lg:col-span-2"
                   : "border-border hover:border-accent/30"
               }`}
             >
-              <div className="flex items-center justify-between gap-3 mb-3">
+              {/* 16:9 poster — play expands the card into SavedClipEditor, which
+                  mounts the real player, so the poster steps aside there. */}
+              {expandedId !== clip.id && (
+                <div className="mb-3">
+                  <ClipThumbnail
+                    clip={clip}
+                    thumbnailUrl={thumbnails[clip.url] ?? null}
+                    onPlay={() => setExpandedId(clip.id)}
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-3 mb-2.5">
                 <span className={`px-2.5 py-1 rounded-md border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
                   {clip.clip_type}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-foreground-muted">viral score</span>
-                  <span className={`font-syne text-lg font-bold ${clip.viral_score >= 85 ? "text-accent" : "text-foreground"}`}>
+                  <span className="text-sm text-foreground-muted">viral score</span>
+                  <span className={`font-syne text-xl font-bold ${clip.viral_score >= 85 ? "text-accent" : "text-foreground"}`}>
                     {clip.viral_score}
                   </span>
                   <svg
@@ -389,21 +447,52 @@ export default function ClipsPage() {
                 </div>
               </div>
 
-              <h3 className="font-syne text-base font-semibold text-foreground mb-1.5">{clip.title}</h3>
-              {clip.caption && <p className="text-sm text-foreground-muted mb-3">{clip.caption}</p>}
+              <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{clip.title}</h3>
+              {clip.caption && (
+                <p className={`text-[15px] leading-relaxed text-foreground-muted mb-3 ${expandedId === clip.id ? "" : "line-clamp-2"}`}>
+                  {clip.caption}
+                </p>
+              )}
 
-              <div className="flex items-center justify-between text-xs mb-3">
-                <span className="px-2 py-1 rounded bg-surface-2 border border-border text-foreground-muted font-mono">
+              {/* Push the action row to the bottom so buttons line up across the grid. */}
+              <div className="flex items-center justify-between gap-2 text-sm mb-3 mt-auto">
+                <span className="px-2 py-1 rounded bg-surface-2 border border-border text-foreground-muted font-mono whitespace-nowrap">
                   {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)}
                 </span>
-                <span className="text-subtle">
+                <span className="text-foreground-muted whitespace-nowrap truncate">
                   {platformName(clip.url)} · {fmtDate(clip.created_at)}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 pt-3 border-t border-border">
+              {/* Wraps on narrow cards: primary takes its own row, secondary
+                  shares the next one with delete — no squashed labels. */}
+              <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
+                {/* Clips are stored as VOD timestamps, not files — this renders
+                    the MP4 on demand via /api/clip, hence "Create clip". */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); quickExport(clip); }}
+                  disabled={workingId === clip.id}
+                  title="Render this clip from the source VOD and download it"
+                  className="basis-full sm:basis-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim shadow-accent-glow-sm transition-colors disabled:opacity-60 disabled:shadow-none"
+                >
+                  {workingId === clip.id ? (
+                    <>
+                      <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
+                      Creating…
+                    </>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Create clip
+                    </>
+                  )}
+                </button>
                 {clip.url.startsWith("upload:") ? (
-                  <span className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-foreground-muted text-xs font-bold font-syne">
+                  <span className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-border text-foreground-muted text-sm font-bold font-syne whitespace-nowrap">
                     Uploaded VOD
                   </span>
                 ) : (
@@ -412,9 +501,9 @@ export default function ClipsPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors"
+                  className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-accent/40 text-accent text-sm font-bold font-syne whitespace-nowrap hover:bg-accent-glow transition-colors"
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                     <polyline points="15 3 21 3 21 9" />
                     <line x1="10" y1="14" x2="21" y2="3" />
@@ -426,7 +515,7 @@ export default function ClipsPage() {
                   onClick={(e) => { e.stopPropagation(); deleteClip(clip.id); }}
                   disabled={deletingId === clip.id}
                   title="Delete clip"
-                  className="w-9 h-9 flex items-center justify-center rounded-lg border border-border text-foreground-muted hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                  className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg border border-border text-foreground-muted hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-colors disabled:opacity-40"
                 >
                   {deletingId === clip.id ? (
                     <span className="w-3 h-3 rounded-full border border-foreground-muted border-t-transparent animate-spin" />
