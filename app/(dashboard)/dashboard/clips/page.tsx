@@ -87,7 +87,9 @@ export default function ClipsPage() {
     if (Object.keys(local).length > 0) setThumbnails((prev) => ({ ...local, ...prev }));
     if (needsLookup.length === 0) return;
 
-    let cancelled = false;
+    // Deliberately not abortable: merging posters is idempotent, and under
+    // StrictMode's double-invoked effects an abort would throw away the only
+    // request the ref guard above lets through.
     fetch("/api/vod-thumbnails", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -95,12 +97,13 @@ export default function ClipsPage() {
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled || !data?.thumbnails) return;
+        if (!data?.thumbnails) throw new Error("no thumbnails");
         setThumbnails((prev) => ({ ...prev, ...data.thumbnails }));
       })
-      .catch(() => { /* fallback artwork covers it */ });
-
-    return () => { cancelled = true; };
+      .catch(() => {
+        // Let a later render retry rather than leaving these stuck unresolved.
+        for (const url of needsLookup) requestedThumbs.current.delete(url);
+      });
   }, [clips]);
 
   const deleteClip = async (id: string) => {
