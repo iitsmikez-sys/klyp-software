@@ -10,6 +10,28 @@ import Waitlist from "@/components/Waitlist";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
 import ClipFlowDemo from "@/components/ClipFlowDemo";
+import { existsSync } from "fs";
+import path from "path";
+import { DEMO_ASSET_PATHS } from "@/lib/demo-reel";
+
+/**
+ * The demo reel needs real footage that isn't in the repo. This is a server
+ * component, so it can simply look: drop the files into public/demo and the
+ * section upgrades from its diagram to real players on the next render, with
+ * no flag to flip. A partial set counts as missing — half a reel looks broken.
+ */
+function demoFootageInstalled(): boolean {
+  const present = DEMO_ASSET_PATHS.every((asset) =>
+    existsSync(path.join(process.cwd(), "public", asset))
+  );
+  if (!present && process.env.NODE_ENV !== "production") {
+    const missing = DEMO_ASSET_PATHS.filter(
+      (asset) => !existsSync(path.join(process.cwd(), "public", asset))
+    );
+    console.log("[landing] demo reel showing its diagram — missing public" + missing.join(", public"));
+  }
+  return present;
+}
 
 /* ─── Features ───
  * Descriptions stay short here; each one states only what the product does
@@ -205,6 +227,8 @@ const steps = [
 ];
 
 export default function LandingPage() {
+  const hasFootage = demoFootageInstalled();
+
   return (
     <div className="min-h-screen bg-background flex flex-col font-geist">
       <AmbientAudio />
@@ -318,7 +342,7 @@ export default function LandingPage() {
                 cut and formatted for vertical.
               </p>
             </div>
-            <ClipFlowDemo />
+            <ClipFlowDemo hasFootage={hasFootage} />
           </div>
         </FadeIn>
       </section>
