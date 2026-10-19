@@ -5,11 +5,17 @@
  * play button. Replaces the old inline expansion, which reflowed the grid
  * (the card grew to span both columns and pushed everything below it).
  *
- * The player shows the clip at the source's own aspect ratio — /api/preview is
- * asked for crop:false, since cropping a 16:9 moment to vertical here would
- * hide most of the frame. The MP4 is already cut to the clip's range, so the
- * native control bar's elapsed/total time is clip-relative (00:12 / 00:45) and
- * playback stops at the clip's end on its own.
+ * Opening is deliberately quick rather than theatrical: the backdrop fades,
+ * the panel lifts the last few pixels into place, and the clip's own frame is
+ * on screen immediately — taken from the cache the card already filled, so no
+ * second request — then crossfades to video once the first frame decodes.
+ * Nothing is ever held back artificially; the frame simply covers the gap
+ * while /api/preview cuts the segment.
+ *
+ * The player shows the clip at the source's own aspect ratio (crop:false),
+ * since cropping a 16:9 moment to vertical here would hide most of the frame.
+ * The MP4 is already cut to the clip's range, so the native control bar's
+ * elapsed/total time is clip-relative and playback stops at the clip's end.
  *
  * Export state lives in the clips page, not here, so a render keeps running —
  * and stays visible on the card — when the dialog is closed mid-export.
@@ -17,6 +23,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import SavedClipEditor from "./SavedClipEditor";
 import { processingFetch } from "@/lib/processing-api";
+import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
+import { playOpenSound } from "@/lib/ui-sound";
 import {
   type SavedClip,
   TYPE_STYLES,
@@ -29,6 +37,10 @@ import type { ExportState } from "@/lib/clip-export";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
+/** Matches the CSS below; the panel is unmounted once the fade-out ends. */
+const CLOSE_MS = 140;
+/** Only badge the wait as "loading" if the video hasn't arrived promptly. */
+const SPINNER_AFTER_MS = 400;
 
 interface Props {
   clip: SavedClip;
@@ -55,15 +67,52 @@ export default function ClipPreviewModal({
   initialDetailsOpen = false,
 }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [videoReady, setVideoReady] = useState(false);
+  const [poster, setPoster] = useState<string | null>(() => peekClipThumbnail(clip));
+  const [showSpinner, setShowSpinner] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [retryToken, setRetryToken] = useState(0);
   const [detailsOpen, setDetailsOpen] = useState(initialDetailsOpen);
 
+  /** Drives the enter/exit transition: mounted → open → closing → unmounted. */
+  const [entered, setEntered] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
   const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ── Enter transition ── */
+  useEffect(() => {
+    setReducedMotion(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    // Next frame, so the browser paints the "from" state before transitioning.
+    const raf = requestAnimationFrame(() => setEntered(true));
+    playOpenSound();
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  /**
+   * Begin closing: playback and audio stop on this tick, not when the fade
+   * ends, so a close always silences the clip instantly.
+   */
+  const beginClose = useCallback(() => {
+    if (closeTimer.current) return; // already closing — ignore repeat Escape/clicks
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    setClosing(true);
+    closeTimer.current = setTimeout(onClose, reducedMotion ? 0 : CLOSE_MS);
+  }, [onClose, reducedMotion]);
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
 
   /* ── Escape to close, and a focus trap so Tab can't reach the grid behind ── */
   useEffect(() => {
@@ -73,7 +122,7 @@ export default function ClipPreviewModal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        beginClose();
         return;
       }
       if (e.key !== "Tab") return;
@@ -97,18 +146,34 @@ export default function ClipPreviewModal({
     };
 
     document.addEventListener("keydown", onKeyDown, true);
-    // The page behind must not scroll while the dialog is open.
-    const previousOverflow = document.body.style.overflow;
+
+    // Lock the page behind. overflow:hidden alone scrolls the grid back to the
+    // top, so pin the body at its current offset and put it back on close —
+    // the grid ends up exactly where the user left it.
+    const scrollY = window.scrollY;
+    const prev = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+      width: document.body.style.width,
+    };
     document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
 
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
-      document.body.style.overflow = previousOverflow;
+      document.body.style.overflow = prev.overflow;
+      document.body.style.position = prev.position;
+      document.body.style.top = prev.top;
+      document.body.style.width = prev.width;
+      window.scrollTo(0, scrollY);
       restoreTo?.focus?.();
     };
-  }, [onClose]);
+  }, [beginClose]);
 
-  /* ── Stop playback and audio the moment the dialog goes away ── */
+  /* ── Stop playback and audio whenever this dialog goes away ── */
   useEffect(() => {
     const video = videoRef.current;
     return () => {
@@ -121,18 +186,31 @@ export default function ClipPreviewModal({
     };
   }, [previewUrl]);
 
+  /* ── The clip's own frame, shown while the video is cut ── */
+  useEffect(() => {
+    if (poster) return;
+    let active = true;
+    loadClipThumbnail(clip)
+      .then((url) => { if (active) setPoster(url); })
+      .catch(() => { /* placeholder gradient covers it */ });
+    return () => { active = false; };
+  }, [clip, poster]);
+
   /* ── Fetch the cut preview (source aspect ratio, not the 9:16 export crop) ── */
   useEffect(() => {
     let blobUrl: string | null = null;
     let timedOut = false;
-    setLoading(true);
+    setVideoReady(false);
+    setShowSpinner(false);
     setLoadError(null);
     setElapsed(0);
     const startedAt = Date.now();
     const ticker = setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    // A fast preview shouldn't flash a spinner; a slow one should explain itself.
+    const spinnerTimer = setTimeout(() => setShowSpinner(true), SPINNER_AFTER_MS);
     const controller = new AbortController();
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, PREVIEW_TIMEOUT_MS);
-    const settle = () => { clearInterval(ticker); clearTimeout(timeout); };
+    const settle = () => { clearInterval(ticker); clearTimeout(timeout); clearTimeout(spinnerTimer); };
 
     processingFetch("/api/preview", {
       method: "POST",
@@ -153,29 +231,31 @@ export default function ClipPreviewModal({
         settle();
         blobUrl = URL.createObjectURL(blob);
         setPreviewUrl(blobUrl);
-        setLoading(false);
       })
       .catch((err: Error) => {
         settle();
-        if (controller.signal.aborted && !timedOut) return; // closed — leave state alone
+        if (controller.signal.aborted && !timedOut) return; // closed or switched clips
         setLoadError(
           timedOut
             ? `Preview timed out after ${Math.round(PREVIEW_TIMEOUT_MS / 60_000)} minutes. The source VOD may still be downloading in the background — try again in a bit.`
             : err.message
         );
-        setLoading(false);
+        setShowSpinner(false);
       });
 
     return () => {
       settle();
+      // Switching clips or closing mid-flight: drop this request and its blob
+      // so no stale footage can land in a later view.
       controller.abort();
+      setPreviewUrl(null);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
   }, [clip.id, retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onBackdrop = useCallback(
-    (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); },
-    [onClose]
+    (e: React.MouseEvent) => { if (e.target === e.currentTarget) beginClose(); },
+    [beginClose]
   );
 
   const platform = platformName(clip.url);
@@ -183,16 +263,38 @@ export default function ClipPreviewModal({
   const exporting = exportState?.status === "working";
   const ready = exportState?.status === "ready";
 
+  /* Only opacity and transform animate; the backdrop's blur is static so it
+     never triggers a per-frame filter repaint. */
+  const visible = entered && !closing;
+  const panelStyle: React.CSSProperties = reducedMotion
+    ? { opacity: visible ? 1 : 0, transition: `opacity ${visible ? 120 : 0}ms linear` }
+    : {
+        opacity: visible ? 1 : 0,
+        transform: visible ? "scale(1) translateY(0)" : "scale(0.97) translateY(8px)",
+        transition: visible
+          ? "opacity 200ms cubic-bezier(0.16, 1, 0.3, 1), transform 200ms cubic-bezier(0.16, 1, 0.3, 1)"
+          : `opacity ${CLOSE_MS}ms ease-in, transform ${CLOSE_MS}ms ease-in`,
+        willChange: "opacity, transform",
+      };
+
   return (
     <div
       onMouseDown={onBackdrop}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-geist animate-fade-in"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 font-geist ${
+        reducedMotion ? "" : "backdrop-blur-sm"
+      }`}
+      style={{
+        backgroundColor: "rgba(0,0,0,0.8)",
+        opacity: visible ? 1 : 0,
+        transition: `opacity ${visible ? 180 : CLOSE_MS}ms ease-out`,
+      }}
     >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Preview: ${clip.title}`}
+        style={panelStyle}
         className="w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
       >
         {/* ── Header ── */}
@@ -219,7 +321,7 @@ export default function ClipPreviewModal({
           </div>
           <button
             ref={closeRef}
-            onClick={onClose}
+            onClick={beginClose}
             aria-label="Close preview"
             className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full text-foreground-muted hover:text-foreground hover:bg-surface-2 focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
           >
@@ -232,22 +334,33 @@ export default function ClipPreviewModal({
         {/* ── Player ── object-contain keeps the source aspect ratio intact ── */}
         <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
           <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
-            {loading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                <span className="w-7 h-7 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                <span className="text-sm text-foreground-muted">
-                  Generating preview…{elapsed >= 5 ? ` (${fmtElapsed(elapsed)})` : ""}
-                  <br />
-                  <span className="text-xs text-subtle">
-                    {elapsed < 30
-                      ? "Downloads the source video the first time."
-                      : "Still downloading the source VOD — long VODs can take several minutes."}
-                  </span>
+            {/* The clip's own frame, under the video and crossfaded out once
+                the first video frame has decoded. */}
+            {poster && !loadError && (
+              <img
+                src={poster}
+                alt=""
+                aria-hidden
+                className="absolute inset-0 w-full h-full object-contain"
+                style={{
+                  opacity: videoReady ? 0 : 1,
+                  transition: reducedMotion ? "none" : "opacity 220ms ease-out",
+                }}
+              />
+            )}
+
+            {showSpinner && !videoReady && !loadError && (
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-t from-black/85 to-transparent">
+                <span className="w-4 h-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                <span className="text-sm text-white/90">
+                  Loading preview{elapsed >= 20 ? " — downloading the source VOD" : ""}
+                  {elapsed >= 5 ? ` (${fmtElapsed(elapsed)})` : ""}
                 </span>
               </div>
             )}
+
             {loadError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 bg-black/70">
                 <p className="text-sm text-red-400 text-center max-w-md">{loadError}</p>
                 <button
                   onClick={() => setRetryToken((t) => t + 1)}
@@ -257,6 +370,7 @@ export default function ClipPreviewModal({
                 </button>
               </div>
             )}
+
             {previewUrl && (
               <video
                 ref={videoRef}
@@ -264,7 +378,12 @@ export default function ClipPreviewModal({
                 controls
                 autoPlay
                 playsInline
+                onLoadedData={() => setVideoReady(true)}
                 className="absolute inset-0 w-full h-full object-contain"
+                style={{
+                  opacity: videoReady ? 1 : 0,
+                  transition: reducedMotion ? "none" : "opacity 220ms ease-out",
+                }}
               />
             )}
           </div>

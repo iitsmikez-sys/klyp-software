@@ -463,6 +463,9 @@ export default function ClipsPage() {
 
       {previewClip && (
         <ClipPreviewModal
+          /* Remount per clip: a close animation still in flight for the
+             previous clip must not fire into the next one. */
+          key={previewClip.id}
           clip={previewClip}
           onClose={() => { setPreviewId(null); setPreviewDetails(false); }}
           initialDetailsOpen={previewDetails}

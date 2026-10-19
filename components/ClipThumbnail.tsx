@@ -17,7 +17,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { fmtTime, clipDuration, type SavedClip } from "@/lib/clip-ui";
-import { processingFetch } from "@/lib/processing-api";
+import { loadClipThumbnail, peekClipThumbnail } from "@/lib/clip-thumbnails";
 
 interface Props {
   clip: SavedClip;
@@ -36,32 +36,24 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
     const box = boxRef.current;
     if (!box) return;
 
-    let objectUrl: string | null = null;
-    let done = false;
+    let active = true;
 
     const load = () => {
-      if (done) return;
-      done = true;
+      // Already fetched by another card or the preview dialog — paint at once.
+      const cached = peekClipThumbnail(clip);
+      if (cached) {
+        setSrc(cached);
+        setState("ready");
+        return;
+      }
       setState("loading");
-      processingFetch("/api/thumbnail", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: clip.url,
-          start_seconds: clip.start_seconds,
-          end_seconds: clip.end_seconds,
-        }),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(String(res.status));
-          return res.blob();
-        })
-        .then((blob) => {
-          objectUrl = URL.createObjectURL(blob);
+      loadClipThumbnail(clip)
+        .then((objectUrl) => {
+          if (!active) return;
           setSrc(objectUrl);
           setState("ready");
         })
-        .catch(() => setState("failed"));
+        .catch(() => { if (active) setState("failed"); });
     };
 
     // rootMargin starts the work just before the card scrolls in, so the frame
@@ -78,10 +70,11 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
     observer.observe(box);
 
     return () => {
+      active = false;
       observer.disconnect();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      // The object URL is owned by the shared cache, so it is not revoked here.
     };
-  }, [clip.url, clip.start_seconds, clip.end_seconds]);
+  }, [clip]);
 
   return (
     <div

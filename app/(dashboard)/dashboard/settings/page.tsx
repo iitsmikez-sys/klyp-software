@@ -9,6 +9,7 @@ import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import UpgradeButton from "@/components/UpgradeButton";
 import { fmtDate } from "@/lib/clip-ui";
+import { uiSoundsEnabled, setUiSoundsEnabled } from "@/lib/ui-sound";
 
 const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   BOLD: "Big high-impact captions — the TikTok classic",
@@ -38,6 +39,7 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uiSounds, setUiSounds] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -51,6 +53,7 @@ export default function SettingsPage() {
       if (data) setProfile(data as Profile);
     });
 
+    setUiSounds(uiSoundsEnabled());
     setHandle(localStorage.getItem("klyp-handle") ?? "");
     const storedStyle = localStorage.getItem("klyp-default-style");
     if (storedStyle && (CAPTION_STYLES as readonly string[]).includes(storedStyle)) {
@@ -73,6 +76,12 @@ export default function SettingsPage() {
   const updateStyle = (style: CaptionStyle) => {
     setDefaultStyle(style);
     localStorage.setItem("klyp-default-style", style);
+    flashSaved();
+  };
+
+  const updateUiSounds = (on: boolean) => {
+    setUiSounds(on);
+    setUiSoundsEnabled(on);
     flashSaved();
   };
 
@@ -171,6 +180,37 @@ export default function SettingsPage() {
               </div>
               <p className="text-xs text-subtle mt-1.5">{STYLE_DESCRIPTIONS[defaultStyle]}</p>
             </div>
+          </div>
+        </Section>
+
+        {/* Interface */}
+        <Section
+          title="Interface"
+          desc="How the dashboard itself behaves."
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Interface sounds</p>
+              <p className="text-xs text-foreground-muted mt-1 leading-relaxed">
+                A short cue when a clip preview opens. Off by default. No sound file ships
+                with Klyp yet, so turning this on stays silent until one is added.
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={uiSounds}
+              aria-label="Interface sounds"
+              onClick={() => updateUiSounds(!uiSounds)}
+              className={`flex-shrink-0 w-11 h-6 rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-accent/60 ${
+                uiSounds ? "bg-accent-glow border-accent/50" : "bg-surface-2 border-border"
+              }`}
+            >
+              <span
+                className={`block w-4 h-4 rounded-full transition-transform ${
+                  uiSounds ? "translate-x-6 bg-accent" : "translate-x-1 bg-foreground-muted"
+                }`}
+              />
+            </button>
           </div>
         </Section>
 
