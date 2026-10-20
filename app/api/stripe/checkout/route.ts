@@ -38,6 +38,32 @@ export async function POST(req: NextRequest) {
   const origin = req.nextUrl.origin;
   try {
     const stripe = getStripe();
+
+    // The UI advertises PRO_PRICE_CENTS, but when STRIPE_PRICE_PRO is set it
+    // is Stripe's price that is actually charged — nothing kept the two in
+    // step, and they had drifted ($28 advertised, $29 charged). Checkout is
+    // not blocked over it (refusing a sale is worse), but the mismatch is
+    // logged loudly so it can't ship unnoticed.
+    if (process.env.STRIPE_PRICE_PRO) {
+      try {
+        const price = await stripe.prices.retrieve(process.env.STRIPE_PRICE_PRO);
+        if (price.unit_amount !== PRO_PRICE_CENTS) {
+          console.error(
+            `[stripe checkout] PRICE MISMATCH — the app advertises ${(PRO_PRICE_CENTS / 100).toFixed(2)} ` +
+              `but STRIPE_PRICE_PRO (${price.id}) charges ${((price.unit_amount ?? 0) / 100).toFixed(2)} ` +
+              `${price.currency.toUpperCase()}. Customers are charged the Stripe amount.`
+          );
+        }
+        if (price.recurring?.interval !== "month") {
+          console.error(
+            `[stripe checkout] BILLING INTERVAL MISMATCH — the app advertises monthly billing but ` +
+              `${price.id} recurs per ${price.recurring?.interval ?? "one-time"}.`
+          );
+        }
+      } catch (priceErr) {
+        console.error("[stripe checkout] could not verify STRIPE_PRICE_PRO:", priceErr);
+      }
+    }
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [

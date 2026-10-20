@@ -19,6 +19,39 @@ import { SPARKS_ALLOWANCE, type Tier } from "@/lib/tier";
 
 export const runtime = "nodejs";
 
+/**
+ * Claim this event id so a redelivery can't apply it twice. Stripe delivers at
+ * least once — any timeout or non-2xx makes it retry — and each grant resets
+ * Sparks to the full allowance, so a replay used to refill a spent balance
+ * (verified in test mode: a replayed checkout.session.completed took a profile
+ * from 100 back to 500).
+ *
+ * Returns false when the event has already been applied. If the table is
+ * missing (migration 007 not yet run) this logs and lets the event through:
+ * losing idempotency is bad, but silently refusing to grant Pro to a paying
+ * customer would be worse.
+ */
+async function claimEvent(event: Stripe.Event): Promise<boolean> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("stripe_events")
+    .insert({ id: event.id, type: event.type });
+  if (!error) return true;
+
+  // 23505 = unique_violation — this event has been handled already.
+  if (error.code === "23505") return false;
+
+  // 42P01 = undefined_table, plus PostgREST's schema-cache miss for the same.
+  if (error.code === "42P01" || error.code === "PGRST205") {
+    console.warn(
+      "[stripe webhook] public.stripe_events is missing — processing without " +
+        "idempotency. Apply supabase/migrations/007_stripe_event_idempotency.sql."
+    );
+    return true;
+  }
+  throw new Error(`Could not record Stripe event: ${error.message}`);
+}
+
 /** Normalize a possibly-expanded Stripe reference field down to its ID. */
 function idOf(value: string | { id: string } | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -38,11 +71,20 @@ async function grantTier(
     sparks_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     ...extra,
   };
-  const query = admin.from("profiles").update(update);
-  const { error } = match.userId
+  // select() so the result reports which rows changed: an update that matches
+  // nothing is not an error in PostgREST, and silently granting nothing to a
+  // customer who has just paid is the worst possible failure here. Throwing
+  // returns a non-2xx, so Stripe retries and the event stays visible as failed.
+  const query = admin.from("profiles").update(update).select("id");
+  const { data, error } = match.userId
     ? await query.eq("id", match.userId)
     : await query.eq("stripe_customer_id", match.customerId!);
   if (error) throw new Error(`Supabase profile update failed: ${error.message}`);
+  if (!data || data.length === 0) {
+    throw new Error(
+      `No profile matched ${match.userId ? `user ${match.userId}` : `customer ${match.customerId}`} — tier not granted.`
+    );
+  }
 }
 
 /** Sync tier/subscription state only — does not touch the Sparks balance. */
@@ -53,11 +95,16 @@ async function syncTierOnly(
 ) {
   const admin = createAdminClient();
   const update = { tier, ...extra };
-  const query = admin.from("profiles").update(update);
-  const { error } = match.userId
+  const query = admin.from("profiles").update(update).select("id");
+  const { data, error } = match.userId
     ? await query.eq("id", match.userId)
     : await query.eq("stripe_customer_id", match.customerId!);
   if (error) throw new Error(`Supabase profile update failed: ${error.message}`);
+  if (!data || data.length === 0) {
+    throw new Error(
+      `No profile matched ${match.userId ? `user ${match.userId}` : `customer ${match.customerId}`} — tier not synced.`
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -82,6 +129,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Duplicate deliveries stop here, before anything is granted.
+    if (!(await claimEvent(event))) {
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
