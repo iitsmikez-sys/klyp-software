@@ -19,8 +19,14 @@ import { useEffect, useRef, useState } from "react";
 import { fmtTime, clipDuration, type SavedClip } from "@/lib/clip-ui";
 import { loadClipThumbnail, peekClipThumbnail } from "@/lib/clip-thumbnails";
 
+/**
+ * Only the source and range are needed, so this also accepts a clip straight
+ * out of an analysis, before it has been saved to My Clips.
+ */
+export type ThumbnailClip = Pick<SavedClip, "url" | "start_seconds" | "end_seconds" | "title">;
+
 interface Props {
-  clip: SavedClip;
+  clip: ThumbnailClip;
   /** Fires on the play button and on the poster itself. */
   onPlay: () => void;
 }

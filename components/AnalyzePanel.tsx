@@ -15,6 +15,7 @@ import {
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
 import ClipPreview from "./ClipPreview";
+import ClipThumbnail from "./ClipThumbnail";
 import ProGateModal from "./ProGateModal";
 import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
@@ -110,6 +111,12 @@ export default function AnalyzePanel() {
   // Library decision per clip — nothing is saved to Supabase until the user keeps it.
   const [clipStatus, setClipStatus] = useState<Record<number, "unsaved" | "kept" | "discarded">>({});
   const [downloading, setDownloading] = useState<number | null>(null);
+  /** Rendered exports, kept so a finished clip offers Download instead of re-rendering. */
+  const [exported, setExported] = useState<Record<number, { url: string; filename: string }>>({});
+  /** Which cards have their Customize section open. */
+  const [customizeOpen, setCustomizeOpen] = useState<Record<number, boolean>>({});
+  /** Expandable Sparks cost breakdown. */
+  const [costOpen, setCostOpen] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -349,6 +356,11 @@ export default function AnalyzePanel() {
           : "BOLD";
       setClipStyles(Object.fromEntries(event.clips.map((_, i) => [i, defaultStyle])));
       // Default: first hook selected, 9:16 vertical.
+      setExported((prev) => {
+        for (const e of Object.values(prev)) URL.revokeObjectURL(e.url);
+        return {};
+      });
+      setCustomizeOpen({});
       setClipHooks(Object.fromEntries(event.clips.map((c, i) => [i, c.hooks?.[0] ?? null])));
       setClipFormats(Object.fromEntries(event.clips.map((_, i) => [i, "9:16" as ExportFormat])));
       // All clips start unsaved — the user decides what enters their library.
@@ -968,23 +980,67 @@ export default function AnalyzePanel() {
 
         {/* Sparks cost preview */}
         {!outOfSparks && (estimating || estimatedSparks !== null) && (
-          <div className="flex items-center gap-1.5 mt-3 text-[15px]">
-            <SparkIcon size={15} className="text-accent" />
-            {estimating ? (
-              <span className="text-foreground-muted">Checking video length…</span>
-            ) : (
-              <span className="text-foreground-muted">
-                Estimated cost:{" "}
-                <span className={`font-syne font-bold ${cantAfford ? "text-red-400" : "text-accent"}`}>
-                  {estimatedSparks} (VOD) + {CLIP_COUNT_COST[clipCount]} ({clipCount} clips) = {totalEstimate}⚡
-                </span>
-                {cantAfford && (
-                  <span className="text-red-400">
-                    {" "}— not enough Sparks: this will cost {totalEstimate}⚡ but you only have {balance}⚡ remaining.{" "}
-                    <a href="/dashboard/upgrade" className="underline">Upgrade to Pro</a>
-                  </span>
+          <div className="mt-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[15px]">
+              <span className="flex items-center gap-1.5 text-foreground-muted">
+                <SparkIcon size={15} className="text-accent" />
+                {estimating ? (
+                  "Checking video length…"
+                ) : (
+                  <>
+                    Estimated cost:{" "}
+                    <span className={`font-bold tabular-nums ${cantAfford ? "text-red-400" : "text-accent"}`}>
+                      {totalEstimate} Sparks
+                    </span>
+                  </>
                 )}
               </span>
+              {!estimating && (
+                <button
+                  type="button"
+                  onClick={() => setCostOpen((v) => !v)}
+                  aria-expanded={costOpen}
+                  className="flex items-center gap-1 text-[13px] font-semibold text-foreground-muted hover:text-foreground transition-colors"
+                >
+                  Details
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    className={`transition-transform ${costOpen ? "rotate-180" : ""}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Breakdown of the same figures the server charges — see lib/sparks.ts. */}
+            {costOpen && !estimating && (
+              <div className="mt-2 px-3.5 py-3 rounded-lg bg-surface-2 border border-border text-sm space-y-1.5">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-foreground-muted">VOD length</span>
+                  <span className="text-foreground tabular-nums">{estimatedSparks} Sparks</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-foreground-muted">{clipCount} clips requested</span>
+                  <span className="text-foreground tabular-nums">{CLIP_COUNT_COST[clipCount]} Sparks</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 pt-1.5 border-t border-border">
+                  <span className="text-foreground font-semibold">Total</span>
+                  <span className="text-accent font-bold tabular-nums">{totalEstimate} Sparks</span>
+                </div>
+                <p className="text-[13px] text-foreground-muted pt-1 leading-relaxed">
+                  You are only charged for clips that come back above the quality floor, so
+                  fewer results cost less than the estimate.
+                </p>
+              </div>
+            )}
+
+            {cantAfford && !estimating && (
+              <p className="mt-2 text-sm text-red-400">
+                Not enough Sparks: this costs {totalEstimate} but you have {balance} remaining.{" "}
+                <a href="/dashboard/upgrade" className="underline font-semibold">Upgrade to Pro</a>
+              </p>
             )}
           </div>
         )}
@@ -1022,15 +1078,21 @@ export default function AnalyzePanel() {
         <div className="mt-6">
           {clips.length > 0 && (
             <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-              <h3 className="font-syne text-base font-semibold text-foreground">
-                Top {clips.length} clippable moment{clips.length === 1 ? "" : "s"}
-              </h3>
+              <div>
+                <h3 className="font-geist text-2xl font-bold text-white">
+                  Your clips are ready
+                </h3>
+                <p className="text-[15px] text-foreground-muted mt-0.5">
+                  {clips.filter((_, i) => clipStatus[i] !== "discarded").length} moment
+                  {clips.filter((_, i) => clipStatus[i] !== "discarded").length === 1 ? "" : "s"} found in your VOD.
+                </p>
+              </div>
               <div className="flex items-center gap-2">
               <button
                 onClick={keepAll}
                 disabled={busy || !clips.some((_, i) => clipStatus[i] === "unsaved")}
                 title="Save every remaining clip to My Clips"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-background text-xs font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-accent text-background text-[13px] font-bold hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
@@ -1039,8 +1101,9 @@ export default function AnalyzePanel() {
               </button>
               <button
                 onClick={downloadAllAsZip}
-                disabled={busy}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
+                disabled={busy || !clips.some((_, i) => clipStatus[i] !== "discarded")}
+                title="Renders every remaining clip, then downloads them as one .zip"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-accent/40 text-accent text-[13px] font-bold hover:bg-accent-glow transition-colors disabled:opacity-50"
               >
                 {zipProgress ? (
                   <>
@@ -1085,17 +1148,33 @@ export default function AnalyzePanel() {
                 key={i}
                 className="bg-surface border border-border rounded-xl p-5 hover:border-accent/30 transition-colors"
               >
-                <div className="flex items-center justify-between gap-3 mb-3">
+                {/* Frame from this clip's own range; play opens the preview. */}
+                <div className="mb-3">
+                  <ClipThumbnail
+                    clip={{
+                      url: analyzedUrl,
+                      start_seconds: clip.start_seconds,
+                      end_seconds: clip.end_seconds,
+                      title: clip.title,
+                    }}
+                    onPlay={() => setPreviewIndex(i)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3 mb-2">
                   <span
-                    className={`px-2.5 py-1 rounded-md border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.type]}`}
+                    className={`px-2.5 py-1 rounded-md border text-[11px] font-bold tracking-wide ${TYPE_STYLES[clip.type]}`}
                   >
                     {clip.type}
                   </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-foreground-muted">viral score</span>
+                  <div
+                    className="flex items-center gap-1.5"
+                    title="Klyp&apos;s estimated viral potential, not measured performance"
+                  >
+                    <span className="text-[13px] text-foreground-muted">AI score</span>
                     <span
-                      className={`font-syne text-lg font-bold ${
-                        clip.viral_score >= 85 ? "text-accent" : "text-foreground"
+                      className={`font-geist text-lg font-bold tabular-nums ${
+                        clip.viral_score >= 85 ? "text-accent" : "text-white"
                       }`}
                     >
                       {Math.round(clip.viral_score)}
@@ -1103,27 +1182,56 @@ export default function AnalyzePanel() {
                   </div>
                 </div>
 
-                <h4 className="font-syne text-base font-semibold text-foreground mb-1.5">
+                <h4 className="font-geist text-[17px] font-bold text-white leading-snug mb-2 line-clamp-2">
                   {clip.title}
                 </h4>
-                <p className="text-sm text-foreground-muted mb-3">{clip.caption}</p>
 
-                <div className="flex items-center justify-between text-xs">
-                  <span className="px-2 py-1 rounded bg-surface-2 border border-border text-foreground-muted font-mono">
-                    {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)}
-                  </span>
-                  <span className="text-subtle">
-                    {Math.round(clip.end_seconds - clip.start_seconds)}s clip
-                    {clip.thumbnail_seconds != null && (
-                      <> · thumb @ {fmtTime(clip.thumbnail_seconds)}</>
-                    )}
+                <div className="flex items-center gap-2 text-sm text-foreground-muted mb-3">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                    <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  <span className="font-mono">
+                    {fmtTime(clip.start_seconds)} &ndash; {fmtTime(clip.end_seconds)}
                   </span>
                 </div>
 
-                <p className="mt-3 pt-3 border-t border-border text-xs text-foreground-muted italic">
-                  {clip.reason}
-                </p>
+                {/* Everything optional lives behind Customize so the card reads
+                    at a glance. Selections persist: this only hides the controls,
+                    it does not reset clipHooks / clipFormats. */}
+                <button
+                  type="button"
+                  onClick={() => setCustomizeOpen((prev) => ({ ...prev, [i]: !prev[i] }))}
+                  aria-expanded={!!customizeOpen[i]}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border text-[13px] font-semibold text-foreground-muted hover:text-foreground hover:border-subtle transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+                      <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+                      <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+                      <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" />
+                      <line x1="17" y1="16" x2="23" y2="16" />
+                    </svg>
+                    Customize
+                  </span>
+                  <svg
+                    width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    className={`transition-transform ${customizeOpen[i] ? "rotate-180" : ""}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
 
+                {customizeOpen[i] && (
+                  <div className="mt-3 space-y-3">
+                    {/* Why this moment was picked, plus the social caption. */}
+                    <div className="px-3 py-2.5 rounded-lg bg-surface-2 border border-border space-y-1.5">
+                      <p className="text-[13px] text-foreground-muted leading-relaxed">{clip.reason}</p>
+                      {clip.caption && (
+                        <p className="text-[13px] text-foreground leading-relaxed">{clip.caption}</p>
+                      )}
+                    </div>
                 {/* Hook options — burned over the first 3s of the export */}
                 {clip.hooks && clip.hooks.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-border">
@@ -1190,12 +1298,15 @@ export default function AnalyzePanel() {
                   </span>
                 </div>
 
+                  </div>
+                )}
+
                 {/* Preview + Export buttons */}
                 <div className="mt-4 flex gap-2">
                   <button
                     onClick={() => setPreviewIndex(i)}
                     disabled={busy}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-accent/40 text-accent text-sm font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-accent/40 text-accent text-sm font-bold hover:bg-accent-glow transition-colors disabled:opacity-50"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polygon points="5 3 19 12 5 21 5 3"/>
@@ -1230,6 +1341,21 @@ export default function AnalyzePanel() {
                     )}
                   </button>
                 </div>
+
+                {/* Rendered file ready: hand it over again without re-rendering. */}
+                {exported[i] && downloading !== i && (
+                  <a
+                    href={exported[i].url}
+                    download={exported[i].filename}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent text-background text-sm font-bold hover:bg-accent-dim shadow-accent-glow-sm transition-colors"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Download
+                  </a>
+                )}
 
                 {/* Raw export — clean cut, no captions/hook/crop/watermark, for CapCut & co. */}
                 <button
