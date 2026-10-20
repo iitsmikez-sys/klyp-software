@@ -146,6 +146,32 @@ export async function getLatestVod(broadcasterId: string): Promise<TwitchVideo |
   return data.data[0] ?? null;
 }
 
+/**
+ * Look up VODs by id — Helix /videos takes up to 100 ids per call, so a whole
+ * Streams page resolves in one request. Expired VODs simply aren't returned,
+ * which is why callers must tolerate missing entries.
+ */
+export async function getVideosByIds(ids: string[]): Promise<TwitchVideo[]> {
+  if (ids.length === 0) return [];
+  const query = ids.slice(0, 100).map((id) => `id=${encodeURIComponent(id)}`).join("&");
+  const res = await helix(`/videos?${query}`);
+  if (!res.ok) throw new Error(`Twitch Get Videos failed: HTTP ${res.status}`);
+  const data = (await res.json()) as { data: TwitchVideo[] };
+  return data.data;
+}
+
+export type TwitchChannel = { id: string; login: string; display_name: string; profile_image_url: string };
+
+/** Channel profiles by login — used for the real avatar on connected channels. */
+export async function getUsersByLogin(logins: string[]): Promise<TwitchChannel[]> {
+  if (logins.length === 0) return [];
+  const query = logins.slice(0, 100).map((l) => `login=${encodeURIComponent(l)}`).join("&");
+  const res = await helix(`/users?${query}`);
+  if (!res.ok) throw new Error(`Twitch Get Users failed: HTTP ${res.status}`);
+  const data = (await res.json()) as { data: TwitchChannel[] };
+  return data.data;
+}
+
 /* ── EventSub subscription management (app access token) ── */
 
 export async function createStreamOfflineSubscription(

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ClipThumbnail from "@/components/ClipThumbnail";
 import ClipPreviewModal from "@/components/ClipPreviewModal";
@@ -33,11 +34,19 @@ type ClipAction = {
   run: (clip: SavedClip) => void;
 };
 
-export default function ClipsPage() {
+/**
+ * Reads ?vod= via useSearchParams, which opts the route out of static
+ * prerendering unless it sits inside a Suspense boundary — see the default
+ * export below.
+ */
+function ClipsPageContent() {
   const [clips, setClips] = useState<SavedClip[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  /** ?vod=<source url> — set by "View clips" on the Streams page. */
+  const searchParams = useSearchParams();
+  const vodFilter = searchParams.get("vod");
   const [sort, setSort] = useState<SortKey>("newest");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   /** Clip shown in the centred preview dialog — the grid behind is untouched. */
@@ -159,6 +168,7 @@ export default function ClipsPage() {
 
   const filtered = useMemo(() => {
     let list = clips;
+    if (vodFilter) list = list.filter((c) => c.url === vodFilter);
     if (typeFilter) list = list.filter((c) => c.clip_type === typeFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -172,7 +182,7 @@ export default function ClipsPage() {
       list = [...list].sort((a, b) => b.viral_score - a.viral_score);
     }
     return list;
-  }, [clips, typeFilter, search, sort]);
+  }, [clips, typeFilter, search, sort, vodFilter]);
 
   const previewClip = useMemo(
     () => clips.find((c) => c.id === previewId) ?? null,
@@ -193,6 +203,17 @@ export default function ClipsPage() {
           Every moment Klyp has found for you — {clips.length} clip{clips.length === 1 ? "" : "s"} total.
         </p>
       </header>
+
+      {vodFilter && (
+        <div className="flex flex-wrap items-center gap-3 mb-4 px-4 py-3 rounded-lg bg-accent-glow border border-accent/30">
+          <span className="text-sm text-foreground">
+            Showing clips from one VOD — {filtered.length} of {clips.length}.
+          </span>
+          <Link href="/dashboard/clips" className="text-sm font-bold text-accent hover:underline">
+            Show all clips
+          </Link>
+        </div>
+      )}
 
       {/* Toolbar: search + sort */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -486,5 +507,19 @@ export default function ClipsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ClipsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-24">
+          <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+        </div>
+      }
+    >
+      <ClipsPageContent />
+    </Suspense>
   );
 }
