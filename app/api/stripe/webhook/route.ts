@@ -52,6 +52,29 @@ async function claimEvent(event: Stripe.Event): Promise<boolean> {
   throw new Error(`Could not record Stripe event: ${error.message}`);
 }
 
+/**
+ * Give the claim back after a failed handler.
+ *
+ * claimEvent() inserts before the work happens, so a grant that throws leaves
+ * the event claimed but ungranted. Stripe retries on the 500, the retry sees
+ * the existing row and returns "duplicate" — and a customer who paid never
+ * receives their Sparks, silently. Releasing the claim makes the retry redo
+ * the work, which is the point of returning a non-2xx at all.
+ */
+async function releaseEvent(eventId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.from("stripe_events").delete().eq("id", eventId);
+  if (error) {
+    // Loud: from here the retry is treated as a duplicate and the grant is
+    // lost, so this needs a human rather than a quiet log line.
+    console.error(
+      `[stripe webhook] FAILED to release the claim on ${eventId} after a ` +
+        `handler error — Stripe's retry will be rejected as a duplicate and ` +
+        `this payment may never be granted: ${error.message}`
+    );
+  }
+}
+
 /** Normalize a possibly-expanded Stripe reference field down to its ID. */
 function idOf(value: string | { id: string } | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -186,6 +209,8 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     // Non-2xx makes Stripe retry the event — right call for transient DB errors.
+    // The claim has to go back first, or that retry is a no-op.
+    await releaseEvent(event.id);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Webhook handling failed." },
       { status: 500 }
