@@ -21,6 +21,7 @@ import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache"
 import { runQueued } from "@/lib/job-queue";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -87,9 +88,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "This endpoint only runs on the processing service." }, { status: 404 });
   }
 
-  let url: string, start: number, end: number;
+  let url: string, start: number, end: number, clipId: string;
   try {
     const body = await req.json();
+    clipId = String(body.clip_id ?? "");
     url = String(body.url ?? "").trim();
     start = Number(body.start_seconds);
     end = Number(body.end_seconds);
@@ -116,6 +118,25 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   if (!profile) {
     return NextResponse.json({ error: "You must be signed in to load clip thumbnails." }, { status: 401 });
+  }
+
+  // Archived poster first: already this clip's frame, and it outlives the
+  // source VOD. Scoped to the caller's own id inside getArchivedClip.
+  if (clipId) {
+    const archived = await getArchivedClip(clipId, profile.id);
+    if (archived?.posterPath && archived.status === "stored") {
+      const bytes = await readArchivedObject(archived.posterPath);
+      if (bytes) {
+        return new NextResponse(new Uint8Array(bytes), {
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Content-Length": String(bytes.byteLength),
+            "Cache-Control": "private, max-age=86400",
+            "X-Klyp-Source": "archive",
+          },
+        });
+      }
+    }
   }
 
   const outPath = path.join(CACHE_DIR, `${thumbCacheKey(url, start, end)}.jpg`);

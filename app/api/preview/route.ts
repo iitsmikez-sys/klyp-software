@@ -20,6 +20,7 @@ import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache"
 import { runQueued } from "@/lib/job-queue";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -88,9 +89,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const reqId = Math.random().toString(36).slice(2, 8);
   const log = (...args: unknown[]) => console.log(`[preview ${reqId}]`, new Date().toISOString(), ...args);
 
-  let url: string, start: number, end: number, crop: boolean;
+  let url: string, start: number, end: number, crop: boolean, clipId: string;
   try {
     const body = await req.json();
+    clipId = String(body.clip_id ?? "");
     url = String(body.url ?? "").trim();
     start = Number(body.start_seconds);
     end = Number(body.end_seconds);
@@ -121,6 +123,29 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   if (!profile) {
     return NextResponse.json({ error: "You must be signed in to preview clips." }, { status: 401 });
+  }
+
+  // Archived proxy first. It is already this exact clip cut to 540p, so there
+  // is nothing to download or encode — and crucially it still works when the
+  // source VOD has been deleted, which is the whole point of archiving.
+  // Scoped to the caller's own id inside getArchivedClip.
+  if (clipId) {
+    const archived = await getArchivedClip(clipId, profile.id);
+    if (archived?.proxyPath && archived.status === "stored") {
+      const bytes = await readArchivedObject(archived.proxyPath);
+      if (bytes) {
+        log("served archived proxy", archived.proxyPath, `${(bytes.byteLength / 1e6).toFixed(1)}MB`);
+        return new NextResponse(new Uint8Array(bytes), {
+          headers: {
+            "Content-Type": "video/mp4",
+            "Content-Length": String(bytes.byteLength),
+            "Cache-Control": "private, max-age=3600",
+            "X-Klyp-Source": "archive",
+          },
+        });
+      }
+      log("archived proxy missing, falling back to source", archived.proxyPath);
+    }
   }
 
   log("start", url.slice(0, 100), `${start}-${end}s`, crop ? "9:16" : "source-aspect");

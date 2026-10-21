@@ -216,6 +216,9 @@ export default function ClipPreviewModal({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        // Lets the server serve the archived 540p proxy, which works even
+        // once the source VOD is gone.
+        clip_id: clip.id,
         url: clip.url,
         start_seconds: clip.start_seconds,
         end_seconds: clip.end_seconds,

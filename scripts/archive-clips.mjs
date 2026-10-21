@@ -129,7 +129,7 @@ async function upload(localPath, objectPath, contentType) {
 /* ── Load clips and work out what is recoverable ── */
 const { data: clips, error } = await admin
   .from("clips")
-  .select("id,user_id,url,title,start_seconds,end_seconds,created_at")
+  .select("id,user_id,url,title,start_seconds,end_seconds,created_at,archive_status")
   .order("created_at", { ascending: false });
 if (error) { console.error("Could not load clips:", error.message); process.exit(1); }
 
@@ -182,5 +182,98 @@ if (has("--probe")) {
   }
   process.exit(0);
 }
+
+/* ── Mark everything with no retrievable source, honestly ── */
+if (has("--run")) {
+  const lost = unavailable.filter((c) => c.archive_status !== "unavailable");
+  if (lost.length > 0) {
+    // Recorded, never deleted: the row and its metadata stay, the footage is
+    // simply gone and the UI can say so instead of offering a broken export.
+    const { error: e } = await admin
+      .from("clips")
+      .update({ archive_status: "unavailable", archive_error: "Source video no longer available" })
+      .in("id", lost.map((c) => c.id));
+    if (e) { console.error("could not mark unavailable:", e.message); process.exit(1); }
+  }
+  console.log(`marked unavailable: ${lost.length}`);
+
+  let used = 0, stored = 0, skipped = 0, failed = 0, reused = 0;
+
+  for (const c of recoverable) {
+    if (c.archive_status === "stored") { skipped++; continue; }
+
+    if (used + estBytes(c) > budgetBytes) {
+      console.log(`budget reached (${(used / 1048576).toFixed(0)} MB) — stopping, remaining clips stay at status 'none' and can be archived later`);
+      break;
+    }
+
+    // Claim the clip. A retry bumps the row rather than starting a parallel
+    // upload; storage paths are deterministic and uploaded with upsert, so a
+    // repeated job can never produce duplicate objects.
+    await admin.from("clip_archive_jobs")
+      .upsert({ clip_id: c.id, status: "processing", updated_at: new Date().toISOString() }, { onConflict: "clip_id" });
+
+    const base = `${c.user_id}/${c.id}`;
+    const label = c.title.slice(0, 44);
+
+    try {
+      // Already in the bucket (e.g. from --probe)? Record it, don't re-upload.
+      const { data: present } = await admin.storage.from(BUCKET).list(base);
+      const names = new Set((present ?? []).map((o) => o.name));
+      let bytes = (present ?? []).reduce((sum, o) => sum + (o.metadata?.size ?? 0), 0);
+      let wasPresent = names.has("master.mp4") && names.has("proxy.mp4") && names.has("poster.jpg");
+
+      if (!wasPresent) {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "klyp-archive-"));
+        try {
+          const a = await buildAssets(c, dir);
+          bytes =
+            (await upload(a.master, `${base}/master.mp4`, "video/mp4")) +
+            (await upload(a.proxy, `${base}/proxy.mp4`, "video/mp4")) +
+            (await upload(a.poster, `${base}/poster.jpg`, "image/jpeg"));
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+        stored++;
+        console.log(`stored  ${(bytes / 1048576).toFixed(1).padStart(5)} MB  ${label}`);
+      } else {
+        reused++;
+        console.log(`present ${(bytes / 1048576).toFixed(1).padStart(5)} MB  ${label} (already in bucket)`);
+      }
+
+      const { error: ue } = await admin.from("clips").update({
+        master_path: `${base}/master.mp4`,
+        proxy_path: `${base}/proxy.mp4`,
+        poster_path: `${base}/poster.jpg`,
+        archive_status: "stored",
+        archive_error: null,
+        archived_at: new Date().toISOString(),
+        archive_bytes: bytes,
+      }).eq("id", c.id);
+      if (ue) throw new Error(`db update: ${ue.message}`);
+
+      await admin.from("clip_archive_jobs")
+        .update({ status: "done", last_error: null, updated_at: new Date().toISOString() })
+        .eq("clip_id", c.id);
+      used += bytes;
+    } catch (err) {
+      failed++;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`FAILED        ${label}: ${msg.slice(0, 80)}`);
+      // Left retryable on purpose — a failed archive is not an absent source.
+      await admin.from("clips")
+        .update({ archive_status: "failed", archive_error: msg.slice(0, 300) })
+        .eq("id", c.id);
+      await admin.from("clip_archive_jobs")
+        .update({ status: "failed", last_error: msg.slice(0, 300), updated_at: new Date().toISOString() })
+        .eq("clip_id", c.id);
+    }
+  }
+
+  console.log(`\nstored ${stored} | already present ${reused} | skipped ${skipped} | failed ${failed}`);
+  console.log(`storage written this run: ${(used / 1048576).toFixed(0)} MB (budget ${(budgetBytes / 1048576).toFixed(0)} MB)`);
+  process.exit(0);
+}
+
 
 console.log("\nno action taken. --plan to see what fits, --probe to test one clip, --run to archive.");

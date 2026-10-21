@@ -31,6 +31,7 @@ import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache"
 import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
+import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
 
@@ -175,7 +176,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const reqId = Math.random().toString(36).slice(2, 8);
   const log = (...args: unknown[]) => console.log(`[clip ${reqId}]`, new Date().toISOString(), ...args);
 
-  let url: string, start: number, end: number, title: string;
+  let url: string, start: number, end: number, title: string, clipId: string;
   let style: CaptionStyle | undefined;
   let words: TimedWord[] | undefined;
   let handle: string | undefined;
@@ -186,6 +187,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let upscale = false;
   try {
     const body = await req.json();
+    clipId = String(body.clip_id ?? "");
     raw = body.raw === true;
     upscale = body.upscale === true && !raw; // upscale applies to rendered exports only
     url = String(body.url ?? "").trim();
@@ -297,8 +299,37 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       // Fetch only the slice this clip needs, not the whole VOD. The returned
       // offset is where that slice begins in the original timeline, so the cut
       // below must seek relative to it (a segment file starts at 0).
-      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end);
-      log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
+      // Prefer this clip's archived master. It is already the exact range at
+      // 1080p, so there is no download and no re-cut — and it is the only way
+      // an export can still work once the source VOD has been deleted. Scoped
+      // to the caller's own id inside getArchivedClip.
+      let sourcePath: string;
+      let offsetSeconds: number;
+      let archivedMaster: string | null = null;
+      if (clipId) {
+        const archived = await getArchivedClip(clipId, profile.id);
+        if (archived?.masterPath && archived.status === "stored") {
+          const bytes = await readArchivedObject(archived.masterPath);
+          if (bytes) {
+            archivedMaster = path.join(CACHE_DIR, `master-${archived.id}.mp4`);
+            await writeFile(archivedMaster, bytes);
+            log("using archived master", archived.masterPath, `${(bytes.byteLength / 1e6).toFixed(1)}MB`);
+          } else {
+            log("archived master missing, falling back to source", archived.masterPath);
+          }
+        }
+      }
+
+      if (archivedMaster) {
+        // The master already starts at the clip's start, so no rebasing.
+        sourcePath = archivedMaster;
+        offsetSeconds = start;
+      } else {
+        const resolved = await resolveSourceSegment(url, start, end);
+        sourcePath = resolved.path;
+        offsetSeconds = resolved.offsetSeconds;
+        log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
+      }
 
       // ASS PlayRes must match the output resolution so burned text scales with it.
       // "Original" has no fixed dimensions — probe the source for its native size.

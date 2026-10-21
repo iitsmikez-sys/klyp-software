@@ -40,6 +40,8 @@ export function useClipExports(onSparksSpent?: () => void) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            // Lets the server export from the archived 1080p master.
+            clip_id: clip.id,
             url: clip.url,
             start_seconds: clip.start_seconds,
             end_seconds: clip.end_seconds,

@@ -16,7 +16,7 @@
 import { processingFetch } from "@/lib/processing-api";
 import type { SavedClip } from "@/lib/clip-ui";
 
-type ThumbClip = Pick<SavedClip, "url" | "start_seconds" | "end_seconds">;
+type ThumbClip = Pick<SavedClip, "url" | "start_seconds" | "end_seconds"> & { id?: string };
 
 /** Same identity the server caches by: source plus exact range. */
 function keyFor(clip: ThumbClip): string {
@@ -49,6 +49,9 @@ export function loadClipThumbnail(clip: ThumbClip): Promise<string> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      // clip_id lets the server serve this clip's archived poster, which
+      // still exists after the source VOD is deleted.
+      clip_id: clip.id,
       url: clip.url,
       start_seconds: clip.start_seconds,
       end_seconds: clip.end_seconds,
