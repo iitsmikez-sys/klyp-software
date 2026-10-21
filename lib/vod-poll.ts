@@ -105,12 +105,20 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
         end_seconds: clip.end_seconds,
         hooks: clip.hooks,
         words: clip.words,
+        // Null-safe: a clip from a model response without dimensions still saves.
+        dim_hype: clip.dimensions?.hype ?? null,
+        dim_emotion: clip.dimensions?.emotion ?? null,
+        dim_skill: clip.dimensions?.skill ?? null,
+        dim_comedy: clip.dimensions?.comedy ?? null,
+        dim_storyline: clip.dimensions?.storyline ?? null,
       }));
       const { error: saveError } = await admin.from("clips").insert(rows);
       if (saveError) {
         // hooks/words columns may not exist yet (pre-migration-003 schema) —
         // mirrors the same fallback AnalyzePanel's client-side save uses.
-        await admin.from("clips").insert(rows.map(({ hooks, words, ...rest }) => rest));
+        await admin.from("clips").insert(
+          rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)
+        );
       }
     }
 

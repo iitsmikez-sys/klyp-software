@@ -323,11 +323,19 @@ export default function AnalyzePanel() {
       end_seconds: clip.end_seconds,
       hooks: clip.hooks,
       words: clip.words,
+      // Null-safe: a clip from a model response without dimensions still saves.
+      dim_hype: clip.dimensions?.hype ?? null,
+      dim_emotion: clip.dimensions?.emotion ?? null,
+      dim_skill: clip.dimensions?.skill ?? null,
+      dim_comedy: clip.dimensions?.comedy ?? null,
+      dim_storyline: clip.dimensions?.storyline ?? null,
     }));
     const { error } = await supabase.from("clips").insert(rows);
     if (error) {
       // hooks/words columns may not exist yet (migration 003) — save without them.
-      await supabase.from("clips").insert(rows.map(({ hooks, words, ...rest }) => rest));
+      await supabase.from("clips").insert(
+        rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)
+      );
     }
   };
 

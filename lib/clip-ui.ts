@@ -21,6 +21,62 @@ export interface SavedClip {
    * "failed" mid-archive. Null on clips from before migration 008.
    */
   archive_status?: string | null;
+  /** Five 0-20 dimension scores — null on clips saved before migration 009. */
+  dim_hype?: number | null;
+  dim_emotion?: number | null;
+  dim_skill?: number | null;
+  dim_comedy?: number | null;
+  dim_storyline?: number | null;
+}
+
+/**
+ * What a viral score actually means, in words.
+ *
+ * The raw number misleads on its own. Analysis never returns a clip scoring
+ * below 65 (the quality floor in analyze-pipeline) and then keeps only the top
+ * few of each VOD, so the scale a streamer sees is roughly 65-100, not 0-100.
+ * Read as a percentage, a 72 looks like a failing grade; it is in fact a solid
+ * clip that cleared the floor. These bands say so directly.
+ */
+export type ScoreBand = { label: string; blurb: string; className: string };
+
+export function scoreBand(score: number): ScoreBand {
+  if (score >= 85) return {
+    label: "Must post",
+    blurb: "Rare — most VODs have none of these.",
+    className: "bg-accent-glow text-accent border-accent/30",
+  };
+  if (score >= 75) return {
+    label: "Strong",
+    blurb: "Any editor would post this.",
+    className: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  };
+  if (score >= 68) return {
+    label: "Solid",
+    blurb: "Worth posting, not remarkable.",
+    className: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+  };
+  return {
+    label: "Marginal",
+    blurb: "Only just cleared the quality floor.",
+    className: "bg-surface-2 text-muted border-border",
+  };
+}
+
+/** The five dimensions in display order, or null when this clip has none. */
+export function clipDimensions(
+  clip: Pick<SavedClip, "dim_hype" | "dim_emotion" | "dim_skill" | "dim_comedy" | "dim_storyline">
+): { label: string; value: number }[] | null {
+  const dims = [
+    { label: "Hype", value: clip.dim_hype },
+    { label: "Emotion", value: clip.dim_emotion },
+    { label: "Skill", value: clip.dim_skill },
+    { label: "Comedy", value: clip.dim_comedy },
+    { label: "Story", value: clip.dim_storyline },
+  ];
+  // All-or-nothing: a partial breakdown would imply zeros that were never scored.
+  if (dims.some((d) => typeof d.value !== "number")) return null;
+  return dims as { label: string; value: number }[];
 }
 
 /**

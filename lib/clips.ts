@@ -84,6 +84,17 @@ export const ClipSchema = z.object({
     .array(z.enum(CLIP_SIGNALS))
     .min(1)
     .describe("The detection signal(s) that triggered this clip, most dominant first — signal names only, never a clip type"),
+  dimensions: z
+    .object({
+      hype: z.number().describe("HYPE, 0-20"),
+      emotion: z.number().describe("EMOTIONAL INTENSITY, 0-20"),
+      skill: z.number().describe("SKILL SHOWCASE, 0-20"),
+      comedy: z.number().describe("COMEDIC VALUE, 0-20"),
+      storyline: z.number().describe("STORYLINE SIGNIFICANCE, 0-20"),
+    })
+    .describe(
+      "The five dimension scores you judged this moment on, 0-20 each. These are the working behind viral_score, not a recomputation of it — report what you actually scored."
+    ),
   viral_score: z.number().describe("Estimated viral potential from 0 to 100"),
   title: z.string().describe("A short, punchy, clickable title for the clip"),
   caption: z.string().describe("A social-media-ready caption with relevant hashtags"),

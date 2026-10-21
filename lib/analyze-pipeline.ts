@@ -397,6 +397,8 @@ Score every candidate moment on five dimensions, 0-20 each:
 4. COMEDIC VALUE — jokes that land, absurd situations, perfect comedic timing, spectacular fails, accidental innuendo, chat-streamer banter.
 5. STORYLINE SIGNIFICANCE — key plot beats of the stream: the moment the run dies, the bet gets paid, the callback lands, the arc concludes.
 
+Report those five numbers in the "dimensions" field of every clip you return. They are the working behind the score, so report what you actually judged — never reverse-engineer them from viral_score, and never flatten them to make a clip look balanced. A 19/2/0/4/7 is a more useful answer than five 8s, and the breakdown is shown to the streamer.
+
 viral_score (1-100) is your holistic judgment informed by those dimensions — NOT their sum. A clip that maxes one dimension (a 20/20 comedic moment) beats a clip that's mediocre at everything. Also weigh: does it work with ZERO context for a viewer who has never seen this streamer? Is there a quotable line? Is it relatable outside this game's community?
 
 Calibrate honestly. 90+ means "this could genuinely go viral" — most VODs have zero or one such moment. 75-89 is a strong clip any editor would post. 65-74 is solid but unremarkable. Below 65 does not get returned at all (see FINAL SELECTION). NEVER inflate scores to make a boring VOD look good — streamers trust the number, and an inflated score sneaks a weak clip past the quality floor.

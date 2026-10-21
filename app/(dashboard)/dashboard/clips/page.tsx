@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ClipThumbnail from "@/components/ClipThumbnail";
+import ScoreBreakdown from "@/components/ScoreBreakdown";
 import ClipPreviewModal from "@/components/ClipPreviewModal";
 import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
@@ -22,6 +23,7 @@ import {
   platformName,
   vodLinkAt,
   footageGone,
+  scoreBand,
 } from "@/lib/clip-ui";
 
 type SortKey = "newest" | "score";
@@ -332,7 +334,15 @@ function ClipsPageContent() {
                   {clip.clip_type}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-foreground-muted">viral score</span>
+                  {/* The band, not the bare number, is the honest headline:
+                      analysis never returns anything under 65, so a raw score
+                      read as a percentage understates every clip. */}
+                  <span
+                    title={`${scoreBand(clip.viral_score).blurb} Score ${clip.viral_score} of a 65-100 range.`}
+                    className={`px-2 py-0.5 rounded-md border text-[11px] font-bold font-syne tracking-wide ${scoreBand(clip.viral_score).className}`}
+                  >
+                    {scoreBand(clip.viral_score).label}
+                  </span>
                   <span className={`font-syne text-xl font-bold ${clip.viral_score >= 85 ? "text-accent" : "text-foreground"}`}>
                     {clip.viral_score}
                   </span>
@@ -396,6 +406,12 @@ function ClipsPageContent() {
                 <span className="text-foreground-muted whitespace-nowrap truncate">
                   {platformName(clip.url)} · {fmtDate(clip.created_at)}
                 </span>
+              </div>
+
+              {/* What the score is actually made of. Renders nothing for
+                  clips saved before the breakdown was stored. */}
+              <div className="mt-2.5">
+                <ScoreBreakdown clip={clip} />
               </div>
 
               {/* Wraps on narrow cards: primary takes its own row, secondary
