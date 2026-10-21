@@ -342,7 +342,14 @@ export async function findClips(
   keyword?: string,
   keywordMatchSeconds: number[] = []
 ) {
-  const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+  // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
+  // is rejected with "This API key is not scoped to a workspace" unless the
+  // request names the workspace, so pass it through when one is configured.
+  // A workspace-scoped key needs no header and ignores this.
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  const client = new Anthropic(
+    workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {}
+  );
   const validTypes = CLIP_TYPES_BY_CONTENT[contentType];
 
   const spikeSection = chatSpikes
