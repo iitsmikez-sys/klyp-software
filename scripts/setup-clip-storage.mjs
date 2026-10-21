@@ -25,8 +25,12 @@ const env = Object.fromEntries(
 );
 
 const BUCKET = "clip-media";
-/** A 1080p master of a long clip; well clear of the measured ~39MB for 58s. */
-const FILE_SIZE_LIMIT = 200 * 1024 * 1024;
+/**
+ * Supabase Free caps uploads at 50MB per object and rejects a bucket limit
+ * above it. Measured against this library that is fine: the longest clip (77s)
+ * yields a 44MB master at 1080p CRF23, and none of the 112 clips exceeds it.
+ */
+const FILE_SIZE_LIMIT = 50 * 1024 * 1024;
 
 const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
