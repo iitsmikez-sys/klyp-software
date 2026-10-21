@@ -90,13 +90,36 @@ async function buildAssets(clip, dir) {
   const start = Math.max(0, Math.floor(clip.start_seconds));
   const end = Math.ceil(clip.end_seconds);
 
-  await run(env.YTDLP_PATH, [
+  // Mirrors lib/video-cache.ts, with one addition. A --download-sections fetch
+  // hands the cut to ffmpeg inside yt-dlp, and on some YouTube DASH streams that
+  // crashes outright (exit 3436169992) however the cut is aligned. The whole
+  // video is the reliable path, so fall back to it and cut here instead. It
+  // costs more bandwidth, which is why it is the fallback and not the default.
+  const base = [
     "--quiet", "--no-warnings", "--ffmpeg-location", env.FFMPEG_PATH,
     "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b",
-    "--download-sections", `*${start}-${end}`,
-    "-o", src.replace(/\.mp4$/, ".%(ext)s"),
-    clip.url,
-  ]);
+    "--merge-output-format", "mp4",
+    "--no-playlist",
+    "--socket-timeout", "30",
+  ];
+
+  // Where clip.start_seconds lands inside src: a section file starts at the cut,
+  // a whole-video file at the VOD's own zero.
+  let offset = 0;
+  try {
+    await run(env.YTDLP_PATH, [
+      ...base,
+      "--download-sections", `*${start}-${end}`,
+      "--force-keyframes-at-cuts",
+      "-o", src,
+      clip.url,
+    ]);
+  } catch (err) {
+    console.log(`    section download failed, retrying whole source: ${String(err.message ?? err).slice(0, 120)}`);
+    fs.rmSync(src, { force: true });
+    await run(env.YTDLP_PATH, [...base, "-o", src, clip.url]);
+    offset = start;
+  }
 
   const master = path.join(dir, "master.mp4");
   const proxy = path.join(dir, "proxy.mp4");
@@ -104,13 +127,15 @@ async function buildAssets(clip, dir) {
 
   // CRF23 keeps full 1080p for 16:9 re-export while staying inside the 50MB cap.
   await run(env.FFMPEG_PATH, ["-hide_banner", "-loglevel", "error", "-i", src,
+    "-ss", String(offset), "-t", String(end - start),
     "-c:v", "libx264", "-crf", "23", "-preset", "medium", "-vf", "scale=-2:1080",
     "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-y", master]);
   await run(env.FFMPEG_PATH, ["-hide_banner", "-loglevel", "error", "-i", src,
+    "-ss", String(offset), "-t", String(end - start),
     "-c:v", "libx264", "-crf", "26", "-preset", "veryfast", "-vf", "scale=-2:540",
     "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", "-y", proxy]);
   await run(env.FFMPEG_PATH, ["-hide_banner", "-loglevel", "error",
-    "-ss", String((end - start) / 2), "-i", src, "-frames:v", "1", "-q:v", "4", "-y", poster]);
+    "-ss", String(offset + (end - start) / 2), "-i", src, "-frames:v", "1", "-q:v", "4", "-y", poster]);
 
   return { master, proxy, poster };
 }
@@ -121,9 +146,17 @@ async function upload(localPath, objectPath, contentType) {
     throw new Error(`${path.basename(localPath)} is ${(body.byteLength / 1048576).toFixed(1)}MB, over the 50MB Free-plan cap`);
   }
   // upsert so a retry overwrites a partial object instead of erroring.
-  const { error } = await admin.storage.from(BUCKET).upload(objectPath, body, { contentType, upsert: true });
-  if (error) throw new Error(`upload ${objectPath}: ${error.message}`);
-  return body.byteLength;
+  // Uploads are tens of megabytes, so a transient network blip is normal —
+  // one clip failed the first run with a bare "fetch failed". Retry briefly
+  // before giving up; the clip stays retryable either way.
+  let lastErr = "";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { error } = await admin.storage.from(BUCKET).upload(objectPath, body, { contentType, upsert: true });
+    if (!error) return body.byteLength;
+    lastErr = error.message;
+    if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 3000));
+  }
+  throw new Error(`upload ${objectPath}: ${lastErr}`);
 }
 
 /* ── Load clips and work out what is recoverable ── */

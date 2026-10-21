@@ -16,7 +16,7 @@ import ClipThumbnail from "./ClipThumbnail";
 import ClipPreviewModal from "./ClipPreviewModal";
 import { useClipExports } from "./useClipExports";
 import { downloadExport } from "@/lib/clip-export";
-import { type SavedClip, TYPE_STYLES, fmtTime } from "@/lib/clip-ui";
+import { type SavedClip, TYPE_STYLES, fmtTime, footageGone } from "@/lib/clip-ui";
 
 /** Enough to fill the row on every breakpoint without a second row. */
 const LIMIT = 3;
@@ -134,7 +134,7 @@ export default function SavedClips() {
               key={clip.id}
               className="bg-surface border border-border rounded-xl p-3 flex flex-col hover:border-accent/30 transition-colors"
             >
-              <ClipThumbnail clip={clip} onPlay={() => setPreviewId(clip.id)} />
+              <ClipThumbnail clip={clip} onPlay={() => { if (!footageGone(clip)) setPreviewId(clip.id); }} />
 
               <div className="flex items-center justify-between gap-2 mt-3">
                 <span className={`px-2 py-0.5 rounded border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
@@ -142,10 +142,25 @@ export default function SavedClips() {
                 </span>
                 <button
                   onClick={() => createOrDownload(clip).then(flash)}
-                  disabled={state?.status === "working"}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-background text-[13px] font-bold hover:bg-accent-dim transition-colors disabled:opacity-60"
+                  disabled={state?.status === "working" || footageGone(clip)}
+                  title={footageGone(clip)
+                    ? "The source VOD was deleted before this clip was backed up, so there is no footage to render"
+                    : undefined}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors disabled:opacity-60 ${
+                    footageGone(clip)
+                      ? "bg-surface-2 text-muted border border-border cursor-not-allowed"
+                      : "bg-accent text-background hover:bg-accent-dim"
+                  }`}
                 >
-                  {state?.status === "working" ? (
+                  {footageGone(clip) ? (
+                    <>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
+                      </svg>
+                      Footage gone
+                    </>
+                  ) : state?.status === "working" ? (
                     <>
                       <span className="w-3 h-3 rounded-full border-2 border-background border-t-transparent animate-spin" />
                       Creating…

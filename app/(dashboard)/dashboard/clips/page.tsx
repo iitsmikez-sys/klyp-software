@@ -21,6 +21,7 @@ import {
   fmtDate,
   platformName,
   vodLinkAt,
+  footageGone,
 } from "@/lib/clip-ui";
 
 type SortKey = "newest" | "score";
@@ -313,7 +314,12 @@ function ClipsPageContent() {
           {filtered.map((clip) => (
             <div
               key={clip.id}
-              onClick={() => { setPreviewId(clip.id); setPreviewDetails(false); }}
+              onClick={() => {
+                // A clip with no footage left has nothing to show in the
+                // dialog, so the card opens its details rather than a player.
+                setPreviewId(clip.id);
+                setPreviewDetails(footageGone(clip));
+              }}
               className="bg-surface border border-border rounded-xl p-4 flex flex-col transition-colors group cursor-pointer hover:border-accent/30"
             >
               {/* 16:9 poster — play opens the centred preview dialog. */}
@@ -402,11 +408,27 @@ function ClipsPageContent() {
                     e.stopPropagation();
                     createOrDownload(clip).then((err) => err && flash(err));
                   }}
-                  disabled={workingId === clip.id}
-                  title="Render this clip from the source VOD and download it"
-                  className="basis-full sm:basis-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim shadow-accent-glow-sm transition-colors disabled:opacity-60 disabled:shadow-none"
+                  disabled={workingId === clip.id || footageGone(clip)}
+                  title={footageGone(clip)
+                    ? "The source VOD was deleted before this clip was backed up, so there is no footage to render"
+                    : "Render this clip from the source VOD and download it"}
+                  className={`basis-full sm:basis-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold font-syne transition-colors disabled:opacity-60 disabled:shadow-none ${
+                    // Neutral, not the accent: a bright primary button reads as
+                    // something to press, and there is nothing to press here.
+                    footageGone(clip)
+                      ? "bg-surface-2 text-muted border border-border cursor-not-allowed"
+                      : "bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm"
+                  }`}
                 >
-                  {exports[clip.id]?.status === "working" ? (
+                  {footageGone(clip) ? (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
+                      </svg>
+                      Footage gone
+                    </>
+                  ) : exports[clip.id]?.status === "working" ? (
                     <>
                       <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
                       Creating…

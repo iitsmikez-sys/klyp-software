@@ -15,6 +15,21 @@ export interface SavedClip {
   /** Hook options / word timestamps — null on clips saved before migration 003. */
   hooks?: string[] | null;
   words?: TimedWord[] | null;
+  /**
+   * How this clip's own footage is held: "stored" once archived, "unavailable"
+   * when the source VOD is gone and nothing was archived in time, "pending" or
+   * "failed" mid-archive. Null on clips from before migration 008.
+   */
+  archive_status?: string | null;
+}
+
+/**
+ * True when there is no footage left anywhere for this clip — the source VOD
+ * has been deleted and no archive was made. Nothing can render it, so the UI
+ * says so instead of offering a preview or export that is certain to fail.
+ */
+export function footageGone(clip: { archive_status?: string | null }): boolean {
+  return clip.archive_status === "unavailable";
 }
 
 /** Badge colors per clip type — keep in sync with AnalyzePanel.

@@ -16,14 +16,15 @@
  * card is actually near the viewport, and never blocks the card from painting.
  */
 import { useEffect, useRef, useState } from "react";
-import { fmtTime, clipDuration, type SavedClip } from "@/lib/clip-ui";
+import { fmtTime, clipDuration, footageGone, type SavedClip } from "@/lib/clip-ui";
 import { loadClipThumbnail, peekClipThumbnail } from "@/lib/clip-thumbnails";
 
 /**
  * Only the source and range are needed, so this also accepts a clip straight
  * out of an analysis, before it has been saved to My Clips.
  */
-export type ThumbnailClip = Pick<SavedClip, "url" | "start_seconds" | "end_seconds" | "title">;
+export type ThumbnailClip = Pick<SavedClip, "url" | "start_seconds" | "end_seconds" | "title"> &
+  Pick<SavedClip, "archive_status">;
 
 interface Props {
   clip: ThumbnailClip;
@@ -31,16 +32,20 @@ interface Props {
   onPlay: () => void;
 }
 
-type State = "idle" | "loading" | "ready" | "failed";
+type State = "idle" | "loading" | "ready" | "failed" | "gone";
 
 export default function ClipThumbnail({ clip, onPlay }: Props) {
+  const gone = footageGone(clip);
   const [src, setSrc] = useState<string | null>(null);
-  const [state, setState] = useState<State>("idle");
+  const [state, setState] = useState<State>(gone ? "gone" : "idle");
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const box = boxRef.current;
     if (!box) return;
+    // No footage anywhere: a frame cannot be produced, so don't spend a request
+    // discovering that. The card says so instead.
+    if (gone) { setState("gone"); return; }
 
     let active = true;
 
@@ -80,7 +85,7 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
       observer.disconnect();
       // The object URL is owned by the shared cache, so it is not revoked here.
     };
-  }, [clip]);
+  }, [clip, gone]);
 
   return (
     <div
@@ -95,7 +100,7 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
           onPlay();
         }
       }}
-      aria-label={`Preview ${clip.title}`}
+      aria-label={gone ? `${clip.title} — footage no longer available` : `Preview ${clip.title}`}
       className="relative aspect-video w-full overflow-hidden rounded-lg bg-surface-2 border border-border cursor-pointer group/thumb focus:outline-none focus:ring-2 focus:ring-accent/60"
     >
       {state === "ready" && src ? (
@@ -113,6 +118,14 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
               <>
                 <span className="w-3 h-3 rounded-full border border-muted border-t-transparent animate-spin" />
                 Loading frame…
+              </>
+            ) : state === "gone" ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
+                </svg>
+                Footage no longer available
               </>
             ) : state === "failed" ? (
               <>
@@ -133,6 +146,9 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/20 transition-opacity group-hover/thumb:opacity-80" />
       )}
 
+      {/* Nothing to play, so no play affordance — offering one would promise
+          a preview that cannot exist. */}
+      {!gone && (
       <div className="absolute inset-0 flex items-center justify-center">
         <span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur-sm border border-white/20 flex items-center justify-center transition-all duration-200 group-hover/thumb:bg-accent group-hover/thumb:border-accent group-hover/thumb:scale-110">
           <svg width="18" height="20" viewBox="0 0 16 18" fill="currentColor" className="ml-1 text-white group-hover/thumb:text-background">
@@ -140,6 +156,7 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
           </svg>
         </span>
       </div>
+      )}
 
       <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-white text-[13px] font-semibold font-mono tabular-nums tracking-tight">
         {fmtTime(clipDuration(clip))}
