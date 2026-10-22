@@ -11,6 +11,7 @@ import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { type ExportState, exportFilename, downloadExport } from "@/lib/clip-export";
 import type { SavedClip } from "@/lib/clip-ui";
+import { readClipEditDraft, toClipExportPayload } from "@/lib/clip-edit-draft";
 
 export function useClipExports(onSparksSpent?: () => void) {
   const [exports, setExports] = useState<Record<string, ExportState>>({});
@@ -18,11 +19,22 @@ export function useClipExports(onSparksSpent?: () => void) {
 
   // Finished exports hold blobs in memory until the page goes away.
   const exportsRef = useRef(exports);
+  const revisionRef = useRef<Record<string, number>>({});
   exportsRef.current = exports;
   useEffect(() => () => {
     for (const state of Object.values(exportsRef.current)) {
       if (state.status === "ready") URL.revokeObjectURL(state.objectUrl);
     }
+  }, []);
+
+  const invalidateClip = useCallback((id: string) => {
+    revisionRef.current[id] = (revisionRef.current[id] ?? 0) + 1;
+    const existing = exportsRef.current[id];
+    if (existing?.status === "ready") URL.revokeObjectURL(existing.objectUrl);
+    const next = { ...exportsRef.current };
+    delete next[id];
+    exportsRef.current = next;
+    setExports(next);
   }, []);
 
   /**
@@ -34,22 +46,15 @@ export function useClipExports(onSparksSpent?: () => void) {
       if (workingId) return;
       setWorkingId(clip.id);
       setExports((prev) => ({ ...prev, [clip.id]: { status: "working" } }));
+      const revision = revisionRef.current[clip.id] ?? 0;
       try {
-        const hasWords = Array.isArray(clip.words) && clip.words.length > 0;
+        const draft = readClipEditDraft(clip).draft;
         const res = await processingFetch("/api/clip", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            // Lets the server export from the archived 1080p master.
-            clip_id: clip.id,
-            url: clip.url,
-            start_seconds: clip.start_seconds,
-            end_seconds: clip.end_seconds,
-            title: clip.title,
-            style: hasWords ? "BOLD" : undefined,
-            words: hasWords ? clip.words : undefined,
+            ...toClipExportPayload(clip, draft),
             handle: getStoredHandle(),
-            aspect_ratio: "9:16",
             upscale: upscale || undefined,
           }),
         });
@@ -58,10 +63,11 @@ export function useClipExports(onSparksSpent?: () => void) {
           throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
         }
         const blob = await res.blob();
+        if ((revisionRef.current[clip.id] ?? 0) !== revision) return null;
         const state: ExportState = {
           status: "ready",
           objectUrl: URL.createObjectURL(blob),
-          filename: exportFilename(clip.title, upscale ? "_4k" : ""),
+          filename: exportFilename(draft.title, upscale ? "_4k" : ""),
         };
         setExports((prev) => ({ ...prev, [clip.id]: state }));
         // The click that asked for it is still the user's intent to save.
@@ -70,7 +76,9 @@ export function useClipExports(onSparksSpent?: () => void) {
         return null;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Export failed.";
-        setExports((prev) => ({ ...prev, [clip.id]: { status: "error", error: message } }));
+        if ((revisionRef.current[clip.id] ?? 0) === revision) {
+          setExports((prev) => ({ ...prev, [clip.id]: { status: "error", error: message } }));
+        }
         return message;
       } finally {
         setWorkingId(null);
@@ -92,5 +100,5 @@ export function useClipExports(onSparksSpent?: () => void) {
     [createClip]
   );
 
-  return { exports, workingId, createClip, createOrDownload };
+  return { exports, workingId, createClip, createOrDownload, invalidateClip };
 }

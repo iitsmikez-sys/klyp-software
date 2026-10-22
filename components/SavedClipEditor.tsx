@@ -8,11 +8,14 @@
  * migration can still be previewed and exported, just without those extras.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, type CaptionStyle, type ExportFormat } from "@/lib/clips";
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS } from "@/lib/clips";
 import { HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
+import { defaultClipEditDraft, toClipExportPayload, validateClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
+import ClipTrimControl from "./ClipTrimControl";
+import CaptionWordEditor from "./CaptionWordEditor";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
@@ -37,9 +40,20 @@ function fmtClipTime(seconds: number) {
 
 export default function SavedClipEditor({
   clip,
+  draft,
+  onDraftChange,
+  onPersisted,
+  dirty,
   /** The preview dialog renders its own player, so it suppresses this one. */
   hidePreview = false,
-}: { clip: SavedClip; hidePreview?: boolean }) {
+}: {
+  clip: SavedClip;
+  draft: ClipEditDraftV1;
+  onDraftChange: (draft: ClipEditDraftV1) => void;
+  onPersisted: (draft: ClipEditDraftV1 | null) => void;
+  dirty: boolean;
+  hidePreview?: boolean;
+}) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -47,30 +61,37 @@ export default function SavedClipEditor({
   const [retryToken, setRetryToken] = useState(0);
   const [transcriptOnly, setTranscriptOnly] = useState(false);
   const [proGateOpen, setProGateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const { tier } = useSparks();
   const isPro = tier === "pro";
 
   const hooks = Array.isArray(clip.hooks) ? clip.hooks : [];
-  const hasWords = Array.isArray(clip.words) && clip.words.length > 0;
+  const hasWords = Array.isArray(draft.words) && draft.words.length > 0;
+  const selectedHook = draft.hook || null;
+  const hookStyle = draft.hook_style;
+  const captionStyle = draft.caption_style;
+  const format = draft.aspect_ratio;
+  const changeDraft = (changes: Partial<ClipEditDraftV1>) => {
+    onDraftChange({ ...draft, ...changes });
+    setSaveNotice(null);
+    setSaveError(null);
+  };
 
   // Transcript cues for the scene analysis panel — clip-relative timestamps.
   const transcriptCues = useMemo(() => {
-    if (!Array.isArray(clip.words) || clip.words.length === 0) return [];
+    if (!draft.words?.length) return [];
     const cues: { t: number; text: string }[] = [];
-    for (let i = 0; i < clip.words.length; i += 8) {
-      const group = clip.words.slice(i, i + 8);
+    for (let i = 0; i < draft.words.length; i += 8) {
+      const group = draft.words.slice(i, i + 8);
       cues.push({
         t: Math.max(0, group[0].start / 1000 - clip.start_seconds),
         text: group.map((w) => w.text).join(" "),
       });
     }
     return cues;
-  }, [clip]);
-
-  const [selectedHook, setSelectedHook] = useState<string | null>(hooks[0] ?? null);
-  const [hookStyle, setHookStyle] = useState<HookStyle>("IMPACT");
-  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("BOLD");
-  const [format, setFormat] = useState<ExportFormat>("9:16");
+  }, [clip.start_seconds, draft.words]);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -94,14 +115,14 @@ export default function SavedClipEditor({
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (selectedHook) {
-        drawHookPreview(ctx, video.currentTime, selectedHook, hookStyle, canvas.width, canvas.height);
+        drawHookPreview(ctx, video.currentTime - (draft.start_seconds - clip.start_seconds), selectedHook, hookStyle, canvas.width, canvas.height);
       }
       rafRef.current = requestAnimationFrame(draw);
     };
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [previewUrl, selectedHook, hookStyle]);
+  }, [previewUrl, selectedHook, hookStyle, draft.start_seconds, clip.start_seconds]);
 
   // Fetch the cut preview on expand (source video is cached server-side per URL).
   // First view of a VOD legitimately takes minutes (full source download), so
@@ -109,6 +130,7 @@ export default function SavedClipEditor({
   // instead of spinning forever. Aborting the fetch doesn't cancel the server
   // download, so a Retry after a timeout usually joins the finished cache.
   useEffect(() => {
+    if (hidePreview) return;
     let blobUrl: string | null = null;
     let timedOut = false;
     setLoadingPreview(true);
@@ -124,6 +146,7 @@ export default function SavedClipEditor({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        clip_id: clip.id,
         url: clip.url,
         start_seconds: clip.start_seconds,
         end_seconds: clip.end_seconds,
@@ -155,7 +178,31 @@ export default function SavedClipEditor({
       controller.abort();
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [clip.id, retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clip.id, retryToken, hidePreview]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveDraft = async (reset = false) => {
+    if (!isPro) { setProGateOpen(true); return; }
+    setSaving(true);
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      const checked = reset ? null : validateClipEditDraft(draft, clip);
+      const response = await fetch(`/api/clips/${clip.id}/edit-draft`, {
+        method: reset ? "DELETE" : "PUT",
+        headers: reset ? undefined : { "Content-Type": "application/json" },
+        body: reset ? undefined : JSON.stringify({ draft: checked }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error ?? "Could not save clip edits.");
+      onDraftChange(reset ? defaultClipEditDraft(clip) : checked!);
+      onPersisted(reset ? null : checked);
+      setSaveNotice(reset ? "Original clip restored." : "Edits saved.");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Could not save clip edits.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const exportClip = async () => {
     setExporting(true);
@@ -165,21 +212,14 @@ export default function SavedClipEditor({
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), EXPORT_TIMEOUT_MS);
     try {
+      const checked = validateClipEditDraft(draft, clip);
       const res = await processingFetch("/api/clip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
-          url: clip.url,
-          start_seconds: clip.start_seconds,
-          end_seconds: clip.end_seconds,
-          title: clip.title,
-          style: hasWords ? captionStyle : undefined,
-          words: hasWords ? clip.words : undefined,
-          hook: selectedHook ?? undefined,
-          hook_style: hookStyle,
+          ...toClipExportPayload(clip, checked),
           handle: getStoredHandle(),
-          aspect_ratio: format,
         }),
       });
       if (!res.ok) {
@@ -187,7 +227,7 @@ export default function SavedClipEditor({
         throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
       }
       const blob = await res.blob();
-      const safe = clip.title.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_").slice(0, 60);
+      const safe = checked.title.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_").slice(0, 60);
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
@@ -259,6 +299,20 @@ export default function SavedClipEditor({
 
       {/* ── Editing controls (right) ── */}
       <div className="space-y-4">
+      <ClipTrimControl
+        originalStart={clip.start_seconds} originalEnd={clip.end_seconds}
+        start={draft.start_seconds} end={draft.end_seconds}
+        disabled={!isPro || saving || exporting}
+        onChange={(start_seconds, end_seconds) => changeDraft({ start_seconds, end_seconds })}
+      />
+      <label className="block text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
+        Clip title
+        <input type="text" value={draft.title} maxLength={120}
+          onChange={(event) => changeDraft({ title: event.target.value })}
+          disabled={!isPro || saving || exporting}
+          className="mt-1.5 w-full px-3 py-2 rounded-lg border border-border bg-surface-2 text-xs text-foreground focus:outline-none focus:border-accent/50 disabled:opacity-50" />
+      </label>
+      {!isPro && <p className="text-[10px] text-subtle">Saving trim, title, and caption corrections is a Pro feature.</p>}
       {!hidePreview && (
       <>
       {/* Preview player */}
@@ -315,8 +369,8 @@ export default function SavedClipEditor({
               return (
                 <button
                   key={hookText}
-                  onClick={() => setSelectedHook(selected ? null : hookText)}
-                  disabled={exporting}
+                  onClick={() => changeDraft({ hook: selected ? "" : hookText })}
+                  disabled={exporting || saving}
                   className={`text-left px-3 py-1.5 rounded-lg border text-xs transition-colors disabled:opacity-50 ${
                     selected
                       ? "bg-accent-glow border-accent/50 text-accent font-semibold"
@@ -337,10 +391,10 @@ export default function SavedClipEditor({
         <input
           type="text"
           value={selectedHook ?? ""}
-          onChange={(e) => setSelectedHook(e.target.value.length > 0 ? e.target.value.slice(0, 80) : null)}
+          onChange={(e) => changeDraft({ hook: e.target.value.slice(0, 80) })}
           placeholder="Type a custom hook, or pick one above"
           maxLength={80}
-          disabled={exporting}
+          disabled={exporting || saving}
           className="mt-1.5 w-full px-3 py-1.5 rounded-lg border border-border bg-surface-2 text-xs text-foreground placeholder:text-subtle focus:outline-none focus:border-accent/50 disabled:opacity-50"
         />
         <p className="text-[10px] text-subtle mt-1">
@@ -358,8 +412,8 @@ export default function SavedClipEditor({
             {HOOK_STYLES.map((s) => (
               <button
                 key={s}
-                onClick={() => setHookStyle(s)}
-                disabled={exporting}
+                onClick={() => changeDraft({ hook_style: s })}
+                disabled={exporting || saving}
                 title={HOOK_STYLE_LABELS[s]}
                 className={`px-2.5 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   hookStyle === s
@@ -385,8 +439,8 @@ export default function SavedClipEditor({
             {CAPTION_STYLES.map((s) => (
               <button
                 key={s}
-                onClick={() => setCaptionStyle(s)}
-                disabled={exporting}
+                onClick={() => changeDraft({ caption_style: s })}
+                disabled={exporting || saving}
                 className={`flex-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   captionStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
@@ -403,6 +457,11 @@ export default function SavedClipEditor({
           </p>
         )}
       </div>
+      {draft.words?.length ? (
+        <CaptionWordEditor words={draft.words} originalStart={clip.start_seconds}
+          disabled={!isPro || saving || exporting}
+          onChange={(words) => changeDraft({ words })} />
+      ) : null}
 
       {/* Format */}
       <div className="flex items-center gap-2">
@@ -415,8 +474,8 @@ export default function SavedClipEditor({
             return (
               <button
                 key={f}
-                onClick={() => (locked ? setProGateOpen(true) : setFormat(f))}
-                disabled={exporting}
+                onClick={() => (locked ? setProGateOpen(true) : changeDraft({ aspect_ratio: f }))}
+                disabled={exporting || saving}
                 title={locked ? "Format switching is a Pro feature" : FORMAT_LABELS[f]}
                 className={`px-2.5 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
                   format === f
@@ -433,6 +492,21 @@ export default function SavedClipEditor({
         <span className="text-[10px] text-subtle">{FORMAT_LABELS[format]}</span>
       </div>
 
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => saveDraft()} disabled={saving || exporting || !dirty}
+          className="flex-1 rounded-lg border border-accent/50 bg-accent-glow px-3 py-2 text-xs font-bold text-accent disabled:opacity-50">
+          {saving ? "Saving…" : dirty ? "Save edits" : "Edits saved"}
+        </button>
+        <button type="button" onClick={() => { if (window.confirm("Reset this clip to its original analysis?")) saveDraft(true); }}
+          disabled={saving || exporting || !clip.edit_draft}
+          className="rounded-lg border border-border px-3 py-2 text-xs text-foreground-muted disabled:opacity-50">
+          Reset
+        </button>
+      </div>
+      {dirty && <p className="text-[10px] text-amber-300">Unsaved edits. Export will use what is shown here.</p>}
+      {saveNotice && <p role="status" className="text-xs text-accent">{saveNotice}</p>}
+      {saveError && <p role="alert" className="text-xs text-red-400">{saveError}</p>}
+
       {exportError && (
         <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
           {exportError}
@@ -442,7 +516,7 @@ export default function SavedClipEditor({
       {/* Preview is just a look-before-you-export convenience — export makes its
           own independent request to /api/clip and doesn't need previewUrl, so a
           stuck or failed preview should never block it. */}
-      {(loadingPreview || loadError) && (
+      {!hidePreview && (loadingPreview || loadError) && (
         <p className="text-[10px] text-subtle">
           {loadError ? "Preview unavailable — you can still export below." : "Preview still loading — export doesn't need to wait for it."}
         </p>

@@ -25,6 +25,7 @@ import {
   footageGone,
   scoreBand,
 } from "@/lib/clip-ui";
+import { readClipEditDraft } from "@/lib/clip-edit-draft";
 
 type SortKey = "newest" | "score";
 
@@ -63,7 +64,7 @@ function ClipsPageContent() {
 
   const { tier, refresh } = useSparks();
   // Shared with the dashboard's Saved Clips so both behave identically.
-  const { exports, workingId, createClip, createOrDownload } = useClipExports(refresh);
+  const { exports, workingId, createClip, createOrDownload, invalidateClip } = useClipExports(refresh);
   const isPro = tier === "pro";
 
   useEffect(() => {
@@ -177,7 +178,7 @@ function ClipsPageContent() {
       const q = search.trim().toLowerCase();
       list = list.filter(
         (c) =>
-          c.title.toLowerCase().includes(q) ||
+          readClipEditDraft(c).draft.title.toLowerCase().includes(q) ||
           (c.caption ?? "").toLowerCase().includes(q)
       );
     }
@@ -391,7 +392,7 @@ function ClipsPageContent() {
                 </div>
               </div>
 
-              <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{clip.title}</h3>
+              <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{readClipEditDraft(clip).draft.title}</h3>
               {clip.caption && (
                 <p className="text-[15px] leading-relaxed text-foreground-muted mb-3 line-clamp-2">
                   {clip.caption}
@@ -401,7 +402,7 @@ function ClipsPageContent() {
               {/* Push the action row to the bottom so buttons line up across the grid. */}
               <div className="flex items-center justify-between gap-2 text-sm mb-3 mt-auto">
                 <span className="px-2 py-1 rounded bg-surface-2 border border-border text-foreground-muted font-mono whitespace-nowrap">
-                  {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)}
+                  {fmtTime(readClipEditDraft(clip).draft.start_seconds)} → {fmtTime(readClipEditDraft(clip).draft.end_seconds)}
                 </span>
                 <span className="text-foreground-muted whitespace-nowrap truncate">
                   {platformName(clip.url)} · {fmtDate(clip.created_at)}
@@ -526,6 +527,11 @@ function ClipsPageContent() {
              previous clip must not fire into the next one. */
           key={previewClip.id}
           clip={previewClip}
+          onClipSaved={(draft) => {
+            invalidateClip(previewClip.id);
+            setClips((previous) => previous.map((item) =>
+              item.id === previewClip.id ? { ...item, edit_draft: draft } : item));
+          }}
           onClose={() => { setPreviewId(null); setPreviewDetails(false); }}
           initialDetailsOpen={previewDetails}
           exportState={exports[previewClip.id]}

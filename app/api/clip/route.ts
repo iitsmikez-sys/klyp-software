@@ -32,6 +32,7 @@ import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
+import { clipSeekRange } from "@/lib/clip-trim";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
 
@@ -304,15 +305,19 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       // an export can still work once the source VOD has been deleted. Scoped
       // to the caller's own id inside getArchivedClip.
       let sourcePath: string;
-      let offsetSeconds: number;
+      let offsetSeconds = start;
+      let archivedEndSeconds: number | undefined;
       let archivedMaster: string | null = null;
       if (clipId) {
         const archived = await getArchivedClip(clipId, profile.id);
         if (archived?.masterPath && archived.status === "stored") {
+          clipSeekRange(start, end, archived.originalStartSeconds, archived.originalEndSeconds);
           const bytes = await readArchivedObject(archived.masterPath);
           if (bytes) {
             archivedMaster = path.join(CACHE_DIR, `master-${archived.id}.mp4`);
             await writeFile(archivedMaster, bytes);
+            offsetSeconds = archived.originalStartSeconds;
+            archivedEndSeconds = archived.originalEndSeconds;
             log("using archived master", archived.masterPath, `${(bytes.byteLength / 1e6).toFixed(1)}MB`);
           } else {
             log("archived master missing, falling back to source", archived.masterPath);
@@ -321,9 +326,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
 
       if (archivedMaster) {
-        // The master already starts at the clip's start, so no rebasing.
+        // The master begins at the ORIGINAL clip start. A draft trim must
+        // seek forward within it instead of treating the edited start as zero.
         sourcePath = archivedMaster;
-        offsetSeconds = start;
       } else {
         const resolved = await resolveSourceSegment(url, start, end);
         sourcePath = resolved.path;
@@ -359,10 +364,11 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
 
       const t2 = Date.now();
+      const seek = clipSeekRange(start, end, offsetSeconds, archivedEndSeconds);
       const result = await cutClip(
         sourcePath,
-        start - offsetSeconds,
-        end - offsetSeconds,
+        seek.start,
+        seek.end,
         isPro,
         format,
         assPath,
@@ -392,7 +398,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Clip generation failed.";
     log("FAILED:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
   } finally {
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
     if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});

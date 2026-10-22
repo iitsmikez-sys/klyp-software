@@ -17,6 +17,7 @@ import ClipPreviewModal from "./ClipPreviewModal";
 import { useClipExports } from "./useClipExports";
 import { downloadExport } from "@/lib/clip-export";
 import { type SavedClip, TYPE_STYLES, fmtTime, footageGone } from "@/lib/clip-ui";
+import { readClipEditDraft } from "@/lib/clip-edit-draft";
 
 /** Enough to fill the row on every breakpoint without a second row. */
 const LIMIT = 3;
@@ -27,7 +28,7 @@ export default function SavedClips() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const { exports, createClip, createOrDownload } = useClipExports();
+  const { exports, createClip, createOrDownload, invalidateClip } = useClipExports();
 
   useEffect(() => {
     const supabase = createClient();
@@ -189,10 +190,10 @@ export default function SavedClips() {
               </div>
 
               <p className="font-geist text-base font-semibold text-white mt-2 line-clamp-2">
-                {clip.title}
+                {readClipEditDraft(clip).draft.title}
               </p>
               <p className="text-sm text-foreground-muted font-mono mt-1">
-                {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}
+                {fmtTime(readClipEditDraft(clip).draft.start_seconds)} – {fmtTime(readClipEditDraft(clip).draft.end_seconds)}
               </p>
             </div>
           );
@@ -205,6 +206,11 @@ export default function SavedClips() {
              previous clip must not fire into the next one. */
           key={previewClip.id}
           clip={previewClip}
+          onClipSaved={(draft) => {
+            invalidateClip(previewClip.id);
+            setClips((previous) => previous.map((item) =>
+              item.id === previewClip.id ? { ...item, edit_draft: draft } : item));
+          }}
           onClose={() => setPreviewId(null)}
           exportState={exports[previewClip.id]}
           onCreateClip={() => { createClip(previewClip).then(flash); }}
