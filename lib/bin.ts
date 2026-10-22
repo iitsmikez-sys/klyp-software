@@ -124,6 +124,11 @@ export function ffmpegLocationArgs(): string[] {
   return path.isAbsolute(resolved) && existsSync(resolved) ? ["--ffmpeg-location", resolved] : [];
 }
 
+/** yt-dlp does not enable Node by default, even though this app already runs on it. */
+export function ytDlpRuntimeArgs(): string[] {
+  return ["--js-runtimes", "node"];
+}
+
 /** True if a thrown error is a disk-full failure — lets callers free space and retry. */
 export function isDiskFullError(err: unknown): boolean {
   return isDiskSpaceError(err instanceof Error ? err.message : String(err));
@@ -356,7 +361,7 @@ export async function runYtDlpWithRetry(
   const bin = resolveBin("yt-dlp");
   for (let attempt = 0; ; attempt++) {
     try {
-      await run(bin, args, opts);
+      await run(bin, [...ytDlpRuntimeArgs(), ...args], opts);
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

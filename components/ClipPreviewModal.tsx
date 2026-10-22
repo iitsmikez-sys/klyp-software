@@ -49,6 +49,7 @@ interface Props {
   exportState: ExportState | undefined;
   onCreateClip: () => void;
   onDownloadClip: () => void;
+  onMetadataRestored: (fields: Pick<SavedClip, "words" | "hooks">) => void;
   /** Opened from an editing action in the card's ⋯ menu, which lives in Details. */
   initialDetailsOpen?: boolean;
 }
@@ -64,6 +65,7 @@ export default function ClipPreviewModal({
   exportState,
   onCreateClip,
   onDownloadClip,
+  onMetadataRestored,
   initialDetailsOpen = false,
 }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -481,7 +483,7 @@ export default function ClipPreviewModal({
           {detailsOpen && (
             /* The editor renders its own 9:16 player for hook/caption placement;
                the dialog already has one, so it's suppressed here. */
-            <SavedClipEditor clip={clip} hidePreview />
+            <SavedClipEditor key={clip.id} clip={clip} hidePreview onMetadataRestored={onMetadataRestored} />
           )}
         </div>
       </div>

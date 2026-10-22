@@ -109,7 +109,8 @@ export default function AnalyzePanel() {
   const [clipHooks, setClipHooks] = useState<Record<number, string | null>>({});
   const [clipFormats, setClipFormats] = useState<Record<number, ExportFormat>>({});
   // Library decision per clip — nothing is saved to Supabase until the user keeps it.
-  const [clipStatus, setClipStatus] = useState<Record<number, "unsaved" | "kept" | "discarded">>({});
+  const [clipStatus, setClipStatus] = useState<Record<number, "unsaved" | "saving" | "kept" | "discarded">>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
   /** Rendered exports, kept so a finished clip offers Download instead of re-rendering. */
   const [exported, setExported] = useState<Record<number, { url: string; filename: string }>>({});
@@ -310,7 +311,7 @@ export default function AnalyzePanel() {
   const saveClipsToSupabase = async (vodUrl: string, clipsToSave: ClipWithWords[]) => {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) throw new Error("Sign in to save clips.");
     const rows = clipsToSave.map((clip) => ({
       user_id: user.id,
       url: vodUrl,
@@ -321,6 +322,7 @@ export default function AnalyzePanel() {
       reason: clip.reason,
       start_seconds: clip.start_seconds,
       end_seconds: clip.end_seconds,
+      archive_status: "pending",
       hooks: clip.hooks,
       words: clip.words,
       // Null-safe: a clip from a model response without dimensions still saves.
@@ -331,12 +333,7 @@ export default function AnalyzePanel() {
       dim_storyline: clip.dimensions?.storyline ?? null,
     }));
     const { error } = await supabase.from("clips").insert(rows);
-    if (error) {
-      // hooks/words columns may not exist yet (migration 003) — save without them.
-      await supabase.from("clips").insert(
-        rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)
-      );
-    }
+    if (error) throw new Error(`Could not save clips: ${error.message}`);
   };
 
   const handleEvent = (event: AnalyzeEvent) => {
@@ -373,10 +370,13 @@ export default function AnalyzePanel() {
       setClipFormats(Object.fromEntries(event.clips.map((_, i) => [i, "9:16" as ExportFormat])));
       // All clips start unsaved — the user decides what enters their library.
       setClipStatus(Object.fromEntries(event.clips.map((_, i) => [i, "unsaved" as const])));
+      setSaveError(null);
       // Fewer clips than requested = quality floor kicked in; explain the prorated charge.
       if (event.clips.length === 0) {
         setAnalysisNote(
-          "MIDAS didn't find any moments worth clipping in this VOD — no clip charge, only the base analysis cost applied. Try a different VOD, or a longer/more eventful one."
+          event.sparksSpent === 0
+            ? "No new moments cleared the quality floor. You were not charged for this repeat run."
+            : "MIDAS didn't find any moments worth clipping in this VOD — no clip charge, only the base analysis cost applied. Try a different VOD, or a longer/more eventful one."
         );
       } else if (event.clips.length < event.requestedClips) {
         const requested = event.requestedClips as ClipCount;
@@ -609,27 +609,48 @@ export default function AnalyzePanel() {
     return (safe || `klyp_clip_${index + 1}`) + (raw ? "_raw" : "") + ".mp4";
   };
 
-  const keepClip = (index: number) => {
+  const keepClip = async (index: number) => {
     if (!clips || clipStatus[index] !== "unsaved") return;
-    setClipStatus((prev) => ({ ...prev, [index]: "kept" }));
-    // Non-blocking — fails silently if not logged in (same as the old auto-save).
-    saveClipsToSupabase(analyzedUrl, [clips[index]]);
+    setSaveError(null);
+    setClipStatus((prev) => ({ ...prev, [index]: "saving" }));
+    try {
+      await saveClipsToSupabase(analyzedUrl, [clips[index]]);
+      setClipStatus((prev) => ({ ...prev, [index]: "kept" }));
+    } catch (err) {
+      setClipStatus((prev) => ({ ...prev, [index]: "unsaved" }));
+      setSaveError(err instanceof Error ? err.message : "Could not save clip. Please retry.");
+    }
   };
 
   const discardClip = (index: number) => {
     setClipStatus((prev) => ({ ...prev, [index]: "discarded" }));
   };
 
-  const keepAll = () => {
+  const keepAll = async () => {
     if (!clips) return;
     const toKeep = clips.map((c, i) => ({ c, i })).filter(({ i }) => clipStatus[i] === "unsaved");
     if (toKeep.length === 0) return;
+    setSaveError(null);
     setClipStatus((prev) => {
       const next = { ...prev };
-      for (const { i } of toKeep) next[i] = "kept";
+      for (const { i } of toKeep) next[i] = "saving";
       return next;
     });
-    saveClipsToSupabase(analyzedUrl, toKeep.map(({ c }) => c));
+    try {
+      await saveClipsToSupabase(analyzedUrl, toKeep.map(({ c }) => c));
+      setClipStatus((prev) => {
+        const next = { ...prev };
+        for (const { i } of toKeep) next[i] = "kept";
+        return next;
+      });
+    } catch (err) {
+      setClipStatus((prev) => {
+        const next = { ...prev };
+        for (const { i } of toKeep) next[i] = "unsaved";
+        return next;
+      });
+      setSaveError(err instanceof Error ? err.message : "Could not save clips. Please retry.");
+    }
   };
 
   const downloadClip = async (clip: ClipWithWords, index: number, styleOverride?: CaptionStyle, raw = false) => {
@@ -1140,6 +1161,12 @@ export default function AnalyzePanel() {
             </div>
           )}
 
+          {saveError && (
+            <div role="alert" className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+              {saveError}
+            </div>
+          )}
+
           {downloadError && (
             <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
               {downloadError}
@@ -1403,6 +1430,8 @@ export default function AnalyzePanel() {
                     </svg>
                     Saved to My Clips
                   </div>
+                ) : clipStatus[i] === "saving" ? (
+                  <div className="mt-2 py-2 text-center text-xs text-foreground-muted">Saving clip…</div>
                 ) : (
                   <div className="mt-2 flex gap-2">
                     <button

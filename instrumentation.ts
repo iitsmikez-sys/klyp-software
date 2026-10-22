@@ -7,5 +7,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.DEPLOYMENT_TARGET === "processing") {
     const { startAutoClipWorker } = await import("@/lib/vod-poll");
     startAutoClipWorker();
+    const { startClipArchiveWorker } = await import("@/lib/clip-archive-worker");
+    startClipArchiveWorker();
   }
 }

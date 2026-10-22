@@ -132,6 +132,7 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
         reason: clip.reason,
         start_seconds: clip.start_seconds,
         end_seconds: clip.end_seconds,
+        archive_status: "pending",
         hooks: clip.hooks,
         words: clip.words,
         // Null-safe: a clip from a model response without dimensions still saves.

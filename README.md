@@ -14,6 +14,9 @@ npm install
 
 ### 2. Install yt-dlp and FFmpeg
 
+Use Node.js 22 or newer. Klyp enables Node as yt-dlp's JavaScript runtime for
+YouTube extraction; older Node versions are unsupported by yt-dlp.
+
 ```powershell
 winget install yt-dlp.yt-dlp
 winget install Gyan.FFmpeg

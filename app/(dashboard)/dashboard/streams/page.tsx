@@ -302,7 +302,7 @@ export default function StreamsPage() {
         <section className="bg-surface border border-border rounded-xl p-5">
           <h2 className="font-geist text-lg font-bold text-white">Connected channels</h2>
           <p className="text-sm text-foreground-muted mt-1 mb-4">
-            Connect Twitch for automatic clipping, or add another channel.
+            Connect a channel here, then paste a published VOD on the dashboard to make clips.
           </p>
 
           {loading ? (
@@ -338,7 +338,7 @@ export default function StreamsPage() {
                     <span
                       title={
                         ch.twitch_user_id
-                          ? "Connected with Twitch — auto-clipping can run"
+                          ? "Connected with Twitch"
                           : "Added by URL — auto-clipping needs a Twitch connection"
                       }
                       className={`flex items-center gap-1.5 text-[13px] font-semibold flex-shrink-0 ${
@@ -444,9 +444,8 @@ export default function StreamsPage() {
 
           {oauthConnected.length > 0 ? (
             <p className="text-[15px] text-foreground-muted mt-1.5">
-              When your Twitch stream ends and the VOD is published, Klyp analyzes it and saves
-              the clips. Each run spends Sparks from your balance, and is skipped if you
-              don&apos;t have enough.
+              Experimental: Klyp may analyze a published Twitch VOD after your stream ends.
+              Completed runs use Sparks. For dependable clips, paste the VOD on the dashboard.
             </p>
           ) : (
             <p className="text-[15px] text-foreground-muted mt-1.5">

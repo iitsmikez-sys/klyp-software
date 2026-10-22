@@ -13,6 +13,7 @@
  * nothing is reachable by guessing a path.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ownClipArchivePath } from "@/lib/clip-archive-path";
 
 export const CLIP_BUCKET = "clip-media";
 
@@ -40,9 +41,9 @@ export async function getArchivedClip(clipId: string, userId: string): Promise<A
   if (error || !data) return null;
   return {
     id: data.id,
-    masterPath: data.master_path,
-    proxyPath: data.proxy_path,
-    posterPath: data.poster_path,
+    masterPath: ownClipArchivePath(data.master_path, userId, clipId, "master"),
+    proxyPath: ownClipArchivePath(data.proxy_path, userId, clipId, "proxy"),
+    posterPath: ownClipArchivePath(data.poster_path, userId, clipId, "poster"),
     status: data.archive_status,
   };
 }

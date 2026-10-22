@@ -23,6 +23,7 @@ import {
   platformName,
   vodLinkAt,
   footageGone,
+  archiveLabel,
   scoreBand,
 } from "@/lib/clip-ui";
 
@@ -106,6 +107,7 @@ function ClipsPageContent() {
       reason: clip.reason,
       start_seconds: clip.start_seconds,
       end_seconds: clip.end_seconds,
+      archive_status: "pending",
     };
     let { data, error } = await supabase
       .from("clips")
@@ -407,6 +409,7 @@ function ClipsPageContent() {
                   {platformName(clip.url)} · {fmtDate(clip.created_at)}
                 </span>
               </div>
+              <p className="text-xs text-foreground-muted mb-2">{archiveLabel(clip.archive_status)}</p>
 
               {/* What the score is actually made of. Renders nothing for
                   clips saved before the breakdown was stored. */}
@@ -417,8 +420,7 @@ function ClipsPageContent() {
               {/* Wraps on narrow cards: primary takes its own row, secondary
                   shares the next one with delete — no squashed labels. */}
               <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
-                {/* Clips are stored as VOD timestamps, not files — this renders
-                    the MP4 on demand via /api/clip, hence "Create clip". */}
+                {/* Export renders the MP4 on demand from the archive or source. */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -534,6 +536,9 @@ function ClipsPageContent() {
             const done = exports[previewClip.id];
             if (done) downloadExport(done);
           }}
+          onMetadataRestored={(fields) => setClips((previous) => previous.map((item) =>
+            item.id === previewClip.id ? { ...item, ...fields } : item
+          ))}
         />
       )}
 

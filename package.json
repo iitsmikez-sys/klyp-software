@@ -2,11 +2,15 @@
   "name": "klyp-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
+    "test:clips": "node --test scripts/test-clip-repair.mjs scripts/test-clip-archive-path.mjs",
     "postinstall": "(mkdir -p bin && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o bin/yt-dlp && chmod +x bin/yt-dlp && echo \"[postinstall] yt-dlp installed: $(bin/yt-dlp --version 2>/dev/null || echo 'version unavailable at build time')\" && echo \"[postinstall] ffmpeg: $(command -v ffmpeg || echo 'not on PATH at build time')\") || echo '[postinstall] yt-dlp download skipped/failed (non-fatal)'"
   },
   "dependencies": {
@@ -26,6 +30,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

@@ -403,6 +403,9 @@ export default function AnalyticsPage() {
             const done = exports[previewClip.id];
             if (done) downloadExport(done);
           }}
+          onMetadataRestored={(fields) => setAllClips((previous) => previous.map((item) =>
+            item.id === previewClip.id ? { ...item, ...fields } : item
+          ))}
         />
       )}
     </div>

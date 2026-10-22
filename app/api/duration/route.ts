@@ -7,7 +7,7 @@
  * return duration, so yt-dlp is the reliable cross-platform option.)
  */
 import { NextRequest, NextResponse } from "next/server";
-import { resolveBin, runCapture } from "@/lib/bin";
+import { resolveBin, runCapture, ytDlpRuntimeArgs } from "@/lib/bin";
 import { estimateSparks } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
 
@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
   if (durationSeconds === undefined) {
     try {
       const out = await runCapture(resolveBin("yt-dlp"), [
+        ...ytDlpRuntimeArgs(),
         "--print", "duration",
         "--skip-download",
         "--no-playlist",

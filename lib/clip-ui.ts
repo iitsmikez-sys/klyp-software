@@ -88,6 +88,18 @@ export function footageGone(clip: { archive_status?: string | null }): boolean {
   return clip.archive_status === "unavailable";
 }
 
+/** Saved metadata alone is not a backup; only all uploaded assets count. */
+export function archiveLabel(status?: string | null): string {
+  switch (status) {
+    case "stored": return "Footage backed up";
+    case "pending": return "Backup queued";
+    case "processing": return "Backing up footage";
+    case "failed": return "Backup failed — source VOD still needed";
+    case "unavailable": return "Footage no longer available";
+    default: return "No footage backup";
+  }
+}
+
 /** Badge colors per clip type — keep in sync with AnalyzePanel.
  * UNHINGED / HIGHLIGHT are legacy types kept so old saved clips still render. */
 export const TYPE_STYLES: Record<string, string> = {
