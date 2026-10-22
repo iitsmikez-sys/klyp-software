@@ -27,7 +27,7 @@ const geist = localFont({
 export const metadata: Metadata = {
   title: "Klyp — AI Video Clips for Streamers",
   description:
-    "Klyp automatically finds and clips your best streaming moments using AI. Grow your audience without lifting a finger.",
+    "Paste a YouTube or Twitch VOD link to find, review, save, and export clips with Klyp.",
   keywords: ["streaming", "clips", "AI", "Twitch", "YouTube", "content creation"],
 };
 
