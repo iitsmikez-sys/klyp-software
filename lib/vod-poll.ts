@@ -90,7 +90,20 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
     });
 
     const sparksSpent = estimateSparks(result.durationSeconds) + clipCharge(clipCount, result.clips.length);
-    await admin.rpc("admin_consume_sparks", { target_user: stream.user_id, amount: sparksSpent });
+    const { error: chargeError } = await admin.rpc("admin_consume_sparks", {
+      target_user: stream.user_id,
+      amount: sparksSpent,
+    });
+    if (chargeError) {
+      // The clips below are still saved and delivered: the work is done and
+      // withholding it would punish the user for our accounting. But an
+      // uncharged run must never pass silently, which is what discarding this
+      // result used to do.
+      log(
+        `SPARKS NOT CHARGED for user ${stream.user_id} — ${sparksSpent} owed for ` +
+          `${video.url}: ${chargeError.message}`
+      );
+    }
 
     if (result.clips.length > 0) {
       const rows = result.clips.map((clip) => ({

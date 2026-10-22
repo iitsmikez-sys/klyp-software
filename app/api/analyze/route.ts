@@ -220,7 +220,22 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // Deduct Sparks server-side: VOD length cost + clip cost prorated by
         // how many clips actually cleared the quality floor.
         const sparksSpent = estimateSparks(durationSeconds) + clipCharge(clipCount, clipsWithWords.length);
-        const sparksBalance = await consumeSparksFromToken(token!, sparksSpent);
+        // The charge can legitimately fail now that overdrafts are refused
+        // (migration 010) — an estimate that came in under the real cost, say.
+        // The analysis is already finished and the clips are the user's, so a
+        // failed charge must not throw the result away; it is logged loudly and
+        // reported as 0 spent rather than claiming Sparks were taken.
+        let sparksSpentActual = sparksSpent;
+        let sparksBalance = profile.sparks;
+        try {
+          sparksBalance = await consumeSparksFromToken(token!, sparksSpent);
+        } catch (chargeErr) {
+          sparksSpentActual = 0;
+          log(
+            `SPARKS NOT CHARGED — ${sparksSpent} owed for ${uploadId ? `upload:${uploadId}` : url}: ` +
+              (chargeErr instanceof Error ? chargeErr.message : String(chargeErr))
+          );
+        }
 
         send({
           type: "result",
@@ -228,7 +243,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           durationSeconds,
           transcriptChars,
           requestedClips: clipCount,
-          sparksSpent,
+          sparksSpent: sparksSpentActual,
           sparksBalance,
         });
       } catch (err) {
