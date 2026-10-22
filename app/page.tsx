@@ -323,7 +323,7 @@ export default function LandingPage() {
 
           <FadeIn delay={0.28}>
             <p className="mt-4 text-sm text-foreground-muted">
-              No credit card required. Free plan includes 60 Sparks a month.
+              No credit card required. Free plan includes 60 Sparks every 30 days.
             </p>
           </FadeIn>
         </div>
@@ -481,7 +481,7 @@ export default function LandingPage() {
           </h2>
           <p className="text-foreground-muted text-lg mb-10 max-w-xl mx-auto leading-relaxed">
             Paste your first VOD and see what Klyp pulls out of it. The free plan
-            includes 60 Sparks a month — no credit card needed.
+            includes 60 Sparks every 30 days — no credit card needed.
           </p>
           <Link
             href="/login"
