@@ -1,5 +1,7 @@
 import Link from "next/link";
 import FadeIn from "./FadeIn";
+import { SPARKS_ALLOWANCE } from "@/lib/tier";
+import { vodsPhrase } from "@/lib/sparks";
 
 /* ─── Icons ─── */
 function CheckIcon() {
@@ -69,7 +71,7 @@ const plans: Plan[] = [
     tagline: "Free forever",
     price: { kind: "free" },
     features: [
-      { kind: "check", text: "60 Sparks every 30 days — about 1 VOD" },
+      { kind: "check", text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.free)}` },
       { kind: "check", text: "Up to 1080p rendered clips" },
       { kind: "check", text: "Auto reframe" },
       { kind: "check", text: "AI captions with emoji and keyword highlighter" },

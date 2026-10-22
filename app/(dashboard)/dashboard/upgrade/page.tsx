@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
+import { vodsPhrase } from "@/lib/sparks";
 
 function Check() {
   return (
@@ -24,7 +25,7 @@ function Warn() {
 }
 
 const FREE_FEATURES: { ok: boolean; text: string }[] = [
-  { ok: true, text: "60 Sparks every 30 days — about 1 VOD" },
+  { ok: true, text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.free)}` },
   { ok: true, text: "AI clip detection with viral scores" },
   { ok: true, text: "9:16 vertical exports, 1080×1920" },
   { ok: true, text: "AI captions — BOLD, CLEAN & KLYP styles" },
@@ -32,7 +33,7 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
 ];
 
 const PRO_FEATURES: string[] = [
-  "500 Sparks every 30 days — about 12 VODs",
+  `${SPARKS_ALLOWANCE.pro} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.pro)}`,
   "No watermark. Clean clips, your brand only",
   "Raw exports — edit clips yourself in CapCut",
   "Streamer handle overlay on exports",

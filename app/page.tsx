@@ -6,6 +6,7 @@ import FAQ from "@/components/FAQ";
 import PricingSection from "@/components/PricingSection";
 import Hero3D from "@/components/Hero3D";
 import Stars from "@/components/Stars";
+import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import Waitlist from "@/components/Waitlist";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
@@ -323,7 +324,7 @@ export default function LandingPage() {
 
           <FadeIn delay={0.28}>
             <p className="mt-4 text-sm text-foreground-muted">
-              No credit card required. Free plan includes 60 Sparks every 30 days.
+              No credit card required. Free plan includes {SPARKS_ALLOWANCE.free} Sparks every 30 days.
             </p>
           </FadeIn>
         </div>
@@ -481,7 +482,7 @@ export default function LandingPage() {
           </h2>
           <p className="text-foreground-muted text-lg mb-10 max-w-xl mx-auto leading-relaxed">
             Paste your first VOD and see what Klyp pulls out of it. The free plan
-            includes 60 Sparks every 30 days — no credit card needed.
+            includes {SPARKS_ALLOWANCE.free} Sparks every 30 days — no credit card needed.
           </p>
           <Link
             href="/login"
