@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
         const grant = paidSubscriptionGrant(event);
         if (grant) {
           const subscription = await getStripe().subscriptions.retrieve(grant.subscriptionId);
-          if (!paidSubscriptionIsActive(subscription, grant)) break;
+          if (!paidSubscriptionIsActive(subscription, grant, process.env.STRIPE_PRICE_PRO)) break;
           await grantPaidInvoice({ ...grant, userId: subscription.metadata.user_id });
         }
         break;

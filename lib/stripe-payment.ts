@@ -1,4 +1,6 @@
 import type Stripe from "stripe";
+import { PRO_PRICE_CENTS } from "./stripe.ts";
+import { proPriceMatchesOffer } from "./stripe-price.ts";
 
 export type PaidSubscriptionGrant = {
   invoiceId: string;
@@ -42,10 +44,18 @@ export function shouldDowngradeSubscription(status: string): boolean {
   return ["canceled", "unpaid", "incomplete_expired", "paused"].includes(status);
 }
 
-export function paidSubscriptionIsActive(subscription: Stripe.Subscription, grant: PaidSubscriptionGrant): boolean {
+export function paidSubscriptionIsActive(
+  subscription: Stripe.Subscription, grant: PaidSubscriptionGrant, configuredPriceId?: string
+): boolean {
   const klypUserId = subscription.metadata?.user_id;
+  const items = subscription.items.data;
+  // Existing subscribers may renew after their price is archived. The billed
+  // amount and interval still have to match the offer.
+  const price = items.length === 1 ? items[0].price : null;
   return subscription.id === grant.subscriptionId && subscription.status === "active" &&
     (!grant.customerId || idOf(subscription.customer) === grant.customerId) &&
     !!klypUserId && (!grant.userId || klypUserId === grant.userId) &&
-    (!subscription.metadata.klyp_plan || subscription.metadata.klyp_plan === "pro");
+    (!subscription.metadata.klyp_plan || subscription.metadata.klyp_plan === "pro") &&
+    !!price && (!configuredPriceId || price.id === configuredPriceId) &&
+    proPriceMatchesOffer({ ...price, active: true }, PRO_PRICE_CENTS);
 }

@@ -80,11 +80,31 @@ test("subscription status updates cannot upgrade before a paid invoice", () => {
 
 test("a paid invoice grants only while its matching subscription is active", () => {
   const grant = paidSubscriptionGrant(invoiceEvent());
-  const subscription = { id: "sub_1", status: "active", customer: "cus_1", metadata: { user_id: "user_1" } };
+  const subscription = { id: "sub_1", status: "active", customer: "cus_1", metadata: { user_id: "user_1" },
+    items: { data: [{ price: { active: true, type: "recurring", currency: "usd", unit_amount: 2800,
+      recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } } }] } };
   assert.equal(paidSubscriptionIsActive(subscription, grant), true);
   assert.equal(paidSubscriptionIsActive({ ...subscription, status: "past_due" }, grant), false);
   assert.equal(paidSubscriptionIsActive({ ...subscription, status: "canceled" }, grant), false);
   assert.equal(paidSubscriptionIsActive({ ...subscription, customer: "cus_other" }, grant), false);
   assert.equal(paidSubscriptionIsActive({ ...subscription, metadata: {} }, grant), false);
   assert.equal(paidSubscriptionIsActive({ ...subscription, metadata: { user_id: "someone_else" } }, grant), false);
+});
+
+test("a paid invoice cannot grant Pro for a subscription at a different price", () => {
+  const grant = paidSubscriptionGrant(invoiceEvent());
+  const subscription = { id: "sub_1", status: "active", customer: "cus_1", metadata: { user_id: "user_1" },
+    items: { data: [{ price: { active: true, type: "recurring", currency: "usd", unit_amount: 100,
+      recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } } }] } };
+  assert.equal(paidSubscriptionIsActive(subscription, grant), false);
+});
+
+test("a configured Pro price must match the billed subscription price ID", () => {
+  const grant = paidSubscriptionGrant(invoiceEvent());
+  const subscription = { id: "sub_1", status: "active", customer: "cus_1", metadata: { user_id: "user_1" },
+    items: { data: [{ price: { id: "price_other", active: true, type: "recurring", currency: "usd", unit_amount: 2800,
+      recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } } }] } };
+  assert.equal(paidSubscriptionIsActive(subscription, grant, "price_klyp_pro"), false);
+  subscription.items.data[0].price.id = "price_klyp_pro";
+  assert.equal(paidSubscriptionIsActive(subscription, grant, "price_klyp_pro"), true);
 });
