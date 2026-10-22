@@ -12,7 +12,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-type Stream = { id: string; platform: string; channel_url: string };
+type Stream = {
+  id: string;
+  platform: string;
+  channel_url: string;
+  /** Null until the channel is linked through Twitch OAuth. A channel added by
+   *  URL alone is visible to Klyp but cannot be watched — see below. */
+  twitch_user_id: string | null;
+  auto_clip_enabled: boolean;
+};
 
 /** Channel name from a Twitch/YouTube/Kick channel URL, for display only. */
 function channelName(url: string): string {
@@ -32,7 +40,7 @@ export default function ConnectStreamBanner() {
     const supabase = createClient();
     supabase
       .from("streams")
-      .select("id,platform,channel_url")
+      .select("id,platform,channel_url,twitch_user_id,auto_clip_enabled")
       .then(({ data }) => {
         if (!cancelled) setStreams(data ?? []);
       });
@@ -40,17 +48,28 @@ export default function ConnectStreamBanner() {
   }, []);
 
   const connected = streams !== null && streams.length > 0;
+  /**
+   * Having a row is not the same as being watched. A channel added by URL has
+   * no twitch_user_id, and the auto-clip poller skips exactly those rows — so
+   * this banner used to promise "Klyp watches this channel and clips your best
+   * moments automatically" to users whose Streams page said NOT ACTIVE. Only
+   * claim it when the poller would actually act on the channel.
+   */
+  const watched = (streams ?? []).filter((s) => s.twitch_user_id && s.auto_clip_enabled);
+  const anyWatched = watched.length > 0;
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 sm:px-5 rounded-xl bg-surface border border-accent/25">
       <span
         className={`flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center ${
-          connected ? "bg-accent-glow" : "bg-surface-2 border border-border"
+          anyWatched ? "bg-accent-glow" : "bg-surface-2 border border-border"
         }`}
       >
+        {/* Lit only when a channel is actually being watched — the accent ring
+            reads as "this is running", which a URL-only channel is not. */}
         <svg
           width="20" height="20" viewBox="0 0 24 24" fill="none"
-          stroke={connected ? "#00E5A0" : "#9898b0"}
+          stroke={anyWatched ? "#00E5A0" : "#9898b0"}
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
         >
           <path d="M5 12.55a11 11 0 0 1 14.08 0" />
@@ -74,8 +93,17 @@ export default function ConnectStreamBanner() {
                 : `${streams.length} streams connected`}
             </p>
             <p className="text-[15px] text-foreground-muted mt-0.5">
-              Klyp watches {streams.length === 1 ? "this channel" : "these channels"} and clips your
-              best moments automatically when you go live.
+              {anyWatched ? (
+                <>
+                  Klyp watches {watched.length === 1 ? "this channel" : "these channels"} and clips
+                  your best moments automatically when you go live.
+                </>
+              ) : (
+                <>
+                  Added by URL, so Klyp can&apos;t tell when you go live yet — connect with Twitch on
+                  the Streams page to turn on automatic clipping.
+                </>
+              )}
             </p>
           </>
         ) : (
