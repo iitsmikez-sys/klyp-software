@@ -67,6 +67,7 @@ export default function UpgradePage() {
   const isPro = tier === "pro";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [billingSetupNeeded, setBillingSetupNeeded] = useState(false);
 
   const allowance = SPARKS_ALLOWANCE[tier];
   const used = balance !== null ? Math.min(allowance, Math.max(0, allowance - balance)) : 0;
@@ -96,6 +97,12 @@ export default function UpgradePage() {
     try {
       const res = await fetch("/api/stripe/portal", { method: "POST" });
       const data = await res.json().catch(() => null);
+      if (res.status === 409 && data?.code === "billing_account_missing") {
+        setBillingSetupNeeded(true);
+        setError(data.error);
+        setBusy(false);
+        return;
+      }
       if (!res.ok || !data?.url) {
         throw new Error(data?.error ?? `Request failed (HTTP ${res.status}).`);
       }
@@ -200,7 +207,7 @@ export default function UpgradePage() {
           </ul>
 
           <button
-            onClick={isPro ? openPortal : startCheckout}
+            onClick={isPro && !billingSetupNeeded ? openPortal : startCheckout}
             disabled={busy}
             className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-60 ${
               !isPro && !busy ? "pulse-glow" : ""
@@ -209,7 +216,7 @@ export default function UpgradePage() {
             {busy && (
               <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
             )}
-            {isPro ? "Manage billing" : "Upgrade to Pro"}
+            {billingSetupNeeded ? "Set up billing" : isPro ? "Manage billing" : "Upgrade to Pro"}
           </button>
 
           {/* Social proof */}
