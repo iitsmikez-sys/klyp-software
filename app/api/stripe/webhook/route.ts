@@ -85,29 +85,24 @@ function idOf(value: string | { id: string } | null | undefined): string | undef
 async function grantTier(
   match: { userId?: string; customerId?: string },
   tier: Tier,
+  eventId: string,
+  reason: "checkout_grant" | "invoice_grant" | "subscription_deleted",
   extra: Partial<{ stripe_customer_id: string; stripe_subscription_id: string | null }> = {}
 ) {
   const admin = createAdminClient();
-  const update = {
-    tier,
-    sparks: SPARKS_ALLOWANCE[tier],
-    sparks_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    ...extra,
-  };
-  // select() so the result reports which rows changed: an update that matches
-  // nothing is not an error in PostgREST, and silently granting nothing to a
-  // customer who has just paid is the worst possible failure here. Throwing
-  // returns a non-2xx, so Stripe retries and the event stays visible as failed.
-  const query = admin.from("profiles").update(update).select("id");
-  const { data, error } = match.userId
-    ? await query.eq("id", match.userId)
-    : await query.eq("stripe_customer_id", match.customerId!);
-  if (error) throw new Error(`Supabase profile update failed: ${error.message}`);
-  if (!data || data.length === 0) {
-    throw new Error(
-      `No profile matched ${match.userId ? `user ${match.userId}` : `customer ${match.customerId}`} — tier not granted.`
-    );
-  }
+  const { error } = await admin.rpc("grant_tier_sparks", {
+    p_user_id: match.userId ?? null,
+    p_match_customer_id: match.customerId ?? null,
+    p_tier: tier,
+    p_balance: SPARKS_ALLOWANCE[tier],
+    p_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    p_event_id: eventId,
+    p_reason: reason,
+    p_customer_id: extra.stripe_customer_id ?? null,
+    p_subscription_id: extra.stripe_subscription_id ?? null,
+    p_set_subscription: Object.prototype.hasOwnProperty.call(extra, "stripe_subscription_id"),
+  });
+  if (error) throw new Error(`Supabase Sparks grant failed: ${error.message}`);
 }
 
 /** Sync tier/subscription state only — does not touch the Sparks balance. */
@@ -162,7 +157,7 @@ export async function POST(req: NextRequest) {
         const session = event.data.object;
         const userId = session.metadata?.user_id ?? session.client_reference_id;
         if (userId && session.mode === "subscription") {
-          await grantTier({ userId }, "pro", {
+          await grantTier({ userId }, "pro", event.id, "checkout_grant", {
             stripe_customer_id: idOf(session.customer),
             stripe_subscription_id: idOf(session.subscription),
           });
@@ -181,6 +176,8 @@ export async function POST(req: NextRequest) {
           await grantTier(
             { userId: subDetails?.metadata?.user_id, customerId: idOf(invoice.customer) },
             "pro",
+            event.id,
+            "invoice_grant",
             { stripe_subscription_id: subscriptionId }
           );
         }
@@ -201,6 +198,8 @@ export async function POST(req: NextRequest) {
         await grantTier(
           { userId: sub.metadata?.user_id, customerId: idOf(sub.customer) },
           "free",
+          event.id,
+          "subscription_deleted",
           { stripe_subscription_id: null }
         );
         break;

@@ -44,9 +44,9 @@ export async function getProfileFromToken(token: string): Promise<Profile | null
   return data as Profile;
 }
 
-export async function consumeSparksFromToken(token: string, amount: number): Promise<number> {
+export async function consumeSparksFromToken(token: string, amount: number, reference?: string): Promise<number> {
   const supabase = tokenClient(token);
-  const { data, error } = await supabase.rpc("consume_sparks", { amount });
+  const { data, error } = await supabase.rpc("consume_sparks", { amount, p_reference: reference ?? null });
   if (error) throw new Error(`Failed to deduct Sparks: ${error.message}`);
   return data as number;
 }

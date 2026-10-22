@@ -35,18 +35,14 @@ const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE
   const user = data.users.find((u) => u.email === email);
   if (!user) throw new Error(`No auth user with email ${email}`);
 
-  const { data: prof, error: readErr } = await supabase
-    .from("profiles")
-    .select("sparks")
-    .eq("id", user.id)
-    .single();
-  if (readErr) throw readErr;
-
-  const next = prof.sparks + amount;
-  const { error: writeErr } = await supabase.from("profiles").update({ sparks: next }).eq("id", user.id);
+  const { data: next, error: writeErr } = await supabase.rpc("admin_adjust_sparks", {
+    target_user: user.id,
+    amount,
+    p_reference: "script:add-sparks",
+  });
   if (writeErr) throw writeErr;
 
-  console.log(`${email}: ${prof.sparks} -> ${next} sparks (${amount > 0 ? "+" : ""}${amount})`);
+  console.log(`${email}: ${next - amount} -> ${next} sparks (${amount > 0 ? "+" : ""}${amount})`);
 })().catch((err) => {
   console.error(err.message ?? err);
   process.exit(1);
