@@ -4,6 +4,7 @@ import { proPriceMatchesOffer } from "./stripe-price.ts";
 
 export type PaidSubscriptionGrant = {
   invoiceId: string;
+  billedPriceId: string;
   subscriptionId: string;
   customerId?: string;
   userId?: string;
@@ -30,11 +31,12 @@ export function paidSubscriptionGrant(event: Stripe.Event): PaidSubscriptionGran
     item.parent.subscription_item_details?.subscription === subscriptionId &&
     item.parent.subscription_item_details.proration === false
   );
+  const billedPriceId = idOf(line?.pricing?.price_details?.price);
   if (!line || !Number.isSafeInteger(line.period.start) ||
     !Number.isSafeInteger(line.period.end) || line.period.end <= line.period.start ||
-    !Number.isSafeInteger(event.created)) return null;
+    !Number.isSafeInteger(event.created) || !billedPriceId) return null;
   return {
-    invoiceId: invoice.id, subscriptionId, customerId, userId,
+    invoiceId: invoice.id, billedPriceId, subscriptionId, customerId, userId,
     periodStart: line.period.start, periodEnd: line.period.end,
     paidEventCreated: event.created,
   };
@@ -56,6 +58,7 @@ export function paidSubscriptionIsActive(
     (!grant.customerId || idOf(subscription.customer) === grant.customerId) &&
     !!klypUserId && (!grant.userId || klypUserId === grant.userId) &&
     (!subscription.metadata.klyp_plan || subscription.metadata.klyp_plan === "pro") &&
-    !!price && (!configuredPriceId || price.id === configuredPriceId) &&
+    !!price && price.id === grant.billedPriceId &&
+    (!configuredPriceId || price.id === configuredPriceId) &&
     proPriceMatchesOffer({ ...price, active: true }, PRO_PRICE_CENTS);
 }
