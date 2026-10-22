@@ -16,10 +16,12 @@
 
 Open **Supabase Dashboard → SQL Editor** and apply the SQL files in
 `supabase/migrations/` in numeric order through
-`013_paid_invoice_sparks.sql`. Migration 012 adds the Sparks ledger;
+`014_analysis_clip_history.sql`. Migration 012 adds the Sparks ledger;
 migration 013 makes a paid invoice the only Pro refill trigger and deduplicates
-by invoice and billing period. The webhook returns an error until its required
-tables and functions exist.
+by invoice and billing period. Migration 014 records delivered clip windows and
+charges only for new results on repeat VOD analyses. Apply migration 014 before
+deploying the matching processing service. The routes return an error until
+their required tables and functions exist.
 
 This creates the `profiles` table (tier + Sparks), auto-provisions profiles on
 signup (and backfills existing users on first request), and adds the
