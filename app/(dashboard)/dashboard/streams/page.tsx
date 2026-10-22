@@ -435,7 +435,7 @@ export default function StreamsPage() {
               </div>
             ) : (
               <span className="px-2.5 py-1 rounded-full bg-surface-2 border border-border text-[11px] font-bold text-foreground-muted uppercase tracking-wide">
-                Not active
+                Coming soon
               </span>
             )}
           </div>
@@ -450,9 +450,8 @@ export default function StreamsPage() {
             </p>
           ) : (
             <p className="text-[15px] text-foreground-muted mt-1.5">
-              {twitchChannels.length > 0
-                ? "Your Twitch channel was added by URL, so Klyp can't be notified when you go offline. Connect with Twitch above to enable automatic clipping."
-                : "Connect a Twitch channel to have Klyp analyze each VOD automatically once your stream ends."}
+              Klyp will analyze each VOD automatically once your stream ends, and save the clips
+              for you. Not switched on yet — for now, paste a VOD on the dashboard to clip it.
             </p>
           )}
 

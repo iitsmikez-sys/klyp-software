@@ -100,8 +100,8 @@ export default function ConnectStreamBanner() {
                 </>
               ) : (
                 <>
-                  Added by URL, so Klyp can&apos;t tell when you go live yet — connect with Twitch on
-                  the Streams page to turn on automatic clipping.
+                  Automatic clipping when you go live is coming soon. For now, paste a VOD below
+                  and Klyp will find the moments.
                 </>
               )}
             </p>
