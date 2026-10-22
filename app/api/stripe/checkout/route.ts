@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStripe, PRO_PRICE_CENTS } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/profile";
+import { resolveBillingState } from "@/lib/stripe-billing";
 
 export const runtime = "nodejs";
 
@@ -28,16 +29,16 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-  // Same "confirmed subscription" check as SparksProvider.tsx — if tier says
-  // pro but there's no subscription_id behind it, let checkout proceed rather
-  // than block a user who needs to get a real subscription.
-  if (profile?.tier === "pro" && profile.stripe_subscription_id) {
-    return NextResponse.json({ error: "You're already on Pro." }, { status: 400 });
-  }
-
   const origin = req.nextUrl.origin;
   try {
     const stripe = getStripe();
+    const billing = await resolveBillingState(stripe, {
+      stripe_customer_id: profile?.stripe_customer_id ?? null,
+      stripe_subscription_id: profile?.stripe_subscription_id ?? null,
+    });
+    if (billing.portalCustomerId) {
+      return NextResponse.json({ error: "You're already subscribed. Open Manage billing instead." }, { status: 400 });
+    }
 
     // The UI advertises PRO_PRICE_CENTS, but when STRIPE_PRICE_PRO is set it
     // is Stripe's price that is actually charged — nothing kept the two in
@@ -83,8 +84,8 @@ export async function POST(req: NextRequest) {
             },
       ],
       // Reuse the Stripe customer if this user subscribed before.
-      ...(profile?.stripe_customer_id
-        ? { customer: profile.stripe_customer_id }
+      ...(billing.checkoutCustomerId
+        ? { customer: billing.checkoutCustomerId }
         : { customer_email: user.email ?? undefined }),
       client_reference_id: user.id,
       metadata: { user_id: user.id },

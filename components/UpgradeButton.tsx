@@ -13,6 +13,7 @@ export default function UpgradeButton() {
   const { tier } = useSparks();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [billingSetupNeeded, setBillingSetupNeeded] = useState(false);
 
   if (tier !== "pro") {
     return (
@@ -33,6 +34,12 @@ export default function UpgradeButton() {
     try {
       const res = await fetch("/api/stripe/portal", { method: "POST" });
       const data = await res.json().catch(() => null);
+      if (res.status === 409 && data?.code === "billing_account_missing") {
+        setBillingSetupNeeded(true);
+        setError(data.error);
+        setBusy(false);
+        return;
+      }
       if (!res.ok || !data?.url) {
         throw new Error(data?.error ?? `Request failed (HTTP ${res.status}).`);
       }
@@ -43,17 +50,34 @@ export default function UpgradeButton() {
     }
   };
 
+  const startCheckout = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error ?? `Checkout failed (HTTP ${res.status}).`);
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start checkout.");
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col items-end gap-1">
       <button
-        onClick={openPortal}
+        onClick={billingSetupNeeded ? startCheckout : openPortal}
         disabled={busy}
         className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-surface border border-border text-sm font-bold font-syne text-foreground-muted hover:border-subtle transition-colors disabled:opacity-60 whitespace-nowrap"
       >
         {busy && (
           <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
         )}
-        Manage billing
+        {billingSetupNeeded ? "Set up billing" : "Manage billing"}
       </button>
       {error && <p className="text-[11px] text-red-400 max-w-[240px] text-right">{error}</p>}
     </div>
