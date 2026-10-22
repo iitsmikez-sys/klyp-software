@@ -6,15 +6,15 @@ import { motion, AnimatePresence } from "framer-motion";
 const faqs = [
   {
     q: "How does Klyp know what to clip?",
-    a: "Klyp's AI analyzes audio spikes, chat velocity, viewer reactions, and in-game events simultaneously. When multiple signals peak at once — a big play, a crowd reaction, a hype train — Klyp marks and clips that moment automatically.",
+    a: "Paste a YouTube or Twitch VOD link. Klyp transcribes its audio and suggests moments to review and save.",
   },
   {
     q: "Which streaming platforms are supported?",
-    a: "Klyp currently supports Twitch, YouTube Live, and Kick. TikTok Live and Facebook Gaming are on the roadmap for Q3 2026.",
+    a: "You can analyze published YouTube videos and Twitch VODs. Automatic clipping after a stream is coming soon.",
   },
   {
     q: "Do I need to leave my computer on?",
-    a: "No. Klyp works server-side — once your channel is connected, our infrastructure monitors your stream independently. You can close your browser or even shut down your PC between streams.",
+    a: "The VOD analysis runs on Klyp's processing service. Keep the dashboard open until it returns your results.",
   },
   {
     q: "What video quality are the exported clips?",
@@ -22,7 +22,7 @@ const faqs = [
   },
   {
     q: "Does it work with pre-recorded VODs?",
-    a: "Yes. On Pro and Agency plans you can paste a VOD URL and Klyp will process it asynchronously, typically in under 10 minutes for a 3-hour stream.",
+    a: "Yes. Signed-in users can paste a YouTube or Twitch VOD link on the dashboard and review the suggested clips when analysis finishes.",
   },
   {
     q: "Can I cancel anytime?",
