@@ -12,6 +12,11 @@ test("explains a YouTube bot block without exposing yt-dlp output", () => {
   assert.doesNotMatch(message, /yt-dlp/);
 });
 
+test("recognizes the curly apostrophe in the live YouTube error", () => {
+  const liveError = "ERROR: [youtube] yOkSedn_cfc: Sign in to confirm you’re not a bot.";
+  assert.match(userFacingAnalysisError("download", "https://youtu.be/yOkSedn_cfc", liveError), /YouTube blocked/);
+});
+
 test("preserves unrelated download and analysis errors", () => {
   assert.equal(userFacingAnalysisError("download", "https://www.twitch.tv/videos/123", botError), botError);
   assert.equal(userFacingAnalysisError("analyze", "https://youtu.be/yOkSedn_cfc", botError), botError);
