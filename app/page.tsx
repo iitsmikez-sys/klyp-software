@@ -166,31 +166,29 @@ const features: {
         <path d="M21 2H3v16h5v4l4-4h5l4-4V2z" />
       </svg>
     ),
-    title: "Auto-clip your VODs",
-    desc: "Connect your Twitch channel and Klyp analyses each new VOD once your stream ends.",
+    title: "Analyze a VOD",
+    desc: "Paste a YouTube or Twitch VOD link to find clips from the recording.",
     preview: (
       <div className="flex items-center gap-2 text-[11px] text-foreground-muted">
         <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-        Watching for new VODs
+        Ready for a VOD link
       </div>
     ),
-    cta: { label: "Connect your channel", href: "/dashboard/streams" },
-    badge: "Twitch only",
+    cta: { label: "Analyze a VOD", href: "/dashboard" },
+    badge: "YouTube and Twitch VODs",
   },
 ];
 
-/* ─── Steps ───
- * Auto-clipping runs off Twitch EventSub + Get Videos (lib/vod-poll.ts), so
- * these describe the Twitch path rather than promising every platform. */
+/* ─── Steps for the VOD analysis flow. */
 const steps = [
   {
     num: "01",
-    title: "Connect your channel",
-    desc: "Link your Twitch account in under a minute. Nothing to install, no OBS plugins.",
+    title: "Paste your VOD",
+    desc: "Add a YouTube or Twitch VOD link in your dashboard.",
     visual: (
       <div className="flex items-center justify-center gap-2">
         <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-400 text-[11px] font-bold">
-          Twitch
+          VOD link
         </span>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00E5A0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="20 6 9 17 4 12" />
@@ -200,19 +198,19 @@ const steps = [
   },
   {
     num: "02",
-    title: "Stream like you always do",
-    desc: "Klyp runs server-side. There's nothing to remember — just go live and play.",
+    title: "Review the moments",
+    desc: "Klyp analyzes the recording and suggests clips for you to review.",
     visual: (
       <div className="flex items-center justify-center gap-2">
         <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-        <span className="text-[11px] font-bold text-foreground-muted tracking-wide">LIVE</span>
+        <span className="text-[11px] font-bold text-foreground-muted tracking-wide">REVIEW</span>
       </div>
     ),
   },
   {
     num: "03",
-    title: "Your clips are waiting",
-    desc: "Once your stream ends, Klyp analyses the VOD and your best moments land in the dashboard.",
+    title: "Save and export",
+    desc: "Keep the clips you like, then download them from your dashboard.",
     visual: (
       <div className="flex items-center justify-center gap-1.5">
         {[0, 1, 2].map((i) => (
@@ -294,14 +292,14 @@ export default function LandingPage() {
           <FadeIn delay={0.08}>
             <h1 className="font-geist text-5xl md:text-7xl font-bold text-white leading-[1.05] tracking-tight text-balance max-w-4xl">
               Your best moments,{" "}
-              <span className="text-accent">clipped automatically</span>
+              <span className="text-accent">ready to find</span>
             </h1>
           </FadeIn>
 
           <FadeIn delay={0.16}>
             <p className="mt-6 text-lg md:text-xl text-foreground-muted max-w-2xl text-balance leading-relaxed">
-              Klyp watches your streams in real time and uses AI to find, cut, and
-              export your most engaging clips — so you can focus on playing.
+              Paste a YouTube or Twitch VOD link and let Klyp suggest moments
+              you can review, save, and export.
             </p>
           </FadeIn>
 
@@ -361,7 +359,7 @@ export default function LandingPage() {
                 How it works
               </p>
               <h2 className="font-geist text-4xl md:text-5xl font-bold text-white tracking-tight">
-                Set up once, then forget it
+                From VOD to clips
               </h2>
             </div>
           </FadeIn>
@@ -398,7 +396,7 @@ export default function LandingPage() {
                 Everything you need to grow
               </h2>
               <p className="mt-4 text-base text-foreground-muted max-w-xl mx-auto">
-                Stop clipping manually. Klyp handles the whole pipeline — from detection to export.
+                Paste a VOD link to find moments, then choose what to save and export.
               </p>
             </div>
           </FadeIn>
