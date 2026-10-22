@@ -17,6 +17,25 @@ const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   KLYP: "Branded style with the accent green keyword pop",
 };
 
+type SparkTransaction = {
+  id: string;
+  delta: number;
+  reason: string;
+  balance_after: number;
+  created_at: string;
+};
+
+const TRANSACTION_LABELS: Record<string, string> = {
+  opening_balance: "Starting balance",
+  monthly_reset: "Allowance refill",
+  checkout_grant: "Pro purchase",
+  invoice_grant: "Pro payment",
+  subscription_deleted: "Subscription ended",
+  analysis: "VOD analysis and clips",
+  auto_clip: "Automatic clip analysis",
+  manual_adjustment: "Balance adjustment",
+};
+
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
     <section className="bg-surface border border-border rounded-xl p-6">
@@ -40,6 +59,9 @@ export default function SettingsPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uiSounds, setUiSounds] = useState(false);
+  const [transactions, setTransactions] = useState<SparkTransaction[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [transactionsError, setTransactionsError] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -52,6 +74,15 @@ export default function SettingsPage() {
     supabase.rpc("get_profile").then(({ data }) => {
       if (data) setProfile(data as Profile);
     });
+    supabase.from("spark_transactions")
+      .select("id,delta,reason,balance_after,created_at")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data, error }) => {
+        if (error) setTransactionsError(true);
+        else setTransactions((data ?? []) as SparkTransaction[]);
+        setTransactionsLoading(false);
+      });
 
     setUiSounds(uiSoundsEnabled());
     setHandle(localStorage.getItem("klyp-handle") ?? "");
@@ -228,7 +259,7 @@ export default function SettingsPage() {
                 {tier === "pro" ? "⚡ PRO" : "FREE"}
               </span>
               <span className="text-sm text-foreground-muted">
-                {tier === "pro" ? "$28/mo · no watermark · 500 ⚡/mo" : "60 ⚡/mo · watermarked exports"}
+                {tier === "pro" ? "$28/mo · no watermark · 500 ⚡/mo" : "150 ⚡ every 30 days · watermarked exports"}
               </span>
             </div>
             <UpgradeButton />
@@ -254,10 +285,36 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between mt-2">
               <p className="text-[11px] text-subtle">{used} ⚡ used</p>
               {profile && (
-                <p className="text-[11px] text-subtle">Refills {fmtDate(profile.sparks_reset_at)}</p>
+                <p className="text-[11px] text-subtle">
+                  {tier === "pro" ? "Next period, pending payment" : "Refills"} {fmtDate(profile.sparks_reset_at)}
+                </p>
               )}
             </div>
           </div>
+        </Section>
+
+        <Section title="Sparks history" desc="Your 50 most recent Sparks transactions.">
+          {transactionsLoading ? (
+            <p className="text-sm text-foreground-muted">Loading history…</p>
+          ) : transactionsError ? (
+            <p role="alert" className="text-sm text-red-400">Could not load Sparks history. Refresh to try again.</p>
+          ) : transactions.length === 0 ? (
+            <p className="text-sm text-foreground-muted">No Sparks transactions yet.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {transactions.map((transaction) => (
+                <div key={transaction.id} className="flex items-center justify-between gap-4 py-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="text-foreground">{TRANSACTION_LABELS[transaction.reason] ?? transaction.reason.replace(/_/g, " ")}</p>
+                    <p className="text-xs text-subtle">{new Date(transaction.created_at).toLocaleString()} · {transaction.balance_after} ⚡ left</p>
+                  </div>
+                  <span className={transaction.delta >= 0 ? "text-accent font-semibold" : "text-foreground font-semibold"}>
+                    {transaction.delta > 0 ? "+" : ""}{transaction.delta} ⚡
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </Section>
       </div>
     </div>
