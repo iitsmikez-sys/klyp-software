@@ -16,7 +16,7 @@ import ClipThumbnail from "./ClipThumbnail";
 import ClipPreviewModal from "./ClipPreviewModal";
 import { useClipExports } from "./useClipExports";
 import { downloadExport } from "@/lib/clip-export";
-import { type SavedClip, TYPE_STYLES, fmtTime, footageGone } from "@/lib/clip-ui";
+import { type SavedClip, TYPE_STYLES, fmtTime, footageGone, archiveLabel } from "@/lib/clip-ui";
 
 /** Enough to fill the row on every breakpoint without a second row. */
 const LIMIT = 3;
@@ -194,6 +194,7 @@ export default function SavedClips() {
               <p className="text-sm text-foreground-muted font-mono mt-1">
                 {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}
               </p>
+              <p className="text-xs text-foreground-muted mt-1">{archiveLabel(clip.archive_status)}</p>
             </div>
           );
         })}
