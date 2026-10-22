@@ -218,7 +218,13 @@ if (has("--probe")) {
 
 /* ── Mark everything with no retrievable source, honestly ── */
 if (has("--run")) {
-  const lost = unavailable.filter((c) => c.archive_status !== "unavailable");
+  // Never relabel a clip we already archived. "Unavailable" describes the
+  // SOURCE being gone, which is true for these — but once the footage is in
+  // the bucket the source no longer matters, and overwriting the status hides
+  // a playable clip behind "Footage gone". This exact bug buried three.
+  const lost = unavailable.filter(
+    (c) => c.archive_status !== "unavailable" && !c.master_path
+  );
   if (lost.length > 0) {
     // Recorded, never deleted: the row and its metadata stay, the footage is
     // simply gone and the UI can say so instead of offering a broken export.
