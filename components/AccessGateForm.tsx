@@ -1,10 +1,17 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+
+/**
+ * `next` arrives from the query string, so it is attacker-controllable. Only
+ * same-site paths are followed; anything else falls back to the dashboard
+ * rather than becoming an open redirect off klyp.world.
+ */
+function safeNext(next: string): string {
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+}
 
 export default function AccessGateForm({ next }: { next: string }) {
-  const router = useRouter();
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,8 +29,14 @@ export default function AccessGateForm({ next }: { next: string }) {
       });
 
       if (res.ok) {
-        router.push(next);
-        router.refresh();
+        // A full navigation, not router.push: the gate cookie was set by the
+        // response we just received, and a client-side push re-renders from the
+        // router cache the server built *before* that cookie existed — so the
+        // gate renders again and the button spins forever on a correct keyword.
+        // Reloading guarantees the server sees the cookie. replace() also keeps
+        // the gate out of history, so Back doesn't return to it.
+        window.location.replace(safeNext(next));
+        return;
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error || "Incorrect keyword.");
