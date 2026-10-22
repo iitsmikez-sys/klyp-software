@@ -55,6 +55,17 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
   const video = await getLatestVod(stream.twitch_user_id);
   if (!video || video.id === stream.last_seen_video_id) return "not_found";
 
+  // First sight of a newly connected channel: its latest VOD already existed
+  // before the user connected, so it is not a stream they just finished. It
+  // used to be treated as new, which meant connecting Twitch immediately spent
+  // Sparks analysing an old VOD nobody asked for. Record it as the baseline
+  // and start clipping from the next one.
+  if (stream.last_seen_video_id === null) {
+    await admin.from("streams").update({ last_seen_video_id: video.id }).eq("id", stream.id);
+    log("baseline set for newly connected channel", stream.id, video.id);
+    return "not_found";
+  }
+
   await admin.from("streams").update({ last_seen_video_id: video.id }).eq("id", stream.id);
 
   const channelLabel = stream.twitch_login ?? "your channel";
