@@ -1,6 +1,7 @@
 "use client";
 
 import { useSparks } from "./SparksProvider";
+import { refillPhrase, vodsPhrase } from "@/lib/sparks";
 
 export function SparkIcon({ size = 14, className = "" }: { size?: number; className?: string }) {
   return (
@@ -19,10 +20,23 @@ export function SparkIcon({ size = 14, className = "" }: { size?: number; classN
 
 /** Premium Sparks balance pill — lives top-right of the dashboard header. */
 export default function SparksBalance() {
-  const { balance } = useSparks();
+  const { balance, resetAt } = useSparks();
+
+  // A bare number says nothing about when it comes back or what it buys. The
+  // refill is the more urgent of the two, so it sits inline and the plainer
+  // "about 3 VODs" reading goes in the tooltip, where it does not crowd the
+  // pill on a narrow header.
+  const refill = refillPhrase(resetAt);
+  const title =
+    balance === null
+      ? undefined
+      : `${balance} Sparks — ${vodsPhrase(balance)}${refill ? `, ${refill}` : ""}`;
 
   return (
-    <div className="flex items-center gap-2.5 pl-3.5 pr-4 py-2 rounded-full bg-surface border border-accent/25 shadow-accent-glow-sm">
+    <div
+      title={title}
+      className="flex items-center gap-2.5 pl-3.5 pr-4 py-2 rounded-full bg-surface border border-accent/25 shadow-accent-glow-sm"
+    >
       <span className="flex items-center justify-center w-7 h-7 rounded-full bg-accent-glow text-accent">
         <SparkIcon size={14} />
       </span>
@@ -42,6 +56,11 @@ export default function SparksBalance() {
           Sparks
         </span>
       </div>
+      {refill && balance !== null && (
+        <span className="hidden sm:inline text-[11px] text-foreground-muted border-l border-border pl-2.5 whitespace-nowrap">
+          {refill}
+        </span>
+      )}
     </div>
   );
 }

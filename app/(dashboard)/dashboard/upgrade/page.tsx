@@ -24,7 +24,7 @@ function Warn() {
 }
 
 const FREE_FEATURES: { ok: boolean; text: string }[] = [
-  { ok: true, text: "60 Sparks per month" },
+  { ok: true, text: "60 Sparks every 30 days — about 1 VOD" },
   { ok: true, text: "AI clip detection with viral scores" },
   { ok: true, text: "9:16 vertical exports, 1080×1920" },
   { ok: true, text: "AI captions — BOLD, CLEAN & KLYP styles" },
@@ -32,7 +32,7 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
 ];
 
 const PRO_FEATURES: string[] = [
-  "500 Sparks per month — 8× more analyses",
+  "500 Sparks every 30 days — about 12 VODs",
   "No watermark. Clean clips, your brand only",
   "Raw exports — edit clips yourself in CapCut",
   "Streamer handle overlay on exports",
