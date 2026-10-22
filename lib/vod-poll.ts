@@ -108,6 +108,7 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
     const { error: chargeError } = await admin.rpc("admin_consume_sparks", {
       target_user: stream.user_id,
       amount: sparksSpent,
+      p_reference: `twitch:${video.id}`,
     });
     if (chargeError) {
       // The clips below are still saved and delivered: the work is done and

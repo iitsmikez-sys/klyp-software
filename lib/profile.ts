@@ -16,9 +16,9 @@ export async function getProfile(): Promise<Profile | null> {
 }
 
 /** Atomically deduct Sparks for the logged-in user. Returns the new balance. */
-export async function consumeSparks(amount: number): Promise<number> {
+export async function consumeSparks(amount: number, reference?: string): Promise<number> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("consume_sparks", { amount });
+  const { data, error } = await supabase.rpc("consume_sparks", { amount, p_reference: reference ?? null });
   if (error) throw new Error(`Failed to deduct Sparks: ${error.message}`);
   return data as number;
 }

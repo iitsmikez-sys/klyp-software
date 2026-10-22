@@ -228,7 +228,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         let sparksSpentActual = sparksSpent;
         let sparksBalance = profile.sparks;
         try {
-          sparksBalance = await consumeSparksFromToken(token!, sparksSpent);
+          sparksBalance = await consumeSparksFromToken(
+            token!, sparksSpent, uploadId ? `upload:${uploadId}` : url
+          );
         } catch (chargeErr) {
           sparksSpentActual = 0;
           log(
