@@ -29,6 +29,7 @@ type StreamRow = {
   twitch_user_id: string;
   twitch_login: string | null;
   last_seen_video_id: string | null;
+  created_at: string;
 };
 
 const MAX_CHECK_ATTEMPTS = 5;
@@ -55,12 +56,15 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
   const video = await getLatestVod(stream.twitch_user_id);
   if (!video || video.id === stream.last_seen_video_id) return "not_found";
 
-  // First sight of a newly connected channel: its latest VOD already existed
-  // before the user connected, so it is not a stream they just finished. It
-  // used to be treated as new, which meant connecting Twitch immediately spent
-  // Sparks analysing an old VOD nobody asked for. Record it as the baseline
-  // and start clipping from the next one.
-  if (stream.last_seen_video_id === null) {
+  // First sight of a channel: a VOD that predates the connection is a stream
+  // the user finished before Klyp was watching, so clipping it would spend
+  // their Sparks on something they never asked for. Record it as the baseline
+  // instead. A VOD created after the connection is exactly what auto-clipping
+  // is for, so it goes through even on the very first poll — the channel may
+  // simply have had no VODs when it was connected.
+  const predatesConnection =
+    new Date(video.created_at).getTime() <= new Date(stream.created_at).getTime();
+  if (stream.last_seen_video_id === null && predatesConnection) {
     await admin.from("streams").update({ last_seen_video_id: video.id }).eq("id", stream.id);
     log("baseline set for newly connected channel", stream.id, video.id);
     return "not_found";
@@ -179,7 +183,7 @@ async function processPendingChecks(): Promise<void> {
   for (const check of due ?? []) {
     const { data: stream } = await admin
       .from("streams")
-      .select("id, user_id, twitch_user_id, twitch_login, last_seen_video_id")
+      .select("id, user_id, twitch_user_id, twitch_login, last_seen_video_id, created_at")
       .eq("id", check.stream_id)
       .maybeSingle();
 
@@ -216,7 +220,7 @@ async function runSafetyNetSweep(): Promise<void> {
   const admin = createAdminClient();
   const { data: streams, error } = await admin
     .from("streams")
-    .select("id, user_id, twitch_user_id, twitch_login, last_seen_video_id")
+    .select("id, user_id, twitch_user_id, twitch_login, last_seen_video_id, created_at")
     .eq("platform", "twitch")
     .eq("auto_clip_enabled", true)
     .not("twitch_user_id", "is", null);
