@@ -41,6 +41,7 @@ import { detectChatSpikes, type ChatSpike } from "@/lib/twitch-chat";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
 import { saveTranscript } from "@/lib/transcripts";
 import { runQueued } from "@/lib/job-queue";
+import { userFacingAnalysisError } from "@/lib/analyze-errors";
 
 export const runtime = "nodejs";
 // Allow up to 5 minutes — download + transcription of a long VOD is slow.
@@ -256,7 +257,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           message = "Claude API rate limit hit — wait a moment and try again.";
         }
         console.error(`[analyze ${reqId}] FAILED at ${stage} after ${elapsed()}:`, err);
-        send({ type: "error", stage, error: message });
+        send({ type: "error", stage, error: userFacingAnalysisError(stage, url, message) });
       } finally {
         clearInterval(heartbeat);
         rm(workDir, { recursive: true, force: true }).catch(() => {});
