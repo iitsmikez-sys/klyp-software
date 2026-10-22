@@ -45,12 +45,39 @@ export async function GET(req: NextRequest) {
     const twitchUser = await getTwitchUser(userToken);
 
     const channelUrl = `https://www.twitch.tv/${twitchUser.login}`;
-    const { data: existing } = await supabase
+    let { data: existing } = await supabase
       .from("streams")
       .select("id, eventsub_subscription_id")
       .eq("user_id", user.id)
       .eq("twitch_user_id", twitchUser.id)
       .maybeSingle();
+
+    // A channel added by URL has no twitch_user_id, so the lookup above misses
+    // it and the insert below collides with unique (user_id, channel_url) —
+    // reported to the user as "already_connected" while the row stayed
+    // URL-only forever. Adopt that row instead: same channel, now identified.
+    if (!existing) {
+      const { data: urlOnly } = await supabase
+        .from("streams")
+        .select("id, eventsub_subscription_id")
+        .eq("user_id", user.id)
+        .eq("channel_url", channelUrl)
+        .is("twitch_user_id", null)
+        .maybeSingle();
+      if (urlOnly) {
+        const { error: adoptError } = await supabase
+          .from("streams")
+          .update({ twitch_user_id: twitchUser.id, twitch_login: twitchUser.login })
+          .eq("id", urlOnly.id);
+        if (adoptError) {
+          console.error("[twitch callback] could not attach Twitch identity:", adoptError);
+          const failed = redirectWithStatus(req, "save_failed");
+          failed.cookies.delete("twitch_oauth_state");
+          return failed;
+        }
+        existing = urlOnly;
+      }
+    }
 
     let streamId = existing?.id as string | undefined;
     if (!streamId) {
