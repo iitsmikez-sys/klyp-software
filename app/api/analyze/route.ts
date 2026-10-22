@@ -26,7 +26,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { AnalyzeResponse, AnalyzeEvent, AnalyzeStage, ContentType } from "@/lib/clips";
 import { CONTENT_TYPES, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
 import { findUploadedVideo } from "@/lib/video-cache";
-import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
+import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
 import {
   estimateSparks,
@@ -34,7 +34,6 @@ import {
   CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
-  clipCharge,
   type ClipCount,
 } from "@/lib/sparks";
 import { detectChatSpikes, type ChatSpike } from "@/lib/twitch-chat";
@@ -42,6 +41,8 @@ import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
 import { saveTranscript } from "@/lib/transcripts";
 import { runQueued } from "@/lib/job-queue";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
+import { vodSourceKey } from "@/lib/vod-source";
+import { priorClipWindows, recordAndChargeClips } from "@/lib/analysis-history";
 
 export const runtime = "nodejs";
 // Allow up to 5 minutes — download + transcription of a long VOD is slow.
@@ -96,7 +97,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return fail("validate", "Request body must be JSON: { \"url\": \"...\" } or { \"uploadId\": \"...\" }", 400);
   }
 
-  if (!uploadId && !VOD_URL_PATTERN.test(url)) {
+  const sourceKey = vodSourceKey(url, uploadId);
+  if ((!uploadId && !VOD_URL_PATTERN.test(url)) || !sourceKey) {
     return fail("validate", "Please provide a valid YouTube video or Twitch VOD URL.", 400);
   }
 
@@ -126,6 +128,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   if (!profile) {
     return fail("validate", "You must be signed in to analyze a VOD.", 401);
+  }
+  let priorWindows;
+  try {
+    priorWindows = await priorClipWindows(token!, sourceKey);
+  } catch (err) {
+    return fail("validate", err instanceof Error ? err.message : "Could not check earlier clips.", 503);
   }
   const upfrontCost = durationHint
     ? estimateSparks(durationHint) + CLIP_COUNT_COST[clipCount]
@@ -193,6 +201,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               clipCount,
               contentType,
               keyword,
+              priorWindows,
               workDir,
               chatSpikesPromise: spikesPromise,
               onProgress: (progressStage, status, etaSeconds) => {
@@ -218,36 +227,19 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           log("transcript save failed (non-fatal):", err instanceof Error ? err.message : String(err))
         );
 
-        // Deduct Sparks server-side: VOD length cost + clip cost prorated by
-        // how many clips actually cleared the quality floor.
-        const sparksSpent = estimateSparks(durationSeconds) + clipCharge(clipCount, clipsWithWords.length);
-        // The charge can legitimately fail now that overdrafts are refused
-        // (migration 010) — an estimate that came in under the real cost, say.
-        // The analysis is already finished and the clips are the user's, so a
-        // failed charge must not throw the result away; it is logged loudly and
-        // reported as 0 spent rather than claiming Sparks were taken.
-        let sparksSpentActual = sparksSpent;
-        let sparksBalance = profile.sparks;
-        try {
-          sparksBalance = await consumeSparksFromToken(
-            token!, sparksSpent, uploadId ? `upload:${uploadId}` : url
-          );
-        } catch (chargeErr) {
-          sparksSpentActual = 0;
-          log(
-            `SPARKS NOT CHARGED — ${sparksSpent} owed for ${uploadId ? `upload:${uploadId}` : url}: ` +
-              (chargeErr instanceof Error ? chargeErr.message : String(chargeErr))
-          );
-        }
+        // A single database transaction filters clips sold in other requests,
+        // records new windows, and charges only for the accepted result.
+        const accounted = await recordAndChargeClips(token!, sourceKey, clipsWithWords, durationSeconds, clipCount);
+        log("accounted", `${accounted.clips.length} new clips`, `${accounted.sparksSpent} Sparks`);
 
         send({
           type: "result",
-          clips: clipsWithWords,
+          clips: accounted.clips,
           durationSeconds,
           transcriptChars,
           requestedClips: clipCount,
-          sparksSpent: sparksSpentActual,
-          sparksBalance,
+          sparksSpent: accounted.sparksSpent,
+          sparksBalance: accounted.sparksBalance,
         });
       } catch (err) {
         let message = err instanceof Error ? err.message : "Pipeline failed.";

@@ -376,7 +376,9 @@ export default function AnalyzePanel() {
       // Fewer clips than requested = quality floor kicked in; explain the prorated charge.
       if (event.clips.length === 0) {
         setAnalysisNote(
-          "MIDAS didn't find any moments worth clipping in this VOD — no clip charge, only the base analysis cost applied. Try a different VOD, or a longer/more eventful one."
+          event.sparksSpent === 0
+            ? "No new moments cleared the quality floor. You were not charged for this repeat run."
+            : "MIDAS didn't find any moments worth clipping in this VOD — no clip charge, only the base analysis cost applied. Try a different VOD, or a longer/more eventful one."
         );
       } else if (event.clips.length < event.requestedClips) {
         const requested = event.requestedClips as ClipCount;

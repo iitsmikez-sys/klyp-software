@@ -14,8 +14,11 @@
 
 ### 1. Supabase — run the Sparks migration
 
-Open **Supabase Dashboard → SQL Editor**, paste the contents of
-`supabase/migrations/001_sparks_profiles.sql`, and run it.
+For the repeat-VOD release, apply `012_sparks_ledger.sql` first if it is not
+already installed, then `014_analysis_clip_history.sql` before deploying the
+matching processing service. Migration 014 records delivered clip windows and
+charges only for new results. Migration 013 belongs to the separate Stripe
+release and must be coordinated with its matching webhook code.
 
 This creates the `profiles` table (tier + Sparks), auto-provisions profiles on
 signup (and backfills existing users on first request), and adds the
