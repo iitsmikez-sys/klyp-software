@@ -10,6 +10,7 @@ import { getStripe, PRO_PRICE_CENTS } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/profile";
 import { resolveBillingState } from "@/lib/stripe-billing";
+import { proPriceMatchesOffer } from "@/lib/stripe-price";
 
 export const runtime = "nodejs";
 
@@ -40,29 +41,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "You're already subscribed. Open Manage billing instead." }, { status: 400 });
     }
 
-    // The UI advertises PRO_PRICE_CENTS, but when STRIPE_PRICE_PRO is set it
-    // is Stripe's price that is actually charged — nothing kept the two in
-    // step, and they had drifted ($28 advertised, $29 charged). Checkout is
-    // not blocked over it (refusing a sale is worse), but the mismatch is
-    // logged loudly so it can't ship unnoticed.
+    // Never send a customer to a checkout with a different price or interval
+    // from the offer shown in the UI.
     if (process.env.STRIPE_PRICE_PRO) {
-      try {
-        const price = await stripe.prices.retrieve(process.env.STRIPE_PRICE_PRO);
-        if (price.unit_amount !== PRO_PRICE_CENTS) {
-          console.error(
-            `[stripe checkout] PRICE MISMATCH — the app advertises ${(PRO_PRICE_CENTS / 100).toFixed(2)} ` +
-              `but STRIPE_PRICE_PRO (${price.id}) charges ${((price.unit_amount ?? 0) / 100).toFixed(2)} ` +
-              `${price.currency.toUpperCase()}. Customers are charged the Stripe amount.`
-          );
-        }
-        if (price.recurring?.interval !== "month") {
-          console.error(
-            `[stripe checkout] BILLING INTERVAL MISMATCH — the app advertises monthly billing but ` +
-              `${price.id} recurs per ${price.recurring?.interval ?? "one-time"}.`
-          );
-        }
-      } catch (priceErr) {
-        console.error("[stripe checkout] could not verify STRIPE_PRICE_PRO:", priceErr);
+      const price = await stripe.prices.retrieve(process.env.STRIPE_PRICE_PRO);
+      if (!proPriceMatchesOffer(price, PRO_PRICE_CENTS)) {
+        return NextResponse.json(
+          { error: "Billing price does not match the advertised Pro plan. Checkout is temporarily unavailable." },
+          { status: 503 }
+        );
       }
     }
     const session = await stripe.checkout.sessions.create({
@@ -89,7 +76,7 @@ export async function POST(req: NextRequest) {
         : { customer_email: user.email ?? undefined }),
       client_reference_id: user.id,
       metadata: { user_id: user.id },
-      subscription_data: { metadata: { user_id: user.id } },
+      subscription_data: { metadata: { user_id: user.id, klyp_plan: "pro" } },
       success_url: `${origin}/dashboard?upgraded=1`,
       cancel_url: `${origin}/dashboard`,
     });

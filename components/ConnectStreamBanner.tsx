@@ -49,11 +49,9 @@ export default function ConnectStreamBanner() {
 
   const connected = streams !== null && streams.length > 0;
   /**
-   * Having a row is not the same as being watched. A channel added by URL has
-   * no twitch_user_id, and the auto-clip poller skips exactly those rows — so
-   * this banner used to promise "Klyp watches this channel and clips your best
-   * moments automatically" to users whose Streams page said NOT ACTIVE. Only
-   * claim it when the poller would actually act on the channel.
+   * A URL-only row is not eligible for the auto-clip poller. This state only
+   * controls the connection indicator; the copy points users to manual VOD
+   * analysis until automatic clipping has been verified end to end.
    */
   const watched = (streams ?? []).filter((s) => s.twitch_user_id && s.auto_clip_enabled);
   const anyWatched = watched.length > 0;
@@ -65,8 +63,7 @@ export default function ConnectStreamBanner() {
           anyWatched ? "bg-accent-glow" : "bg-surface-2 border border-border"
         }`}
       >
-        {/* Lit only when a channel is actually being watched — the accent ring
-            reads as "this is running", which a URL-only channel is not. */}
+        {/* Lit only when a channel is eligible for the poller. */}
         <svg
           width="20" height="20" viewBox="0 0 24 24" fill="none"
           stroke={anyWatched ? "#00E5A0" : "#9898b0"}
@@ -95,8 +92,8 @@ export default function ConnectStreamBanner() {
             <p className="text-[15px] text-foreground-muted mt-0.5">
               {anyWatched ? (
                 <>
-                  Klyp watches {watched.length === 1 ? "this channel" : "these channels"} and clips
-                  your best moments automatically when you go live.
+                  {watched.length === 1 ? "This channel is" : "These channels are"} connected.
+                  Paste a published VOD below to find clips now.
                 </>
               ) : (
                 <>
@@ -110,7 +107,7 @@ export default function ConnectStreamBanner() {
           <>
             <p className="font-geist text-base font-semibold text-white">Connect your live stream</p>
             <p className="text-[15px] text-foreground-muted mt-0.5">
-              Link your Twitch or YouTube account to automatically find and clip your best moments.
+              Automatic clipping is coming soon. Paste a published VOD below to find clips now.
             </p>
           </>
         )}

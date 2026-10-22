@@ -534,6 +534,9 @@ function ClipsPageContent() {
             const done = exports[previewClip.id];
             if (done) downloadExport(done);
           }}
+          onMetadataRestored={(fields) => setClips((previous) => previous.map((item) =>
+            item.id === previewClip.id ? { ...item, ...fields } : item
+          ))}
         />
       )}
 

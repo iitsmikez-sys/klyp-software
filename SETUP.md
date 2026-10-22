@@ -6,7 +6,7 @@
 - **Twitch chat spike detection** — chat replay is sampled in parallel with the download; windows where chat exploded are fed to Claude as ranking signals (automatic for `twitch.tv/videos/…` URLs, silent no-op elsewhere)
 - **Export** — FFmpeg cuts each clip, crops 9:16 1080×1920, burns captions (BOLD / CLEAN / KLYP), optional `@handle` overlay (top-right), animated `klyp.world` watermark on free tier
 - **Download all as ZIP** — renders every clip and bundles them client-side
-- **Sparks** — server-enforced credits in Supabase. Free = 60/mo, Pro = 500/mo. Cost estimated before analysis (10–50 ⚡ by VOD length), deducted server-side after. Monthly reset is lazy (applied on next profile read)
+- **Sparks** — server-enforced credits in Supabase. Free = 150 per 30 days, Pro = 500 per paid subscription invoice. Cost estimated before analysis and deducted server-side.
 - **Stripe** — Pro subscription ($28/mo), checkout + billing portal + webhook that flips the profile tier
 - **Auto-Clipping (Twitch)** — connect a Twitch channel via OAuth; a `stream.offline` EventSub webhook queues a bounded retry-poll (VODs take a few minutes to publish) that runs the same analysis pipeline automatically when a new VOD appears, plus a low-frequency safety-net sweep in case a webhook is ever missed. Low Sparks balance → skip + in-app notification, never queued
 
@@ -14,8 +14,12 @@
 
 ### 1. Supabase — run the Sparks migration
 
-Open **Supabase Dashboard → SQL Editor**, paste the contents of
-`supabase/migrations/001_sparks_profiles.sql`, and run it.
+Open **Supabase Dashboard → SQL Editor** and apply the SQL files in
+`supabase/migrations/` in numeric order through
+`013_paid_invoice_sparks.sql`. Migration 012 adds the Sparks ledger;
+migration 013 makes a paid invoice the only Pro refill trigger and deduplicates
+by invoice and billing period. The webhook returns an error until its required
+tables and functions exist.
 
 This creates the `profiles` table (tier + Sparks), auto-provisions profiles on
 signup (and backfills existing users on first request), and adds the
@@ -50,8 +54,8 @@ Only the Stripe webhook uses it (webhooks have no user session). Never expose it
    price inline at checkout. Set it to a `price_…` id if you pre-create the
    product in the Stripe dashboard (cleaner for prod).
 
-Without the webhook running, checkout succeeds but the profile never flips to
-Pro — the webhook is what grants the tier.
+Without `invoice.paid` reaching the webhook, checkout can complete but the
+profile does not become Pro. The paid invoice grants the tier and Sparks.
 
 ### 4. Twitch — Auto-Clipping
 
@@ -107,7 +111,7 @@ Recommended path (roughly a day of work when you're ready):
    same domain if you put the worker behind a subdomain (e.g. `worker.klyp.world`).
 3. **Stripe prod webhook** — Dashboard → Webhooks → add
    `https://<your-app>/api/stripe/webhook` with events
-   `checkout.session.completed`, `customer.subscription.updated`,
+   `checkout.session.completed`, `invoice.paid`, `customer.subscription.updated`,
    `customer.subscription.deleted`; put its `whsec_…` in the Vercel env.
 4. Set all `.env.local` vars in both Vercel and Railway.
 

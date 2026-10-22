@@ -36,10 +36,12 @@ function fmtClipTime(seconds: number) {
 }
 
 export default function SavedClipEditor({
-  clip,
+  clip: initialClip,
+  onMetadataRestored,
   /** The preview dialog renders its own player, so it suppresses this one. */
   hidePreview = false,
-}: { clip: SavedClip; hidePreview?: boolean }) {
+}: { clip: SavedClip; hidePreview?: boolean; onMetadataRestored: (fields: Pick<SavedClip, "words" | "hooks">) => void }) {
+  const [clip, setClip] = useState(initialClip);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,6 +75,9 @@ export default function SavedClipEditor({
   const [format, setFormat] = useState<ExportFormat>("9:16");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [repairing, setRepairing] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
+  const [repairWarning, setRepairWarning] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -208,6 +213,37 @@ export default function SavedClipEditor({
     }
   };
 
+  const repairClip = async () => {
+    setRepairing(true);
+    setRepairError(null);
+    setRepairWarning(null);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6 * 60_000);
+    try {
+      const response = await processingFetch("/api/repair-clip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clip_id: clip.id }),
+        signal: controller.signal,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? `Repair failed (HTTP ${response.status}).`);
+      const updatedWords = Array.isArray(result.words) ? result.words : clip.words;
+      const updatedHooks = Array.isArray(result.hooks) ? result.hooks : clip.hooks;
+      setClip((current) => ({ ...current, words: updatedWords, hooks: updatedHooks }));
+      onMetadataRestored({ words: updatedWords, hooks: updatedHooks });
+      if (!selectedHook && Array.isArray(updatedHooks) && updatedHooks.length) setSelectedHook(updatedHooks[0]);
+      if (result.warning) setRepairWarning(result.warning);
+    } catch (err) {
+      setRepairError(controller.signal.aborted
+        ? "Repair timed out. Please try again."
+        : err instanceof Error ? err.message : "Clip repair failed.");
+    } finally {
+      clearTimeout(timeout);
+      setRepairing(false);
+    }
+  };
+
   return (
     <div className="mt-4 pt-4 border-t border-border" onClick={(e) => e.stopPropagation()}>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -298,6 +334,21 @@ export default function SavedClipEditor({
         Hook shown live — captions are burned in on export.
       </p>
       </>
+      )}
+
+      {(!hasWords || hooks.length === 0) && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+          <p className="text-amber-300 mb-2">
+            This older clip is missing {hasWords ? "hook options" : hooks.length ? "caption timing" : "caption timing and hook options"}.
+          </p>
+          <button onClick={repairClip} disabled={repairing}
+            className="rounded-md bg-accent px-3 py-2 font-bold text-background disabled:opacity-50">
+            {repairing ? "Restoring…" : "Restore captions and hooks"}
+          </button>
+          <p className="mt-2 text-subtle">Uses the saved video backup or original VOD. No Sparks charged.</p>
+          {repairWarning && <p className="mt-2 text-amber-300">{repairWarning}</p>}
+          {repairError && <p className="mt-2 text-red-400">{repairError}</p>}
+        </div>
       )}
 
       {/* Hook options */}
