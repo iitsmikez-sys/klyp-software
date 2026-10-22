@@ -162,9 +162,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       // Another request for the same clip may have produced it while this one
       // waited for a queue slot.
       if (existsSync(outPath) && (await stat(outPath)).size > 0) return;
-      // 360p is ample source for a 640x360 still, and the segment is shared
-      // with any later preview of the same range.
-      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 360);
+      // Share the preview's 480p segment. The older 360p cache on Railway
+      // included audio-only MP4s that cannot produce a still frame.
+      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 480);
       await extractFrame(sourcePath, frameTime(start, end) - offsetSeconds, outPath);
     });
     return serve();

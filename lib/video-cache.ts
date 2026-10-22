@@ -8,7 +8,8 @@ import { mkdir, readdir, stat, statfs, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { ffmpegLocationArgs, isDiskFullError, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
+import { ffmpegLocationArgs, isDiskFullError, resolveBin, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
+import { ensureVideoSegment, hasVideoStream } from "@/lib/video-segment";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
 
@@ -338,24 +339,18 @@ export async function resolveSourceSegment(
     `seg-${key}-${segStart}-${segEnd}${maxHeight !== 1080 ? `-h${maxHeight}` : ""}.mp4`
   );
 
-  if (existsSync(segPath) && (await stat(segPath)).size > 0) {
-    log("segment cache hit", key, `${segStart}-${segEnd}s`);
-    return { path: segPath, offsetSeconds: segStart };
-  }
-
   const existing = segmentInflight.get(segPath);
   if (existing) return existing;
 
   const job = (async (): Promise<ResolvedSegment> => {
     await mkdir(CACHE_DIR, { recursive: true });
-    await ensureCacheSpace(key);
-
     const startedAt = Date.now();
-    log("segment download start", key, `${segStart}-${segEnd}s`, `maxHeight=${maxHeight}`);
     try {
-      await runYtDlpWithRetry(
-        [
-          "-f", `bv*[height<=${maxHeight}][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=${maxHeight}]+ba/b`,
+      const download = async (format: string) => {
+        await ensureCacheSpace(key);
+        log("segment download start", key, `${segStart}-${segEnd}s`, `maxHeight=${maxHeight}`);
+        await runYtDlpWithRetry([
+          "-f", format,
           "--merge-output-format", "mp4",
           "--no-playlist",
           "--socket-timeout", "30",
@@ -365,11 +360,19 @@ export async function resolveSourceSegment(
           "--force-keyframes-at-cuts",
           "-o", segPath,
           ref,
-        ],
-        { stallTimeoutMs: 90_000, maxRunMs: 10 * 60_000 }
+        ], { stallTimeoutMs: 90_000, maxRunMs: 10 * 60_000 });
+      };
+      const probe = (filePath: string) => hasVideoStream(filePath, resolveBin("ffprobe"));
+      const wasCached = existsSync(segPath) && (await stat(segPath)).size > 0 && await probe(segPath);
+      await ensureVideoSegment(
+        segPath,
+        () => download(`bv*[height<=${maxHeight}][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=${maxHeight}]+ba/b`),
+        () => download(`bv[height<=${maxHeight}][ext=mp4][protocol=https]+ba[ext=m4a]/b[ext=mp4][protocol=https]/bv*[height<=${maxHeight}][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=${maxHeight}]+ba/b`),
+        probe
       );
-      if (!existsSync(segPath)) {
-        throw new Error("yt-dlp finished but the segment file was not produced.");
+      if (wasCached) {
+        log("segment cache hit", key, `${segStart}-${segEnd}s`);
+        return { path: segPath, offsetSeconds: segStart };
       }
       const { size } = await stat(segPath);
       log(
