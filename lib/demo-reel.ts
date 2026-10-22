@@ -18,20 +18,22 @@ export type DemoClip = {
   poster: string;
   /** Short, factual label for assistive tech. Not marketing copy. */
   label: string;
+  title: string;
+  caption: string;
 };
 
 /** The landscape source VOD the three clips are cut from. */
 export const DEMO_SOURCE = {
   src: "/demo/source.mp4",
   poster: "/demo/source.jpg",
-  label: "Example stream VOD",
+  label: "Licensed sample gaming footage",
 };
 
 /** The vertical clips cut from DEMO_SOURCE, in the order they're shown. */
 export const DEMO_CLIPS: DemoClip[] = [
-  { src: "/demo/clip-1.mp4", poster: "/demo/clip-1.jpg", label: "Example clip one" },
-  { src: "/demo/clip-2.mp4", poster: "/demo/clip-2.jpg", label: "Example clip two" },
-  { src: "/demo/clip-3.mp4", poster: "/demo/clip-3.jpg", label: "Example clip three" },
+  { src: "/demo/clip-1.mp4", poster: "/demo/clip-1.jpg", label: "Example clip one", title: "Winning moment", caption: "LET'S GO" },
+  { src: "/demo/clip-2.mp4", poster: "/demo/clip-2.jpg", label: "Example clip two", title: "Team moment", caption: "BIG REACTION" },
+  { src: "/demo/clip-3.mp4", poster: "/demo/clip-3.jpg", label: "Example clip three", title: "One more round", caption: "GAME ON" },
 ];
 
 /** Every file the demo needs, relative to public/ — used by the server check. */

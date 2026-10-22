@@ -59,7 +59,7 @@ function FlowNode() {
           Klyp finds the best moments
         </p>
         <span className="w-14 h-14 rounded-2xl bg-accent-glow border border-accent/30 flex items-center justify-center shadow-accent-glow-sm">
-          <Equalizer className="flex w-7" />
+          <Equalizer className="flex w-9 h-6" barCount={5} />
         </span>
       </div>
       <span className="hidden lg:block w-px h-8 bg-gradient-to-t from-transparent to-accent/40" />
@@ -92,9 +92,9 @@ function ClipCard({
   const label = fmtDuration(duration);
 
   return (
-    <div className="relative rounded-xl bg-surface/95 border border-border overflow-hidden group/clip">
+    <div className="min-w-0 group/clip">
       {/* 9:16 — the vertical format Klyp exports by default. */}
-      <div className="relative bg-black" style={{ aspectRatio: "9 / 16" }}>
+      <div className="relative bg-black rounded-xl border border-border overflow-hidden" style={{ aspectRatio: "9 / 16" }}>
         <video
           ref={ref}
           data-demo
@@ -132,7 +132,13 @@ function ClipCard({
             {label}
           </span>
         )}
+        <div className="absolute inset-x-0 bottom-0 pt-12 pb-4 px-2 bg-gradient-to-t from-black/85 to-transparent pointer-events-none text-center">
+          <span className="font-geist text-white text-[11px] sm:text-xs font-black tracking-tight leading-tight drop-shadow-md">
+            {clip.caption}
+          </span>
+        </div>
       </div>
+      <p className="mt-2 text-xs font-semibold text-foreground truncate">{clip.title}</p>
     </div>
   );
 }
@@ -163,7 +169,7 @@ function DemoReel() {
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2 h-2 rounded-full bg-purple-400 flex-shrink-0" />
             <p className="text-[13px] font-semibold text-foreground-muted truncate">
-              From your stream (VOD)
+              Sample gaming footage
             </p>
           </div>
           {sourceLabel && (
@@ -203,6 +209,9 @@ function DemoReel() {
           ))}
         </div>
       </div>
+      <p className="lg:col-span-3 text-center text-[11px] text-foreground-muted">
+        Illustrative sample footage, manually edited to show the format. Not a customer result.
+      </p>
     </div>
   );
 }
