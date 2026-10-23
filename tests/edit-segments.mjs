@@ -127,4 +127,3 @@ test("trim selected section cannot overlap its neighbors", () => {
   assert.deepEqual(trimSegment(sections, 1, "start", 5, 60)[1], { start: 10, end: 30 });
   assert.deepEqual(trimSegment(sections, 1, "end", 55, 60)[1], { start: 20, end: 40 });
 });
-
