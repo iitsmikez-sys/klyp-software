@@ -7,3 +7,8 @@ export function userFacingAnalysisError(stage: string, url: string, message: str
   }
   return message;
 }
+
+/** The SSE client appends a stage suffix, so match the stable user-facing prefix. */
+export function isYouTubeBotBlockError(message: string | null): boolean {
+  return message?.startsWith("YouTube blocked the server from downloading this VOD.") ?? false;
+}

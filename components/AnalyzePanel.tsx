@@ -20,6 +20,7 @@ import ProGateModal from "./ProGateModal";
 import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
@@ -1077,8 +1078,14 @@ export default function AnalyzePanel() {
         )}
 
         {error && (
-          <div className="mt-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
-            {error}
+          <div className="mt-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400" role="alert">
+            <p>{error}</p>
+            {isYouTubeBotBlockError(error) && (
+              <button type="button" onClick={() => { switchMode("file"); setError(null); }}
+                className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-background hover:bg-accent-dim">
+                Upload a video file instead
+              </button>
+            )}
           </div>
         )}
       </div>
