@@ -1099,7 +1099,7 @@ export default function AnalyzePanel() {
               <button
                 onClick={keepAll}
                 disabled={busy || !clips.some((_, i) => clipStatus[i] === "unsaved")}
-                title="Save every remaining clip to My Clips"
+                title="Save every remaining clip to Found Moments"
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-accent text-background text-[13px] font-bold hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -1401,14 +1401,14 @@ export default function AnalyzePanel() {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
-                    Saved to My Clips
+                    Saved to Found Moments
                   </div>
                 ) : (
                   <div className="mt-2 flex gap-2">
                     <button
                       onClick={() => keepClip(i)}
                       disabled={busy}
-                      title="Save this clip to My Clips"
+                      title="Save this clip to Found Moments"
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">

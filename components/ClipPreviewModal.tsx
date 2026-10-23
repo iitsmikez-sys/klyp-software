@@ -49,7 +49,7 @@ interface Props {
   exportState: ExportState | undefined;
   onCreateClip: () => void;
   onDownloadClip: () => void;
-  /** Opened from an editing action in the card's ⋯ menu, which lives in Details. */
+  /** Opened from a card's editor action with the controls already expanded. */
   initialDetailsOpen?: boolean;
 }
 
@@ -393,7 +393,7 @@ export default function ClipPreviewModal({
         </div>
 
         {/* ── Actions ── */}
-        <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
+        {!detailsOpen && <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
           {ready ? (
             <button
               onClick={onDownloadClip}
@@ -451,7 +451,7 @@ export default function ClipPreviewModal({
               Watch on {platform}
             </a>
           )}
-        </div>
+        </div>}
 
         {exportState?.status === "error" && (
           <p className="mx-6 mt-1 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
@@ -462,7 +462,7 @@ export default function ClipPreviewModal({
           </p>
         )}
 
-        {/* ── Details: scene analysis, transcript and the full export controls ── */}
+        {/* ── Editor: scene analysis, transcript and export controls ── */}
         <div className="px-6 pb-6 pt-3">
           <button
             onClick={() => setDetailsOpen((v) => !v)}
@@ -476,7 +476,7 @@ export default function ClipPreviewModal({
             >
               <polyline points="6 9 12 15 18 9" />
             </svg>
-            Details
+            {detailsOpen ? "Editor" : "Open editor"}
           </button>
           {detailsOpen && (
             /* The editor renders its own 9:16 player for hook/caption placement;
