@@ -67,15 +67,15 @@ export default function EditorTimeline(props: Props) {
     onTrimSource(action.index, action.edge, delta);
   };
 
-  return <section aria-label="Video timeline" className="shrink-0 border-t border-[#24404a] bg-[#071218] xl:h-[31dvh] xl:min-h-[274px] xl:max-h-[370px] overflow-x-auto overflow-y-auto">
+  return <section aria-label="Video timeline" className="shrink-0 border-t border-[#24404a] bg-[#071218] xl:h-[28dvh] xl:min-h-[240px] xl:max-h-[340px] overflow-x-auto overflow-y-auto">
     <div className="min-w-[1020px] px-0 pb-3">
-      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-[#25414a] bg-[#091820] px-3 py-2">
+      <div className="sticky top-0 z-30 flex h-9 items-center justify-between border-b border-[#25414a] bg-[#091820] px-3">
         <div className="flex items-center gap-1 text-xs text-[#e2edf0]">
-          <button type="button" onClick={onSplit} disabled={!canSplit || exporting} className="rounded px-2 py-1.5 hover:bg-white/10 disabled:opacity-35">✂ <span className="ml-1">Split</span></button>
-          <button type="button" onClick={onDelete} disabled={!canDelete || exporting} className="rounded px-2 py-1.5 hover:bg-white/10 disabled:opacity-35">▤ <span className="ml-1">Delete</span></button>
+          <button type="button" onClick={onSplit} disabled={!canSplit || exporting} className="rounded px-2 py-1 hover:bg-white/10 disabled:opacity-35">✂ <span className="ml-1">Split</span></button>
+          <button type="button" onClick={onDelete} disabled={!canDelete || exporting} className="rounded px-2 py-1 hover:bg-white/10 disabled:opacity-35">▤ <span className="ml-1">Delete</span></button>
           <span className="mx-1 h-4 border-l border-[#35505a]" />
-          <button type="button" onClick={onUndo} disabled={!canUndo || exporting} className="rounded px-2 py-1.5 hover:bg-white/10 disabled:opacity-35">↶ <span className="ml-1">Undo</span></button>
-          <button type="button" onClick={onRedo} disabled={!canRedo || exporting} className="rounded px-2 py-1.5 hover:bg-white/10 disabled:opacity-35">↷ <span className="ml-1">Redo</span></button>
+          <button type="button" onClick={onUndo} disabled={!canUndo || exporting} className="rounded px-2 py-1 hover:bg-white/10 disabled:opacity-35">↶ <span className="ml-1">Undo</span></button>
+          <button type="button" onClick={onRedo} disabled={!canRedo || exporting} className="rounded px-2 py-1 hover:bg-white/10 disabled:opacity-35">↷ <span className="ml-1">Redo</span></button>
         </div>
         <div className="font-mono text-[11px] text-[#9db0b9]">{clock(time)} / {clock(duration)}</div>
       </div>
@@ -86,21 +86,21 @@ export default function EditorTimeline(props: Props) {
             <span className="absolute -left-5 -top-[2px] rounded bg-white px-1 py-0.5 font-mono text-[10px] text-black">{clock(time)}</span>
           </span>
         </div>
-        <div className={`${row} h-8`}>
+        <div className={`${row} h-7`}>
           <div className={`${label} text-[#a7bac2]`}>Timeline</div>
           <div className="relative cursor-crosshair border-b border-[#2a4149] bg-[#0b1b22]" onClick={seekFromLane}>
             {ticks.map((seconds) => <span key={seconds} className="absolute bottom-0 top-0 border-l border-[#526873] pl-1 pt-1 font-mono text-[10px] text-[#a7bac2]" style={{ left: pct(seconds) }}>{clock(seconds)}</span>)}
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-[repeating-linear-gradient(to_right,transparent_0,transparent_20px,#38515b_20px,#38515b_21px)]" />
           </div>
         </div>
-        <div className={`${row} h-8`}>
+        <div className={`${row} h-7`}>
           <div className={label}><span className="text-base">T</span> Hook (Text)</div>
           <div className={lane} onClick={seekFromLane}>
             {hook && <button type="button" onClick={() => onSeek(0)} style={{ left: 0, width: pct(Math.min(3, duration)) }}
               className="absolute top-1 h-6 truncate rounded border border-[#67efc6] bg-[#42dcb3] px-2 text-left text-[10px] font-semibold text-[#08271f]">T&nbsp; {hook}</button>}
           </div>
         </div>
-        <div className={`${row} h-10`}>
+        <div className={`${row} h-9`}>
           <div className={label}><span className="text-base">▤</span> Captions</div>
           <div className={lane} onClick={seekFromLane}>
             {cues.map((cue, index) => <button type="button" key={index} onClick={() => onSeek(cue.startMs / 1000)}
@@ -108,7 +108,7 @@ export default function EditorTimeline(props: Props) {
               className="absolute top-1 h-8 overflow-hidden truncate rounded border border-[#28a98a] bg-[#064f41] px-1.5 text-left text-[10px] text-[#ddfff2]">{cue.text}</button>)}
           </div>
         </div>
-        <div className={`${row} h-12`}>
+        <div className={`${row} h-11`}>
           <div className={label}><span className="text-base">▣</span> Video</div>
           <div data-track="video" className={`${lane} cursor-crosshair`} onClick={seekFromLane}>
             {items.map((item, index) => {
@@ -149,7 +149,7 @@ export default function EditorTimeline(props: Props) {
             })}
           </div>
         </div>
-        <div className={`${row} h-10`}>
+        <div className={`${row} h-9`}>
           <div className={label}><span className="text-base">▧</span> Images</div>
           <div data-track="images" className={`${lane} cursor-crosshair`} onClick={seekFromLane}>
             {media.map((item, index) => item.placement === "overlay" && <div key={item.id}
@@ -172,7 +172,7 @@ export default function EditorTimeline(props: Props) {
             </div>)}
           </div>
         </div>
-        <div className={`${row} h-10`}>
+        <div className={`${row} h-9`}>
           <div className={label}><span className="text-base">♫</span> Audio</div>
           <div data-track="audio" className={`${lane} flex items-center overflow-hidden bg-[#06372f]`} onClick={seekFromLane}>
             {items.map((item, index) => <div key={index} style={{ width: pct(item.end - item.start) }} className="flex h-full items-center overflow-hidden border-r border-[#136e5c]/60">

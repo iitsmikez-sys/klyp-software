@@ -62,6 +62,10 @@ export default function SavedClipEditor({
   const [retryToken, setRetryToken] = useState(0);
   const [transcriptOnly, setTranscriptOnly] = useState(false);
   const [leftTab, setLeftTab] = useState<"transcript" | "scene" | "media">("transcript");
+  const [settingsTab, setSettingsTab] = useState<"edit" | "style">("edit");
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
+  const styleSectionRef = useRef<HTMLDivElement>(null);
+  const previewFrameRef = useRef<HTMLDivElement>(null);
   const [transcriptSearch, setTranscriptSearch] = useState("");
   const [timelinePoster, setTimelinePoster] = useState<string | null>(() => peekClipThumbnail(clip));
   const [timelineFrames, setTimelineFrames] = useState<string[]>([]);
@@ -708,30 +712,47 @@ export default function SavedClipEditor({
   return (
     <div className={workspace ? "xl:h-full xl:flex xl:flex-col bg-[#080f13]" : "mt-4 pt-4 border-t border-border"} onClick={(e) => e.stopPropagation()}>
       {workspace && (
-        <div className="h-14 shrink-0 flex items-center gap-3 border-b border-[#24323a] bg-[#0b151b] px-4 pr-14">
-          <span className="font-syne text-xl font-black tracking-tight text-white"><span className="text-accent">K</span>LYP</span>
-          <span className="hidden sm:block h-6 w-px bg-[#2b3941]" />
-          <span className="min-w-0 truncate text-sm font-semibold text-foreground" title={clip.title}>{clip.title}</span>
-          <span className="hidden md:block shrink-0 text-[11px] text-foreground-muted">☁ Saved on this device</span>
+        <div className="h-[60px] shrink-0 flex items-center gap-5 border-b border-[#24323a] bg-[#071218] px-7 pr-14">
+          <span className="font-syne text-[28px] font-black tracking-tight text-white"><span className="text-accent">K</span>LYP</span>
+          <span className="hidden sm:block h-7 w-px bg-[#2b3941]" />
+          <span className="min-w-0 truncate text-base font-semibold text-foreground" title={clip.title}>{clip.title}</span>
+          <span className="hidden md:block h-7 w-px bg-[#2b3941]" />
+          <span className="hidden md:block shrink-0 text-xs text-foreground-muted"><span className="text-accent">☁</span> &nbsp;Saved on this device</span>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden sm:inline rounded-md border border-border px-2 py-1 text-[11px] text-foreground-muted">{format}</span>
+            <button type="button" onClick={undoEdit} disabled={undoStack.length === 0 || exporting}
+              title="Undo" aria-label="Undo" className="hidden sm:inline rounded px-2 text-xl text-foreground-muted hover:text-white disabled:opacity-40">↶</button>
+            <button type="button" onClick={redoEdit} disabled={redoStack.length === 0 || exporting}
+              title="Redo" aria-label="Redo" className="hidden sm:inline rounded px-2 text-xl text-foreground-muted hover:text-white disabled:opacity-40">↷</button>
+            <span className="hidden sm:inline rounded-md border border-border px-3 py-1.5 text-xs text-foreground-muted">{format}</span>
             <button type="button" onClick={exportClip} disabled={exporting}
-              className="rounded-lg bg-accent px-4 py-2 text-xs font-bold text-background hover:bg-accent-dim disabled:opacity-50">
-              {exporting ? "Exporting…" : "↑ Export clip"}
+              className="rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-background hover:bg-accent-dim disabled:opacity-50">
+              {exporting ? "Exporting…" : "↑ Export"}
             </button>
           </div>
         </div>
       )}
       <div className={workspace
-        ? "grid grid-cols-1 xl:grid-cols-[minmax(280px,27%)_minmax(360px,1fr)_minmax(310px,27%)] xl:flex-1 xl:min-h-0 items-stretch border-b border-[#24323a]"
+        ? "grid grid-cols-1 xl:grid-cols-[minmax(420px,32%)_minmax(360px,31%)_minmax(420px,37%)] xl:flex-1 xl:min-h-0 items-stretch border-b border-[#24323a]"
         : "grid grid-cols-1 lg:grid-cols-2 gap-6 items-start"}>
 
       {/* ── Scene analysis (left): description + transcript with timestamps ── */}
       <div className={workspace
-        ? "order-2 xl:order-1 min-w-0 min-h-0 xl:overflow-y-auto border-r border-[#24323a] bg-[#0b151b] p-4 space-y-3"
+        ? "order-2 xl:order-1 min-w-0 min-h-0 flex border-r border-[#24323a] bg-[#0b151b]"
         : "space-y-3"}>
+        {workspace && <nav aria-label="Editor sections" className="hidden xl:flex w-[100px] shrink-0 flex-col items-stretch gap-1 border-r border-[#20343e] bg-[#061119] pt-2">
+          {(["transcript", "media", "scene"] as const).map((tab) => (
+            <button key={tab} type="button" onClick={() => setLeftTab(tab)} aria-current={leftTab === tab ? "page" : undefined}
+              className={`mx-1 flex h-[76px] flex-col items-center justify-center gap-1.5 rounded-md text-[11px] font-semibold transition-colors ${leftTab === tab ? "border-l-4 border-accent bg-[#073d34] text-white" : "text-foreground-muted hover:bg-white/5 hover:text-white"}`}>
+              {tab === "transcript" ? <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M6 2.5h8l4 4V21H6z"/><path d="M14 2.5V7h4M9 11h6M9 15h6M9 19h4"/></svg>
+                : tab === "media" ? <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg>
+                : <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 19h16M6 16l3-5 3 2 4-7 2 3"/><circle cx="9" cy="11" r="1"/></svg>}
+              {tab === "scene" ? "Scene" : tab === "media" ? "Media" : "Transcript"}
+            </button>
+          ))}
+        </nav>}
+        <div className={workspace ? "flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4" : "space-y-3"}>
         {workspace && (
-          <div className="flex gap-4 border-b border-[#263943] pb-2">
+          <div className="flex gap-4 border-b border-[#263943] pb-2 xl:hidden">
             {(["transcript", "scene", "media"] as const).map((tab) => (
               <button key={tab} type="button" onClick={() => setLeftTab(tab)}
                 className={`pb-1 text-xs font-semibold capitalize ${leftTab === tab ? "border-b-2 border-accent text-white" : "text-foreground-muted hover:text-white"}`}>
@@ -756,10 +777,15 @@ export default function SavedClipEditor({
         </div>}
 
         {workspace && leftTab === "transcript" && (
-          <input type="search" value={transcriptSearch} onChange={(event) => setTranscriptSearch(event.target.value)}
-            placeholder="Search transcript…" aria-label="Search transcript"
-            className="w-full rounded-lg border border-[#263943] bg-[#0b1117] px-3 py-2 text-xs text-foreground placeholder:text-subtle focus:border-accent focus:outline-none" />
+          <div className="flex items-center gap-4 border-b border-[#263943] pb-3">
+            <h2 className="hidden shrink-0 border-b-2 border-accent pb-2 text-base font-semibold text-white xl:block">Transcript</h2>
+            <input type="search" value={transcriptSearch} onChange={(event) => setTranscriptSearch(event.target.value)}
+              placeholder="⌕  Search transcript…" aria-label="Search transcript"
+              className="min-w-0 flex-1 rounded-lg border border-[#263943] bg-[#0b1117] px-3 py-2 text-xs text-foreground placeholder:text-subtle focus:border-accent focus:outline-none" />
+          </div>
         )}
+
+        {workspace && leftTab !== "transcript" && <h2 className="hidden xl:block border-b border-[#263943] pb-3 text-base font-semibold text-white">{leftTab === "media" ? "Media" : "Scene analysis"}</h2>}
 
         {((workspace && leftTab === "scene") || (!workspace && !transcriptOnly)) && (
           <div className="px-3.5 py-3 rounded-lg bg-surface-2 border border-border space-y-1.5">
@@ -770,14 +796,14 @@ export default function SavedClipEditor({
         )}
 
         {(!workspace || leftTab === "transcript") && (transcriptCues.length > 0 ? (
-          <div className="max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border">
-            {transcriptCues.filter((cue) => cue.text.toLowerCase().includes(transcriptSearch.toLowerCase())).map((cue, i) => (
+          <div className={workspace ? "min-h-0 flex-1 overflow-y-auto scrollbar-thin" : "max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border"}>
+            {transcriptCues.filter((cue) => cue.text.toLowerCase().includes(transcriptSearch.toLowerCase())).map((cue) => (
               <button
-                key={i}
+                key={cue.t}
                 type="button"
                 onClick={() => seekTo(cue.t)}
                 disabled={segmentIndexAtSource(segments, cue.t) < 0}
-                className="w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2 disabled:opacity-35 disabled:line-through disabled:cursor-not-allowed"
+                className={`w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2 disabled:opacity-35 disabled:line-through disabled:cursor-not-allowed ${workspace && cue.t <= currentTime && (transcriptCues.find((next) => next.t > cue.t)?.t ?? Infinity) > currentTime ? "rounded-md bg-accent/10 text-accent" : ""}`}
               >
                 <span className="flex-shrink-0 text-[10px] font-mono text-accent mt-0.5">
                   {fmtClipTime(cue.t)}
@@ -795,16 +821,6 @@ export default function SavedClipEditor({
         {workspace && leftTab === "media" && (
           <div className="space-y-3">
             <p className="text-xs text-foreground-muted">Add your own photo or video to the timeline.</p>
-            <div className="grid grid-cols-2 gap-2">
-              {([{"label":"Add photo","accept":"image/jpeg,image/png,image/webp,image/heic,image/heif"},
-                {"label":"Add video","accept":"video/mp4,video/quicktime,video/webm"}]).map(({ label, accept }) => (
-                <label key={label} className="cursor-pointer rounded-lg border border-[#30424c] bg-[#101c23] px-3 py-3 text-center text-xs font-semibold text-foreground hover:border-accent/60">
-                  + {label}
-                  <input type="file" accept={accept} className="sr-only" disabled={uploadingMedia || exporting}
-                    onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadMedia(file); }} />
-                </label>
-              ))}
-            </div>
             {uploadingMedia && <p className="text-xs text-accent">Importing media…</p>}
             {mediaError && <p role="alert" className="text-xs text-red-400">{mediaError}</p>}
             {media.map((item, index) => (
@@ -821,15 +837,26 @@ export default function SavedClipEditor({
             ))}
           </div>
         )}
+        {workspace && <div className="mt-auto grid grid-cols-2 gap-3 border-t border-[#263943] pt-3">
+          {([{"label":"Add photo","accept":"image/jpeg,image/png,image/webp,image/heic,image/heif","icon":"▧"},
+            {"label":"Add video","accept":"video/mp4,video/quicktime,video/webm","icon":"▣"}]).map(({ label, accept, icon }) => (
+            <label key={label} className="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#30424c] bg-[#0d1a21] text-xs font-semibold text-foreground hover:border-accent/60">
+              <span className="text-lg">{icon}</span>{label}
+              <input type="file" accept={accept} className="sr-only" disabled={uploadingMedia || exporting}
+                onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadMedia(file); }} />
+            </label>
+          ))}
+        </div>}
+        </div>
       </div>
 
       {/* ── Vertical preview (centre) ── */}
       <div className={workspace
-        ? "order-1 xl:order-2 min-w-0 min-h-0 xl:overflow-y-auto bg-[#060d12] px-3 py-2 flex flex-col justify-center"
+        ? "order-1 xl:order-2 min-w-0 min-h-0 bg-[#050d12] flex flex-col justify-between"
         : "order-1 lg:order-2 min-w-0 rounded-xl border border-border bg-background p-3"}>
         {!workspace && <p className="mb-3 text-sm font-semibold text-foreground">Preview</p>}
-        <div className="relative bg-black rounded-lg overflow-hidden mx-auto"
-          style={{ aspectRatio: "9/16", height: workspace ? "clamp(220px, min(54dvh, calc(100dvh - 410px)), 590px)" : undefined, maxHeight: workspace ? undefined : 380 }}>
+        <div ref={previewFrameRef} className="relative bg-black overflow-hidden mx-auto"
+          style={{ aspectRatio: "9/16", height: workspace ? "clamp(220px, min(56dvh, calc(100dvh - 410px)), 590px)" : undefined, maxHeight: workspace ? undefined : 380 }}>
         {loadingPreview && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground-muted">
             <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
@@ -935,41 +962,63 @@ export default function SavedClipEditor({
           </>
         )}
         </div>
-        <div className="mt-2 flex items-center justify-center gap-4 text-xs text-foreground-muted">
-          <button type="button" onClick={togglePlayback} disabled={!previewUrl} className="rounded-md border border-border px-3 py-1 text-foreground hover:border-accent/50 disabled:opacity-40">
-            {playing ? "Pause" : "Play"}
-          </button>
+        {workspace ? <div className="flex h-[58px] items-center justify-between gap-2 border-t border-[#22343c] bg-[#07141c] px-4 text-xs text-foreground-muted">
+          <div className="flex min-w-0 items-center gap-2">
+            <button type="button" onClick={() => setMuted((value) => !value)} disabled={!previewUrl}
+              className="rounded border border-[#29424c] px-2 py-1.5 text-white hover:border-accent disabled:opacity-40"
+              aria-label={muted ? "Unmute preview" : "Mute preview"}>{muted ? "◌" : "◖))"}</button>
+            <span className="whitespace-nowrap font-mono text-white">{fmtClipTime(editedTime)} / {fmtClipTime(editedDuration)}</span>
+          </div>
+          <div className="flex items-center gap-3 text-white">
+            <button type="button" onClick={() => seekOutput(Math.max(0, editedTime - 5))} disabled={!previewUrl}
+              aria-label="Back five seconds" className="px-1 text-lg hover:text-accent disabled:opacity-40">⏮</button>
+            <button type="button" onClick={togglePlayback} disabled={!previewUrl}
+              aria-label={playing ? "Pause preview" : "Play preview"}
+              className="min-w-10 px-1 text-3xl leading-none hover:text-accent disabled:opacity-40">{playing ? "Ⅱ" : "▶"}</button>
+            <button type="button" onClick={() => seekOutput(Math.min(editedDuration, editedTime + 5))} disabled={!previewUrl}
+              aria-label="Forward five seconds" className="px-1 text-lg hover:text-accent disabled:opacity-40">⏭</button>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={format} onChange={(event) => {
+              const next = event.target.value as ExportFormat;
+              if (!isPro && next !== "9:16") setProGateOpen(true);
+              else setFormat(next);
+            }} aria-label="Export format" className="rounded border border-[#29424c] bg-[#07141c] px-2 py-1.5 text-white">
+              {EXPORT_FORMATS.map((option) => <option key={option} value={option}>{option}{!isPro && option !== "9:16" ? " 🔒" : ""}</option>)}
+            </select>
+            <button type="button" onClick={() => void previewFrameRef.current?.requestFullscreen?.()}
+              aria-label="Full screen preview" className="rounded border border-[#29424c] px-2 py-1.5 text-white hover:border-accent">⛶</button>
+          </div>
+        </div> : <div className="mt-2 flex items-center justify-center gap-4 text-xs text-foreground-muted">
+          <button type="button" onClick={togglePlayback} disabled={!previewUrl} className="rounded-md border border-border px-3 py-1 text-foreground hover:border-accent/50 disabled:opacity-40">{playing ? "Pause" : "Play"}</button>
           <span className="font-mono">{fmtClipTime(editedTime)} / {fmtClipTime(editedDuration)}</span>
-          <button type="button" onClick={() => setMuted((value) => !value)} disabled={!previewUrl} className="rounded-md border border-border px-2 py-1 text-foreground hover:border-accent/50 disabled:opacity-40" aria-label={muted ? "Unmute preview" : "Mute preview"}>
-            {muted ? "Unmute" : "Mute"}
-          </button>
-        </div>
-      <p className="text-[10px] text-subtle text-center mt-1">
+          <button type="button" onClick={() => setMuted((value) => !value)} disabled={!previewUrl} className="rounded-md border border-border px-2 py-1 text-foreground hover:border-accent/50 disabled:opacity-40" aria-label={muted ? "Unmute preview" : "Mute preview"}>{muted ? "Unmute" : "Mute"}</button>
+        </div>}
+      {!workspace && <p className="text-[10px] text-subtle text-center mt-1">
         Click the hook or captions in the preview to edit their text.
-      </p>
+      </p>}
       </div>
 
       {/* ── Editing controls (right) ── */}
-      <div className={workspace
-        ? "order-3 min-w-0 min-h-0 space-y-5 xl:overflow-y-auto border-l border-[#24323a] bg-[#0b151b] p-4 pb-8"
+      <div ref={settingsPanelRef} className={workspace
+        ? "order-3 min-w-0 min-h-0 space-y-4 xl:overflow-y-auto border-l border-[#24323a] bg-[#08141b] p-4 pb-8"
         : "order-3 min-w-0 space-y-4 rounded-xl border border-border bg-background p-4"}>
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">{workspace ? "Edit" : "Clip settings"}</h3>
+      <div className={workspace ? "sticky -top-4 z-20 -mx-4 -mt-4 flex border-b border-[#29414a] bg-[#08141b]" : "flex items-center justify-between gap-2"}>
+        {workspace ? <>
+          <button type="button" onClick={() => { setSettingsTab("edit"); settingsPanelRef.current?.scrollTo({ top: 0, behavior: "smooth" }); }}
+            aria-current={settingsTab === "edit" ? "page" : undefined}
+            className={`w-1/2 border-b-[3px] py-3 text-sm font-semibold ${settingsTab === "edit" ? "border-accent text-accent" : "border-transparent text-foreground-muted hover:text-white"}`}>Edit</button>
+          <button type="button" onClick={() => { setSettingsTab("style"); styleSectionRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }); }}
+            aria-current={settingsTab === "style" ? "page" : undefined}
+            className={`w-1/2 border-b-[3px] py-3 text-sm font-semibold ${settingsTab === "style" ? "border-accent text-accent" : "border-transparent text-foreground-muted hover:text-white"}`}>Style</button>
+        </> : <h3 className="text-sm font-semibold text-foreground">Clip settings</h3>}
         {!workspace && <span className="text-[10px] text-subtle">Saved on this device</span>}
       </div>
-      {workspace && (
-        <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-foreground-muted">
-          <p className="font-semibold text-foreground">Section {selectedSegment + 1} of {segments.length}</p>
-          <p className="mt-1 font-mono">
-            {fmtClipTime(segments[selectedSegment]?.start ?? 0)}–{fmtClipTime(segments[selectedSegment]?.end ?? 0)} in the original moment
-          </p>
-        </div>
-      )}
 
       {/* Hook options */}
       <div>
-        <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">
-          Hook{" "}
+        <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>
+          {workspace ? "Hook Text" : "Hook"}{" "}
           <span className="font-normal normal-case tracking-normal text-subtle">
             — shown on screen for the first 3s
           </span>
@@ -979,9 +1028,9 @@ export default function SavedClipEditor({
           onChange={(event) => setSelectedHook(event.target.value ? event.target.value.slice(0, 80) : null)}
           placeholder="Type a hook or choose an AI suggestion"
           className="mb-3 w-full rounded-lg border border-[#30424c] bg-[#0a1117] px-3 py-2 text-xs text-foreground placeholder:text-subtle focus:border-accent focus:outline-none" />}
-        {workspace && <p className="mb-2 text-[10px] font-semibold text-foreground-muted">✧ AI suggestions</p>}
+        {workspace && <p className="mb-2 text-xs font-semibold text-foreground-muted">✧ AI suggestions</p>}
         {hooks.length > 0 ? (
-          <div className="flex flex-col gap-1.5">
+          <div className={workspace ? "flex flex-wrap gap-1.5" : "flex flex-col gap-1.5"}>
             {hooks.map((hookText) => {
               const selected = selectedHook === hookText;
               return (
@@ -989,7 +1038,7 @@ export default function SavedClipEditor({
                   key={hookText}
                   onClick={() => setSelectedHook(selected ? null : hookText)}
                   disabled={exporting}
-                  className={`text-left px-3 py-1.5 rounded-lg border text-xs transition-colors disabled:opacity-50 ${
+                  className={`text-left px-3 py-1.5 border transition-colors disabled:opacity-50 ${workspace ? "rounded-full text-[10px]" : "rounded-lg text-xs"} ${
                     selected
                       ? "bg-accent-glow border-accent/50 text-accent font-semibold"
                       : "bg-surface-2 border-border text-foreground-muted hover:border-subtle"
@@ -1022,8 +1071,8 @@ export default function SavedClipEditor({
 
       {/* Hook text style */}
       {selectedHook && (
-        <div>
-          <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">
+        <div ref={styleSectionRef}>
+          <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>
             Hook Text Style
           </p>
           <div className={workspace ? "grid grid-cols-5 gap-1.5" : "flex flex-wrap gap-1.5"}>
@@ -1049,8 +1098,8 @@ export default function SavedClipEditor({
       )}
 
       {/* Caption style */}
-      <div>
-        <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">
+      <div ref={selectedHook ? undefined : styleSectionRef}>
+        <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>
           Caption Style
         </p>
         {hasWords ? (
@@ -1081,7 +1130,7 @@ export default function SavedClipEditor({
       {hasWords && (
         <div className="space-y-3">
           <div>
-            <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">Caption color</p>
+            <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>Caption color</p>
             <div className={workspace ? "grid grid-cols-5 gap-1.5" : "flex flex-wrap gap-1.5"}>
               {CAPTION_COLORS.map((color) => (
                 <button key={color} type="button" onClick={() => setCaptionColor(color)} disabled={exporting}
@@ -1093,7 +1142,7 @@ export default function SavedClipEditor({
             </div>
           </div>
           <div>
-            <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">Caption position</p>
+            <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>Caption position</p>
             <div className="flex gap-1.5">
               {CAPTION_POSITIONS.map((position) => (
                 <button key={position} type="button" onClick={() => setCaptionPosition(position)} disabled={exporting}
@@ -1115,7 +1164,7 @@ export default function SavedClipEditor({
       )}
 
       {/* Format */}
-      <div className="flex items-center gap-2">
+      {!workspace && <div className="flex items-center gap-2">
         <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
           Format
         </p>
@@ -1141,8 +1190,9 @@ export default function SavedClipEditor({
           })}
         </div>
         <span className="text-[10px] text-subtle">{FORMAT_LABELS[format]}</span>
-      </div>
+      </div>}
 
+      {workspace && <div className="grid grid-cols-1 gap-2 2xl:grid-cols-2">
       {workspace && segments[selectedSegment] && (
         <div className="rounded-lg border border-border bg-surface-2 p-3">
           <p className="mb-2 text-xs font-semibold text-foreground">Trim section {selectedSegment + 1}</p>
@@ -1225,6 +1275,7 @@ export default function SavedClipEditor({
           )}
         </div>
       )}
+      </div>}
 
       {exportError && (
         <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
