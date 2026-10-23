@@ -12,6 +12,7 @@ import { getStoredHandle } from "@/lib/streamer-handle";
 import { type ExportState, exportFilename, downloadExport } from "@/lib/clip-export";
 import type { SavedClip } from "@/lib/clip-ui";
 import { readClipEditDraft, toClipExportPayload } from "@/lib/clip-edit-draft";
+import { readLayoutExportWarning } from "@/lib/layout-export-warning";
 
 export function useClipExports(onSparksSpent?: () => void) {
   const [exports, setExports] = useState<Record<string, ExportState>>({});
@@ -68,6 +69,7 @@ export function useClipExports(onSparksSpent?: () => void) {
           status: "ready",
           objectUrl: URL.createObjectURL(blob),
           filename: exportFilename(draft.title, upscale ? "_4k" : ""),
+          warning: readLayoutExportWarning(res),
         };
         setExports((prev) => ({ ...prev, [clip.id]: state }));
         // The click that asked for it is still the user's intent to save.

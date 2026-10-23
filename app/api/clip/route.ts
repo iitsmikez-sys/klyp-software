@@ -31,6 +31,8 @@ import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache"
 import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
+import { planVerticalLayout, validateVerticalLayout, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
+import { buildVerticalFilterGraph } from "@/lib/vertical-layout-ffmpeg";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { clipSeekRange } from "@/lib/clip-trim";
 import { UPSCALE_COST } from "@/lib/sparks";
@@ -71,7 +73,7 @@ function handleFilter(handle: string): string {
 }
 
 /** Native video dimensions via ffprobe — used as ASS PlayRes for "Original" exports. */
-async function probeVideoSize(sourcePath: string): Promise<{ w: number; h: number }> {
+async function probeVideoSize(sourcePath: string): Promise<{ w: number; h: number } | null> {
   try {
     const out = await runCapture(resolveBin("ffprobe"), [
       "-v", "error",
@@ -85,7 +87,7 @@ async function probeVideoSize(sourcePath: string): Promise<{ w: number; h: numbe
   } catch {
     // fall through to the 1080p default below
   }
-  return { w: 1920, h: 1080 };
+  return null;
 }
 
 async function cutClip(
@@ -98,7 +100,8 @@ async function cutClip(
   hookAssPath?: string,
   handle?: string,
   raw = false,
-  upscale = false
+  upscale = false,
+  verticalPlan?: VerticalLayoutPlan
 ): Promise<string> {
   const duration = endSeconds - startSeconds;
   const outPath = path.join(
@@ -136,11 +139,17 @@ async function cutClip(
     vf += `,${watermarkFilter()}`;
   }
 
+  const composed = !raw && verticalPlan ? buildVerticalFilterGraph(verticalPlan, [
+    ...(assPath ? [`subtitles='${toFfmpegPath(assPath)}'`] : []),
+    ...(hookAssPath ? [`subtitles='${toFfmpegPath(hookAssPath)}'`] : []),
+    ...(handle ? [handleFilter(handle)] : []),
+    ...(!isPro ? [watermarkFilter()] : []),
+  ]) : null;
   await run(resolveBin("ffmpeg"), [
     "-ss", String(startSeconds),
     "-t", String(duration),
     "-i", sourcePath,
-    ...(raw ? [] : ["-vf", vf]),
+    ...(raw ? [] : composed ? ["-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", "0:a?"] : ["-vf", vf]),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "23",
@@ -186,11 +195,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let hookStyle: HookStyle = "IMPACT";
   let raw = false;
   let upscale = false;
+  let requestedLayout: unknown;
   try {
     const body = await req.json();
     clipId = String(body.clip_id ?? "");
     raw = body.raw === true;
     upscale = body.upscale === true && !raw; // upscale applies to rendered exports only
+    requestedLayout = body.vertical_layout;
     url = String(body.url ?? "").trim();
     start = Number(body.start_seconds);
     end = Number(body.end_seconds);
@@ -254,9 +265,19 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // why the raw tier flag alone isn't trusted (it can drift from reality).
   const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
   const sparksBalance = profile.sparks;
-
   // Format switching is Pro — free tier always exports the 9:16 default.
   if (!isPro) format = "9:16";
+  let verticalLayout: VerticalLayoutV1 | null = null;
+  let layoutWarning: string | null = null;
+  if (!raw && format === "9:16") {
+    const override = isPro && requestedLayout != null;
+    const selected = override ? requestedLayout : profile.vertical_layout;
+    try { verticalLayout = selected ? validateVerticalLayout(selected) : null; }
+    catch {
+      if (override) return NextResponse.json({ error: "Invalid vertical layout." }, { status: 400 });
+      layoutWarning = "Saved layout is invalid; the full frame was exported.";
+    }
+  }
 
   if (upscale) {
     if (!isPro) {
@@ -341,12 +362,21 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       let res: { w: number; h: number };
       if (format === "Original") {
         const t1 = Date.now();
-        res = await probeVideoSize(sourcePath);
+        res = await probeVideoSize(sourcePath) ?? { w: 1920, h: 1080 };
         log("probed source size", `${res.w}x${res.h}`, `in ${((Date.now() - t1) / 1000).toFixed(1)}s`);
       } else {
         res = FORMAT_DIMENSIONS[format];
       }
       if (upscale) res = { w: res.w * 2, h: res.h * 2 };
+      let verticalPlan: VerticalLayoutPlan | undefined;
+      if (!raw && format === "9:16") {
+        const native = await probeVideoSize(sourcePath);
+        if (!native && verticalLayout) {
+          verticalLayout = null;
+          layoutWarning = "Source dimensions could not be read; the full frame was exported.";
+        }
+        verticalPlan = planVerticalLayout(native ?? { w: 1920, h: 1080 }, verticalLayout, res);
+      }
 
       let assPath: string | undefined;
       let hookAssPath: string | undefined;
@@ -355,7 +385,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
-        const assContent = generateAss(words, start * 1000, end * 1000, style, res);
+        const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.h
+          : verticalPlan?.mode === "full_frame" ? res.h - verticalPlan.dest.y - verticalPlan.dest.h : 0;
+        const assContent = generateAss(words, start * 1000, end * 1000, style, res, bottomInset, !!verticalPlan);
         await writeFile(assPath, assContent, "utf-8");
       }
       if (hook) {
@@ -375,7 +407,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         hookAssPath,
         handle,
         raw,
-        upscale
+        upscale,
+        verticalPlan
       );
       log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
       return result;
@@ -393,6 +426,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         "Content-Type": "video/mp4",
         "Content-Length": String(fileBuffer.byteLength),
         "Content-Disposition": `attachment; filename="${sanitizeFilename(title)}"`,
+        ...(layoutWarning ? { "X-Klyp-Layout-Warning": layoutWarning } : {}),
       },
     });
   } catch (err) {

@@ -8,6 +8,14 @@ import {
 } from "./clip-edit-draft.ts";
 import type { SavedClip } from "./clip-ui.ts";
 
+test("layout override validates, exports, and old drafts remain valid", () => {
+  const layout = { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 } };
+  const checked = validateClipEditDraft(draft({ vertical_layout: layout }), clip);
+  assert.deepEqual(toClipExportPayload(clip, checked).vertical_layout, layout);
+  assert.equal(validateClipEditDraft(draft(), clip).vertical_layout, undefined);
+  assert.throws(() => validateClipEditDraft(draft({ vertical_layout: { version: 1, gameplay: { x: 0.9, y: 0, w: 1, h: 1 } } }), clip));
+});
+
 const clip: SavedClip = {
   id: "clip-1", url: "https://www.twitch.tv/videos/1", title: "Original",
   clip_type: "FUNNY", viral_score: 80, caption: null, reason: null,

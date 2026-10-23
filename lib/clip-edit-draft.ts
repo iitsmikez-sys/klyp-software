@@ -1,6 +1,7 @@
 import { CAPTION_STYLES, EXPORT_FORMATS, type CaptionStyle, type ExportFormat, type TimedWord } from "./clips.ts";
 import { HOOK_STYLES, type HookStyle } from "./captions.ts";
 import type { SavedClip } from "./clip-ui.ts";
+import { validateVerticalLayout, type VerticalLayoutV1 } from "./vertical-layout.ts";
 
 export type ClipEditDraftV1 = {
   version: 1;
@@ -12,6 +13,7 @@ export type ClipEditDraftV1 = {
   caption_style: CaptionStyle;
   aspect_ratio: ExportFormat;
   words: TimedWord[] | null;
+  vertical_layout?: VerticalLayoutV1 | null;
 };
 
 export class ClipEditDraftError extends Error {
@@ -63,6 +65,14 @@ export function validateClipEditDraft(input: unknown, clip: ClipSource): ClipEdi
   }
 
   const originalWords = clip.words?.length ? clip.words : null;
+  let verticalLayout: VerticalLayoutV1 | null | undefined;
+  if (Object.prototype.hasOwnProperty.call(draft, "vertical_layout")) {
+    if (draft.vertical_layout === null) verticalLayout = null;
+    else {
+      try { verticalLayout = validateVerticalLayout(draft.vertical_layout); }
+      catch { throw new ClipEditDraftError("Invalid vertical layout."); }
+    }
+  }
   const editedWords = draft.words;
   if (originalWords === null) {
     if (editedWords !== null) throw new ClipEditDraftError("This clip has no timed caption words.");
@@ -90,6 +100,7 @@ export function validateClipEditDraft(input: unknown, clip: ClipSource): ClipEdi
     caption_style: draft.caption_style as CaptionStyle,
     aspect_ratio: draft.aspect_ratio as ExportFormat,
     words: originalWords ? (editedWords as TimedWord[]).map((w) => ({ text: w.text.trim(), start: w.start, end: w.end })) : null,
+    ...(verticalLayout !== undefined ? { vertical_layout: verticalLayout } : {}),
   };
 }
 
@@ -115,5 +126,6 @@ export function toClipExportPayload(clip: SavedClip, draft: ClipEditDraftV1) {
     aspect_ratio: draft.aspect_ratio,
     style: draft.words?.length ? draft.caption_style : undefined,
     words: draft.words?.length ? draft.words : undefined,
+    vertical_layout: draft.vertical_layout,
   };
 }

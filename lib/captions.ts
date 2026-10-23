@@ -113,12 +113,12 @@ const STYLE_PARAMS: Record<
   KLYP: { fontSize: 82, color: "&H00A0E500", bold: 1, outline: 4, shadow: 0 },
 };
 
-function styleBlock(style: CaptionStyle, res: PlayRes): string {
+function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0): string {
   const p = STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
   const size = Math.round(p.fontSize * scale);
   const outline = Math.max(1, Math.round(p.outline * scale));
-  const marginV = Math.round(80 * scale);
+  const marginV = Math.round(80 * scale + bottomInset);
   return [
     "[V4+ Styles]",
     STYLES_FORMAT,
@@ -132,6 +132,19 @@ const EVENTS_HEADER =
 /** Strip characters that would open ASS override blocks or break lines. */
 function sanitizeAssText(text: string): string {
   return text.replace(/[{}\\]/g, "").replace(/\r?\n/g, " ").trim();
+}
+
+/** Fixed line breaks keep the browser preview and ASS export in the same safe area. */
+export function wrapCaptionText(text: string, style: CaptionStyle): string[] {
+  const limit = style === "CLEAN" ? 28 : 20;
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.trim().split(/\s+/)) {
+    if (line && `${line} ${word}`.length > limit) { lines.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 /**
@@ -156,15 +169,17 @@ export function generateAss(
   clipStartMs: number,
   clipEndMs: number,
   style: CaptionStyle,
-  res: PlayRes = DEFAULT_RES
+  res: PlayRes = DEFAULT_RES,
+  bottomInset = 0,
+  composed = false
 ): string {
-  const sections = [assHeader(res), "", styleBlock(style, res), "", EVENTS_HEADER];
+  const sections = [assHeader(res), "", styleBlock(style, res, bottomInset), "", EVENTS_HEADER];
 
   // KLYP shows one word at a time; other styles show small word groups.
   const cues = buildCaptionCues(words, clipStartMs, clipEndMs, style === "KLYP" ? 1 : CUE_MAX_WORDS);
   for (const cue of cues) {
     const text = sanitizeAssText(style === "KLYP" ? cue.text.toUpperCase() : cue.text);
-    sections.push(dialogue(cue.startMs, cue.endMs, text));
+    sections.push(dialogue(cue.startMs, cue.endMs, composed ? wrapCaptionText(text, style).join("\\N") : text));
   }
 
   return sections.join("\n");

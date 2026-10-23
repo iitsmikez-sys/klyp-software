@@ -19,6 +19,10 @@ import CaptionWordEditor from "./CaptionWordEditor";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import VerticalLayoutEditor from "./VerticalLayoutEditor";
+import type { VerticalLayoutV1 } from "@/lib/vertical-layout";
+import { layoutEditorState } from "@/lib/vertical-layout-auth";
+import { readLayoutExportWarning } from "@/lib/layout-export-warning";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -46,6 +50,8 @@ export default function SavedClipEditor({
   dirty,
   /** The preview dialog renders its own player, so it suppresses this one. */
   hidePreview = false,
+  sourcePreviewUrl,
+  onLayoutPendingChange,
 }: {
   clip: SavedClip;
   draft: ClipEditDraftV1;
@@ -53,6 +59,8 @@ export default function SavedClipEditor({
   onPersisted: (draft: ClipEditDraftV1 | null) => void;
   dirty: boolean;
   hidePreview?: boolean;
+  sourcePreviewUrl?: string | null;
+  onLayoutPendingChange?: (pending: boolean) => void;
 }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
@@ -64,8 +72,13 @@ export default function SavedClipEditor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [accountLayout, setAccountLayout] = useState<VerticalLayoutV1 | null>(null);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [pendingAccountLayout, setPendingAccountLayout] = useState<VerticalLayoutV1 | null>(null);
   const { tier } = useSparks();
   const isPro = tier === "pro";
+  const editorLayout = layoutEditorState(isPro, accountLayout, draft.vertical_layout, pendingAccountLayout);
 
   const hooks = Array.isArray(clip.hooks) ? clip.hooks : [];
   const hasWords = Array.isArray(draft.words) && draft.words.length > 0;
@@ -78,6 +91,27 @@ export default function SavedClipEditor({
     setSaveNotice(null);
     setSaveError(null);
   };
+  const saveAccountLayout = async () => {
+    const layout = isPro ? draft.vertical_layout ?? accountLayout : pendingAccountLayout;
+    if (!layout) return;
+    setLayoutSaving(true);
+    setSaveError(null);
+    try {
+      const response = await fetch("/api/vertical-layout", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not save layout.");
+      setAccountLayout(data.layout);
+      setPendingAccountLayout(null);
+      onLayoutPendingChange?.(false);
+      setSaveNotice("Layout saved for future clips.");
+    } catch (error) { setSaveError(error instanceof Error ? error.message : "Could not save layout."); }
+    finally { setLayoutSaving(false); }
+  };
+  useEffect(() => {
+    fetch("/api/vertical-layout").then((response) => response.json()).then((data) => {
+      if (data.layout) setAccountLayout(data.layout);
+    }).catch(() => {});
+  }, []);
 
   // Transcript cues for the scene analysis panel — clip-relative timestamps.
   const transcriptCues = useMemo(() => {
@@ -205,6 +239,7 @@ export default function SavedClipEditor({
   };
 
   const exportClip = async () => {
+    if (editorLayout.exportBlocked) { setExportError("Save your account layout before exporting this preview."); return; }
     setExporting(true);
     setExportError(null);
     // Timeout so a hung export fails loudly instead of spinning forever. The
@@ -226,6 +261,8 @@ export default function SavedClipEditor({
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
       }
+      const warning = readLayoutExportWarning(res);
+      if (warning) setSaveNotice(warning);
       const blob = await res.blob();
       const safe = checked.title.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_").slice(0, 60);
       const objectUrl = URL.createObjectURL(blob);
@@ -464,6 +501,21 @@ export default function SavedClipEditor({
       ) : null}
 
       {/* Format */}
+      <div className="rounded-lg border border-border p-3">
+        <button type="button" className="text-xs font-semibold text-accent" onClick={() => setLayoutOpen((open) => !open)}>Vertical layout {layoutOpen ? "▴" : "▾"}</button>
+        <p className="text-[11px] text-foreground-muted mt-1">{isPro && draft.vertical_layout ? "This clip has its own layout." : accountLayout ? "Using your saved stream layout." : "Full frame is shown until you set a layout."}</p>
+        {layoutOpen && <div className="mt-3">
+          <VerticalLayoutEditor sourceUrl={sourcePreviewUrl ?? previewUrl} layout={editorLayout.preview}
+            text={{ hook: draft.hook, hookStyle: draft.hook_style, captionStyle: draft.caption_style, words: draft.words, videoTrimStart: draft.start_seconds - clip.start_seconds, vodStart: draft.start_seconds, vodEnd: draft.end_seconds }}
+            onChange={(layout) => {
+              if (isPro) changeDraft({ vertical_layout: layout });
+              else { setPendingAccountLayout(layout); onLayoutPendingChange?.(true); }
+            }} />
+          <button type="button" className="text-xs text-accent mt-2 mr-3 underline disabled:opacity-50" disabled={!(isPro ? draft.vertical_layout : pendingAccountLayout) || layoutSaving} onClick={saveAccountLayout}>{layoutSaving ? "Saving…" : "Save as my layout for future clips"}</button>
+          {editorLayout.exportBlocked && <p className="text-xs text-amber-300 mt-2">Save this account layout before exporting. The preview shows your unsaved changes.</p>}
+          {isPro && draft.vertical_layout && <button type="button" className="text-xs text-foreground-muted mt-2 underline" onClick={() => changeDraft({ vertical_layout: null })}>Use my account layout</button>}
+        </div>}
+      </div>
       <div className="flex items-center gap-2">
         <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
           Format
@@ -525,7 +577,7 @@ export default function SavedClipEditor({
       {/* Export */}
       <button
         onClick={exportClip}
-        disabled={exporting}
+        disabled={exporting || editorLayout.exportBlocked}
         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
       >
         {exporting ? (
