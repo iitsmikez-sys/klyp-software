@@ -16,6 +16,8 @@ import ProGateModal from "./ProGateModal";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import ClipTrimControl from "./ClipTrimControl";
+import { clipTrimPlayback, readSavedTrim } from "@/lib/clip-trim";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -74,14 +76,15 @@ export default function SavedClipEditor({
   const [exportError, setExportError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [previewDuration, setPreviewDuration] = useState(
-    Math.max(0, clip.end_seconds - clip.start_seconds)
-  );
+  const [previewLeadSeconds, setPreviewLeadSeconds] = useState(0);
+  const [trimRange, setTrimRange] = useState({ start: clip.start_seconds, end: clip.end_seconds });
+  const trimStart = trimRange.start - clip.start_seconds + previewLeadSeconds;
+  const trimEnd = trimRange.end - clip.start_seconds + previewLeadSeconds;
 
   const seekTo = (seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(0, Math.min(seconds, video.duration || previewDuration));
+    video.currentTime = Math.max(trimStart, Math.min(seconds, trimEnd));
     setCurrentTime(video.currentTime);
   };
 
@@ -97,11 +100,13 @@ export default function SavedClipEditor({
         const saved = JSON.parse(raw) as {
           hook?: string | null; hookStyle?: HookStyle;
           captionStyle?: CaptionStyle; format?: ExportFormat;
+          trim?: unknown;
         };
         if (typeof saved.hook === "string" || saved.hook === null) setSelectedHook(saved.hook);
         if (saved.hookStyle && HOOK_STYLES.includes(saved.hookStyle)) setHookStyle(saved.hookStyle);
         if (saved.captionStyle && CAPTION_STYLES.includes(saved.captionStyle)) setCaptionStyle(saved.captionStyle);
         if (saved.format && EXPORT_FORMATS.includes(saved.format)) setFormat(saved.format);
+        setTrimRange(readSavedTrim(saved.trim, clip.start_seconds, clip.end_seconds));
       }
     } catch { /* A malformed old draft should not prevent editing. */ }
     setDraftReady(true);
@@ -111,10 +116,21 @@ export default function SavedClipEditor({
     if (!draftReady) return;
     try {
       localStorage.setItem(`klyp-editor-${clip.id}`, JSON.stringify({
-        hook: selectedHook, hookStyle, captionStyle, format,
+        hook: selectedHook, hookStyle, captionStyle, format, trim: trimRange,
       }));
     } catch { /* Storage can be unavailable; editing and export still work. */ }
-  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format]);
+  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format, trimRange]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const next = clipTrimPlayback(video.currentTime, trimStart, trimEnd);
+    if (next.time !== video.currentTime) {
+      if (next.pause) video.pause();
+      video.currentTime = next.time;
+      setCurrentTime(next.time);
+    }
+  }, [trimStart, trimEnd]);
 
   // Live hook overlay on the preview — mirrors the export burn and reacts
   // instantly to hook/style changes (the loop redraws every frame, playing or not).
@@ -132,14 +148,14 @@ export default function SavedClipEditor({
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (selectedHook) {
-        drawHookPreview(ctx, video.currentTime, selectedHook, hookStyle, canvas.width, canvas.height);
+        drawHookPreview(ctx, video.currentTime - trimStart, selectedHook, hookStyle, canvas.width, canvas.height);
       }
       rafRef.current = requestAnimationFrame(draw);
     };
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [previewUrl, selectedHook, hookStyle]);
+  }, [previewUrl, selectedHook, hookStyle, trimStart]);
 
   // Fetch the cut preview on expand (source video is cached server-side per URL).
   // First view of a VOD legitimately takes minutes (full source download), so
@@ -171,11 +187,14 @@ export default function SavedClipEditor({
     })
       .then((res) => {
         if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d?.error ?? "Preview failed.")));
-        return res.blob();
+        const lead = res.headers.get("X-Klyp-Source") === "archive"
+          ? clip.start_seconds - Math.floor(clip.start_seconds) : 0;
+        return res.blob().then((blob) => ({ blob, lead }));
       })
-      .then((blob) => {
+      .then(({ blob, lead }) => {
         settle();
         blobUrl = URL.createObjectURL(blob);
+        setPreviewLeadSeconds(lead);
         setPreviewUrl(blobUrl);
         setLoadingPreview(false);
       })
@@ -209,9 +228,10 @@ export default function SavedClipEditor({
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
+          clip_id: clip.id,
           url: clip.url,
-          start_seconds: clip.start_seconds,
-          end_seconds: clip.end_seconds,
+          start_seconds: trimRange.start,
+          end_seconds: trimRange.end,
           title: clip.title,
           style: hasWords ? captionStyle : undefined,
           words: hasWords ? clip.words : undefined,
@@ -285,7 +305,7 @@ export default function SavedClipEditor({
         {transcriptCues.length > 0 ? (
           <div className="max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border">
             {transcriptCues.map((cue, i) => (
-              <button key={i} type="button" onClick={() => seekTo(cue.t)} className="w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2">
+              <button key={i} type="button" onClick={() => seekTo(cue.t + previewLeadSeconds)} className="w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2">
                 <span className="flex-shrink-0 text-[10px] font-mono text-accent mt-0.5">
                   {fmtClipTime(cue.t)}
                 </span>
@@ -336,15 +356,28 @@ export default function SavedClipEditor({
               className="w-full h-full object-contain"
               controls
               playsInline
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onLoadedMetadata={(e) => setPreviewDuration(e.currentTarget.duration || previewDuration)}
+              onTimeUpdate={(e) => {
+                const video = e.currentTarget;
+                const next = clipTrimPlayback(video.currentTime, trimStart, trimEnd);
+                if (next.pause) video.pause();
+                if (next.time !== video.currentTime) video.currentTime = next.time;
+                setCurrentTime(next.time);
+              }}
+              onPlay={(e) => {
+                const video = e.currentTarget;
+                const next = clipTrimPlayback(video.currentTime, trimStart, trimEnd);
+                if (next.time !== video.currentTime) video.currentTime = next.time;
+              }}
+              onLoadedMetadata={(e) => {
+                e.currentTarget.currentTime = trimStart;
+              }}
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           </>
         )}
         </div>
         <p className="mt-2 text-center text-xs text-foreground-muted font-mono">
-          {fmtClipTime(currentTime)} / {fmtClipTime(previewDuration)}
+          {fmtClipTime(Math.max(0, currentTime - trimStart))} / {fmtClipTime(trimEnd - trimStart)}
         </p>
       <p className="text-[10px] text-subtle text-center mt-1">
         Hook shown live — captions are burned in on export.
@@ -536,15 +569,24 @@ export default function SavedClipEditor({
           <div className="flex items-center justify-between gap-3 mb-3">
             <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
             <span className="font-mono text-xs text-foreground-muted">
-              {fmtClipTime(currentTime)} / {fmtClipTime(previewDuration)}
+              {fmtClipTime(Math.max(0, currentTime - trimStart))} / {fmtClipTime(trimEnd - trimStart)}
             </span>
           </div>
+          <ClipTrimControl
+            originalStart={clip.start_seconds} originalEnd={clip.end_seconds}
+            start={trimRange.start} end={trimRange.end} playhead={currentTime - previewLeadSeconds}
+            disabled={exporting}
+            onChange={(start, end) => setTrimRange({ start, end })}
+          />
+          <button type="button" onClick={() => setTrimRange({ start: clip.start_seconds, end: clip.end_seconds })}
+            disabled={exporting || (trimRange.start === clip.start_seconds && trimRange.end === clip.end_seconds)}
+            className="mt-2 text-xs text-foreground-muted underline disabled:opacity-50">Restore original length</button>
           <input
             type="range"
-            min={0}
-            max={Math.max(previewDuration, 0.1)}
+            min={trimStart}
+            max={trimEnd}
             step={0.1}
-            value={Math.min(currentTime, previewDuration)}
+            value={Math.max(trimStart, Math.min(currentTime, trimEnd))}
             onChange={(e) => seekTo(Number(e.target.value))}
             aria-label="Seek clip timeline"
             className="w-full accent-accent"
@@ -579,4 +621,3 @@ export default function SavedClipEditor({
     </div>
   );
 }
-
