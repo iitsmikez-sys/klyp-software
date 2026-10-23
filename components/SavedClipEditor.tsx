@@ -14,6 +14,7 @@ import { drawHookPreview } from "@/lib/hook-preview";
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
 import ClipTrimControl from "./ClipTrimControl";
+import { archivedClipTiming } from "@/lib/clip-trim";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
@@ -79,6 +80,7 @@ export default function SavedClipEditor({
   const [exportError, setExportError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [previewLeadSeconds, setPreviewLeadSeconds] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [previewDuration, setPreviewDuration] = useState(
@@ -109,12 +111,13 @@ export default function SavedClipEditor({
   const seekTo = (seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
-    const target = Math.max(0, Math.min(seconds, video.duration || previewDuration));
+    const target = Math.max(0, Math.min(seconds, (video.duration || previewDuration) - previewLeadSeconds));
     const kept = segmentIndexAtSource(segments, target);
-    video.currentTime = kept >= 0
+    const keptTime = kept >= 0
       ? target
       : segments.find((segment) => segment.start > target)?.start ?? segments[segments.length - 1].end;
-    setCurrentTime(video.currentTime);
+    video.currentTime = keptTime + previewLeadSeconds;
+    setCurrentTime(keptTime);
   };
 
   const togglePlayback = () => {
@@ -123,27 +126,27 @@ export default function SavedClipEditor({
     if (!video.paused) {
       video.pause();
     } else {
-      if (video.currentTime >= segments[segments.length - 1].end - 0.05) {
-        video.currentTime = segments[0].start;
+      if (video.currentTime - previewLeadSeconds >= segments[segments.length - 1].end - 0.05) {
+        video.currentTime = segments[0].start + previewLeadSeconds;
       }
       video.play().catch(() => setPlaying(false));
     }
   };
 
   const onPreviewTimeUpdate = (video: HTMLVideoElement) => {
-    const time = video.currentTime;
+    const time = video.currentTime - previewLeadSeconds;
     const index = segmentIndexAtSource(segments, time);
     if (index < 0 || time >= segments[index].end - 0.04) {
       const next = index < 0
         ? segments.findIndex((segment) => segment.start > time)
         : index + 1;
       if (next >= 0 && next < segments.length) {
-        video.currentTime = segments[next].start;
+        video.currentTime = segments[next].start + previewLeadSeconds;
         setCurrentTime(segments[next].start);
         setSelectedSegment(next);
       } else {
         video.pause();
-        video.currentTime = segments[segments.length - 1].end;
+        video.currentTime = segments[segments.length - 1].end + previewLeadSeconds;
         setCurrentTime(segments[segments.length - 1].end);
       }
       return;
@@ -165,7 +168,7 @@ export default function SavedClipEditor({
     setSelectedSegment(selected);
     const video = videoRef.current;
     const target = next[selected]?.start ?? next[0].start;
-    if (video) video.currentTime = target;
+    if (video) video.currentTime = target + previewLeadSeconds;
     setCurrentTime(target);
   };
 
@@ -195,7 +198,7 @@ export default function SavedClipEditor({
     setUndoStack((history) => history.slice(0, -1));
     setSegments(previous.segments);
     setSelectedSegment(previous.selected);
-    if (videoRef.current) videoRef.current.currentTime = previous.time;
+    if (videoRef.current) videoRef.current.currentTime = previous.time + previewLeadSeconds;
     setCurrentTime(previous.time);
   };
 
@@ -248,14 +251,14 @@ export default function SavedClipEditor({
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (selectedHook) {
-        drawHookPreview(ctx, timelineTimeAt(segments, video.currentTime), selectedHook, hookStyle, canvas.width, canvas.height);
+        drawHookPreview(ctx, timelineTimeAt(segments, video.currentTime - previewLeadSeconds), selectedHook, hookStyle, canvas.width, canvas.height);
       }
       rafRef.current = requestAnimationFrame(draw);
     };
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [previewUrl, selectedHook, hookStyle, segments]);
+  }, [previewUrl, selectedHook, hookStyle, segments, previewLeadSeconds]);
 
   // The native timeupdate event fires only a few times per second. Check cut
   // boundaries each animation frame so playback does not reveal a deleted beat.
@@ -266,8 +269,9 @@ export default function SavedClipEditor({
     let frame = 0;
     const followCuts = () => {
       if (!video.paused) {
-        const index = segmentIndexAtSource(segments, video.currentTime);
-        if (index < 0 || video.currentTime >= segments[index].end - 0.03) {
+        const logicalTime = video.currentTime - previewLeadSeconds;
+        const index = segmentIndexAtSource(segments, logicalTime);
+        if (index < 0 || logicalTime >= segments[index].end - 0.03) {
           onPreviewTimeUpdate(video);
         }
       }
@@ -275,7 +279,7 @@ export default function SavedClipEditor({
     };
     frame = requestAnimationFrame(followCuts);
     return () => cancelAnimationFrame(frame);
-  }, [previewUrl, segments]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [previewUrl, segments, previewLeadSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch the cut preview on expand (source video is cached server-side per URL).
   // First view of a VOD legitimately takes minutes (full source download), so
@@ -307,11 +311,14 @@ export default function SavedClipEditor({
     })
       .then((res) => {
         if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d?.error ?? "Preview failed.")));
-        return res.blob();
+        const lead = res.headers.get("X-Klyp-Source") === "archive"
+          ? archivedClipTiming(clip.start_seconds).previewLead : 0;
+        return res.blob().then((blob) => ({ blob, lead }));
       })
-      .then((blob) => {
+      .then(({ blob, lead }) => {
         settle();
         blobUrl = URL.createObjectURL(blob);
+        setPreviewLeadSeconds(lead);
         setPreviewUrl(blobUrl);
         setLoadingPreview(false);
       })
@@ -486,7 +493,7 @@ export default function SavedClipEditor({
               onTimeUpdate={(e) => onPreviewTimeUpdate(e.currentTarget)}
               onLoadedMetadata={(e) => {
                 setPreviewDuration(e.currentTarget.duration || previewDuration);
-                e.currentTarget.currentTime = segments[0].start;
+                e.currentTarget.currentTime = segments[0].start + previewLeadSeconds;
               }}
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
@@ -807,5 +814,3 @@ export default function SavedClipEditor({
     </div>
   );
 }
-
-
