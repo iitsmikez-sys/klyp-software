@@ -73,6 +73,7 @@ const plans: Plan[] = [
     features: [
       { kind: "check", text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.free)}` },
       { kind: "check", text: "Up to 1080p rendered clips" },
+      { kind: "check", text: "9:16 vertical and Original (no crop) exports" },
       { kind: "check", text: "Auto reframe" },
       { kind: "check", text: "AI captions with emoji and keyword highlighter" },
       { kind: "warn",  text: "Watermark on all clips" },
@@ -91,7 +92,7 @@ const plans: Plan[] = [
       { kind: "check",   text: "Unlimited exports" },
       { kind: "check",   text: "AI clipping with Virality Score" },
       { kind: "check",   text: "Export to TikTok, Reels & Shorts" },
-      { kind: "check",   text: "Multiple aspect ratios (9:16, 1:1, 16:9)" },
+      { kind: "check",   text: "All formats: 9:16, Original, 1:1, 16:9" },
     ],
     cta: { label: "Get Klyp Pro", subtext: "Cancel anytime", href: "/login" },
     highlighted: true,
