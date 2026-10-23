@@ -36,6 +36,8 @@ import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
 import { archivedClipTiming } from "@/lib/clip-trim";
 import { buildSegmentFilter, parseSegments, retimeWords, timelineDuration, type EditSegment } from "@/lib/edit-segments";
+import { editorMediaPath, parseMediaInserts, retimeWordsWithMedia, buildEditorTimeline, type MediaInsert } from "@/lib/editor-media";
+import { buildEditorMediaFilter } from "@/lib/editor-media-render";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -102,8 +104,10 @@ async function cutClip(
   startSeconds: number,
   endSeconds: number,
   segments: EditSegment[],
+  mediaFiles: Array<{ entry: MediaInsert; path: string }>,
   isPro: boolean,
   format: ExportFormat,
+  outputSize: { w: number; h: number },
   assPath?: string,
   hookAssPath?: string,
   handle?: string,
@@ -112,8 +116,9 @@ async function cutClip(
 ): Promise<string> {
   const first = segments[0];
   const multiSection = segments.length > 1;
-  const inputStart = multiSection ? startSeconds : startSeconds + first.start;
-  const inputDuration = multiSection ? endSeconds - startSeconds : first.end - first.start;
+  const hasMedia = mediaFiles.length > 0;
+  const inputStart = multiSection || hasMedia ? startSeconds : startSeconds + first.start;
+  const inputDuration = multiSection || hasMedia ? endSeconds - startSeconds : first.end - first.start;
   const outPath = path.join(
     CACHE_DIR,
     `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`
@@ -149,13 +154,23 @@ async function cutClip(
     vf += `,${watermarkFilter()}`;
   }
 
-  const audio = multiSection ? await hasAudioStream(sourcePath) : true;
-  const segmentFilter = multiSection ? buildSegmentFilter(segments, raw ? undefined : vf, audio) : null;
+  const audio = multiSection || hasMedia ? await hasAudioStream(sourcePath) : true;
+  const segmentFilter = multiSection && !hasMedia ? buildSegmentFilter(segments, raw ? undefined : vf, audio) : null;
+  const mediaAudio = hasMedia ? await Promise.all(mediaFiles.map(({ entry, path }) =>
+    entry.kind === "video" ? hasAudioStream(path) : Promise.resolve(false))) : [];
+  const mediaFilter = hasMedia ? buildEditorMediaFilter(segments, mediaFiles.map(({ entry }) => entry),
+    audio, mediaAudio, outputSize.w - outputSize.w % 2, outputSize.h - outputSize.h % 2,
+    raw ? undefined : vf) : null;
   await run(resolveBin("ffmpeg"), [
     "-ss", String(inputStart),
     "-t", String(inputDuration),
     "-i", sourcePath,
-    ...(segmentFilter
+    ...mediaFiles.flatMap(({ entry, path }) => entry.kind === "image"
+      ? ["-loop", "1", "-framerate", "30", "-t", String(entry.duration), "-i", path]
+      : ["-i", path]),
+    ...(mediaFilter
+      ? ["-filter_complex", mediaFilter.graph, "-map", mediaFilter.videoLabel, "-map", mediaFilter.audioLabel]
+      : segmentFilter
       ? ["-filter_complex", segmentFilter.graph, "-map", segmentFilter.videoLabel,
           ...(segmentFilter.audioLabel ? ["-map", segmentFilter.audioLabel] : [])]
       : raw ? [] : ["-vf", vf]),
@@ -205,6 +220,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let raw = false;
   let upscale = false;
   let requestedSegments: unknown;
+  let requestedMedia: unknown;
   try {
     const body = await req.json();
     clipId = String(body.clip_id ?? "");
@@ -214,6 +230,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     start = Number(body.start_seconds);
     end = Number(body.end_seconds);
     requestedSegments = body.segments;
+    requestedMedia = body.media ?? [];
     title = String(body.title ?? "klyp clip");
 
     if ((EXPORT_FORMATS as readonly string[]).includes(body.aspect_ratio)) {
@@ -255,10 +272,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
   }
   let segments: EditSegment[];
+  let media: MediaInsert[];
   try {
     segments = requestedSegments === undefined
       ? [{ start: 0, end: end - start }]
       : parseSegments(requestedSegments, end - start);
+    media = parseMediaInserts(requestedMedia, segments);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Invalid clip sections." },
@@ -307,6 +326,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // Raw export (clean cut, nothing burned in) is Pro-only — enforced here, not
   // in the UI, so free users can't get a watermark-free clip by crafting a request.
   if (raw) {
+    if (media.length > 0) {
+      return NextResponse.json({ error: "Raw export cannot include imported media." }, { status: 400 });
+    }
     if (!isPro) {
       return NextResponse.json(
         { error: "Raw exports are a Pro feature — upgrade to download clean clips for editing." },
@@ -322,6 +344,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
   let clipPath: string | null = null;
   let assDir: string | null = null;
+  let mediaDir: string | null = null;
   try {
     const t0 = Date.now();
     // Concurrency-capped: the download (yt-dlp) + encode (ffmpeg) below are
@@ -379,6 +402,29 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (upscale) res = { w: res.w * 2, h: res.h * 2 };
 
+      const mediaFiles: Array<{ entry: MediaInsert; path: string }> = [];
+      if (media.length > 0) {
+        if (!clipId || !await getArchivedClip(clipId, profile.id)) {
+          throw new Error("Clip not found for imported media.");
+        }
+        mediaDir = await mkdtemp(path.join(tmpdir(), "klyp-import-render-"));
+        for (const entry of media) {
+          const objectPath = editorMediaPath(profile.id, clipId, entry.id, entry.kind);
+          const bytes = await readArchivedObject(objectPath);
+          if (!bytes) throw new Error("An imported image or video is no longer available.");
+          const localPath = path.join(mediaDir, `${entry.id}.${entry.kind === "image" ? "jpg" : "mp4"}`);
+          await writeFile(localPath, bytes);
+          if (entry.kind === "video") {
+            const probe = await runCapture(resolveBin("ffprobe"), ["-v", "error", "-show_entries", "format=duration",
+              "-of", "default=noprint_wrappers=1:nokey=1", localPath], { maxRunMs: 30_000 });
+            if (entry.duration > Number(probe.trim()) + 0.2) {
+              throw new Error("An imported video's selected duration exceeds the uploaded file.");
+            }
+          }
+          mediaFiles.push({ entry, path: localPath });
+        }
+      }
+
       let assPath: string | undefined;
       let hookAssPath: string | undefined;
       if ((style && words && words.length > 0) || hook) {
@@ -386,8 +432,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
-        const editedWords = retimeWords(words, start, segments);
-        const assContent = generateAss(editedWords, 0, timelineDuration(segments) * 1000, style, res);
+        const editedWords = media.length ? retimeWordsWithMedia(words, start, segments, media) : retimeWords(words, start, segments);
+        const duration = media.length ? buildEditorTimeline(segments, media).at(-1)!.end : timelineDuration(segments);
+        const assContent = generateAss(editedWords, 0, duration * 1000, style, res);
         await writeFile(assPath, assContent, "utf-8");
       }
       if (hook) {
@@ -401,8 +448,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         start - offsetSeconds,
         end - offsetSeconds,
         segments,
+        mediaFiles,
         isPro,
         format,
+        res,
         assPath,
         hookAssPath,
         handle,
@@ -433,6 +482,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
   } finally {
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
+    if (mediaDir) rm(mediaDir, { recursive: true, force: true }).catch(() => {});
     if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});
   }
 }

@@ -19,9 +19,15 @@ import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import {
-  deleteSegment, parseSegments, retimeWords, segmentIndexAtSource, sourceTimeAt, splitSegment,
-  timelineDuration, timelineTimeAt, trimSegment, type EditSegment,
+  deleteSegment, parseSegments, retimeWords, segmentIndexAtSource, splitSegment,
+  timelineDuration, trimSegment, type EditSegment,
 } from "@/lib/edit-segments";
+import {
+  buildEditorTimeline, mediaAfterDelete, mediaAfterSplit, outputTimeForSource,
+  parseMediaInserts, retimeWordsWithMedia, timelineItemAt, type MediaInsert,
+} from "@/lib/editor-media";
+
+type EditorMedia = MediaInsert & { name: string; url?: string };
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -90,82 +96,136 @@ export default function SavedClipEditor({
   const [segments, setSegments] = useState<EditSegment[]>([
     { start: 0, end: sourceDuration },
   ]);
+  const [media, setMedia] = useState<EditorMedia[]>([]);
+  const [activeMediaIndex, setActiveMediaIndex] = useState<number | null>(null);
+  const [mediaTime, setMediaTime] = useState(0);
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   const [selectedSegment, setSelectedSegment] = useState(0);
+  const activeSourceIndexRef = useRef(0);
   const [undoStack, setUndoStack] = useState<Array<{
-    segments: EditSegment[]; selected: number; time: number;
+    segments: EditSegment[]; media: EditorMedia[]; selected: number; time: number;
   }>>([]);
   const lastTrimRef = useRef<{ section: number; at: number } | null>(null);
-  const editedDuration = timelineDuration(segments);
-  const editedTime = timelineTimeAt(segments, currentTime);
+  const mediaVideoRef = useRef<HTMLVideoElement>(null);
+  const timelineItems = useMemo(() => buildEditorTimeline(segments, media), [segments, media]);
+  const editedDuration = timelineItems.at(-1)?.end ?? timelineDuration(segments);
+  const activeMedia = activeMediaIndex === null ? null : media[activeMediaIndex];
+  const editedTime = activeMediaIndex === null
+    ? outputTimeForSource(timelineItems, currentTime)
+    : (timelineItems.find((item) => item.mediaIndex === activeMediaIndex)?.start ?? 0) + mediaTime;
+  const editedTimeRef = useRef(editedTime);
+  editedTimeRef.current = editedTime;
   const editedCaptionCues = useMemo(() => {
     if (!Array.isArray(clip.words)) return [];
-    const words = retimeWords(clip.words, clip.start_seconds, segments);
+    const words = media.length
+      ? retimeWordsWithMedia(clip.words, clip.start_seconds, segments, media)
+      : retimeWords(clip.words, clip.start_seconds, segments);
     const cues: { t: number; text: string }[] = [];
     for (let i = 0; i < words.length; i += 8) {
       const group = words.slice(i, i + 8);
       cues.push({ t: group[0].start / 1000, text: group.map((word) => word.text).join(" ") });
     }
     return cues;
-  }, [clip, segments]);
+  }, [clip, segments, media]);
+
+  const seekOutput = (seconds: number, autoPlay = false) => {
+    const target = Math.max(0, Math.min(seconds, editedDuration));
+    const item = timelineItemAt(timelineItems, target);
+    if (!item) return;
+    videoRef.current?.pause();
+    mediaVideoRef.current?.pause();
+    setPlaying(autoPlay);
+    if (item.kind === "source") {
+      const sourceTime = item.sourceStart! + Math.min(target - item.start, item.end - item.start);
+      setActiveMediaIndex(null);
+      setSelectedMediaIndex(null);
+      setSelectedSegment(item.sourceIndex!);
+      activeSourceIndexRef.current = item.sourceIndex!;
+      if (videoRef.current) {
+        videoRef.current.currentTime = sourceTime + previewLeadSeconds;
+        if (autoPlay) videoRef.current.play().catch(() => setPlaying(false));
+      }
+      setCurrentTime(sourceTime);
+    } else {
+      setActiveMediaIndex(item.mediaIndex!);
+      setSelectedMediaIndex(item.mediaIndex!);
+      setMediaTime(Math.max(0, target - item.start));
+      if (!media[item.mediaIndex!]?.url) setPlaying(false);
+    }
+  };
 
   const seekTo = (seconds: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const target = Math.max(0, Math.min(seconds, (video.duration || previewDuration) - previewLeadSeconds));
+    const target = Math.max(0, Math.min(seconds, previewDuration - previewLeadSeconds));
     const kept = segmentIndexAtSource(segments, target);
-    const keptTime = kept >= 0
-      ? target
+    const actual = kept >= 0 ? target
       : segments.find((segment) => segment.start > target)?.start ?? segments[segments.length - 1].end;
-    video.currentTime = keptTime + previewLeadSeconds;
-    setCurrentTime(keptTime);
+    seekOutput(outputTimeForSource(timelineItems, actual));
   };
 
   const togglePlayback = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (!video.paused) {
-      video.pause();
+    if (!playing && editedTime >= editedDuration - 0.05) return seekOutput(0, true);
+    if (playing) {
+      videoRef.current?.pause();
+      mediaVideoRef.current?.pause();
+      setPlaying(false);
+    } else if (activeMedia) {
+      setPlaying(true);
+      if (activeMedia.kind === "video") mediaVideoRef.current?.play().catch(() => setPlaying(false));
     } else {
-      if (video.currentTime - previewLeadSeconds >= segments[segments.length - 1].end - 0.05) {
-        video.currentTime = segments[0].start + previewLeadSeconds;
-      }
+      const video = videoRef.current;
+      if (!video) return;
+      if (editedTime >= editedDuration - 0.05) return seekOutput(0, true);
+      setPlaying(true);
       video.play().catch(() => setPlaying(false));
     }
   };
 
   const onPreviewTimeUpdate = (video: HTMLVideoElement) => {
+    if (activeMediaIndex !== null) return;
     const time = video.currentTime - previewLeadSeconds;
-    const index = segmentIndexAtSource(segments, time);
-    if (index < 0 || time >= segments[index].end - 0.04) {
-      const next = index < 0
-        ? segments.findIndex((segment) => segment.start > time)
-        : index + 1;
-      if (next >= 0 && next < segments.length) {
-        video.currentTime = segments[next].start + previewLeadSeconds;
-        setCurrentTime(segments[next].start);
-        setSelectedSegment(next);
-      } else {
+    const activeSource = timelineItems.find((entry) => entry.kind === "source" &&
+      entry.sourceIndex === activeSourceIndexRef.current);
+    if (activeSource && time >= activeSource.sourceEnd! - 0.04) {
+      if (activeSource.end >= editedDuration - 0.04) {
         video.pause();
-        video.currentTime = segments[segments.length - 1].end + previewLeadSeconds;
+        setPlaying(false);
+        setCurrentTime(activeSource.sourceEnd!);
+      } else seekOutput(activeSource.end, playing);
+      return;
+    }
+    const index = segmentIndexAtSource(segments, time);
+    const item = timelineItems.find((entry) => entry.kind === "source" && entry.sourceIndex === index);
+    if (!item || time >= item.sourceEnd! - 0.04) {
+      const next = item ? item.end : outputTimeForSource(timelineItems, time);
+      if (next >= editedDuration - 0.04) {
+        video.pause();
+        setPlaying(false);
         setCurrentTime(segments[segments.length - 1].end);
-      }
+      } else seekOutput(next, playing);
       return;
     }
     setCurrentTime(time);
     setSelectedSegment(index);
+    activeSourceIndexRef.current = index;
   };
 
-  const applySegments = (next: EditSegment[], selected: number, trim = false) => {
+  const applySegments = (next: EditSegment[], selected: number, trim = false, nextMedia = media) => {
     if (next === segments) return;
     const now = Date.now();
     const sameTrim = trim && lastTrimRef.current?.section === selected &&
       now - lastTrimRef.current.at < 800;
     if (!sameTrim) {
-      setUndoStack((history) => [...history.slice(-29), { segments, selected: selectedSegment, time: currentTime }]);
+      setUndoStack((history) => [...history.slice(-29), { segments, media, selected: selectedSegment, time: currentTime }]);
     }
     lastTrimRef.current = trim ? { section: selected, at: now } : null;
     setSegments(next);
+    setMedia(nextMedia);
+    setActiveMediaIndex(null);
+    setPlaying(false);
     setSelectedSegment(selected);
+    activeSourceIndexRef.current = selected;
     const video = videoRef.current;
     const target = next[selected]?.start ?? next[0].start;
     if (video) video.currentTime = target + previewLeadSeconds;
@@ -173,14 +233,34 @@ export default function SavedClipEditor({
   };
 
   const splitAtPlayhead = () => {
+    if (activeMediaIndex !== null) return;
     const index = segmentIndexAtSource(segments, currentTime);
     if (index < 0) return;
-    applySegments(splitSegment(segments, index, currentTime), index + 1);
+    const next = splitSegment(segments, index, currentTime);
+    applySegments(next, index + 1, false, next === segments ? media : mediaAfterSplit(media, index));
   };
 
   const removeSelected = () => {
+    if (selectedMediaIndex !== null) {
+      applyMedia(media.filter((_, index) => index !== selectedMediaIndex));
+      return;
+    }
     const next = deleteSegment(segments, selectedSegment);
-    applySegments(next, Math.min(selectedSegment, next.length - 1));
+    applySegments(next, Math.min(selectedSegment, next.length - 1), false,
+      next === segments ? media : mediaAfterDelete(media, selectedSegment));
+  };
+
+  const applyMedia = (next: EditorMedia[]) => {
+    if (next === media) return;
+    setUndoStack((history) => [...history.slice(-29), { segments, media, selected: selectedSegment, time: currentTime }]);
+    setMedia(next);
+    const firstImported = next.findIndex((item) => item.after === -1);
+    setActiveMediaIndex(firstImported >= 0 && currentTime <= segments[0].start ? firstImported : null);
+    setSelectedMediaIndex(firstImported >= 0 && currentTime <= segments[0].start ? firstImported : null);
+    setMediaTime(0);
+    setPlaying(false);
+    videoRef.current?.pause();
+    mediaVideoRef.current?.pause();
   };
 
   const trimSelected = (start: number, end: number) => {
@@ -197,7 +277,12 @@ export default function SavedClipEditor({
     lastTrimRef.current = null;
     setUndoStack((history) => history.slice(0, -1));
     setSegments(previous.segments);
+    setMedia(previous.media);
+    setActiveMediaIndex(null);
+    setSelectedMediaIndex(null);
+    setPlaying(false);
     setSelectedSegment(previous.selected);
+    activeSourceIndexRef.current = previous.selected;
     if (videoRef.current) videoRef.current.currentTime = previous.time + previewLeadSeconds;
     setCurrentTime(previous.time);
   };
@@ -205,6 +290,30 @@ export default function SavedClipEditor({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+
+  const uploadMedia = async (file: File) => {
+    setMediaError(null);
+    if (media.length >= 8) return setMediaError("You can add up to 8 images or videos.");
+    if (file.size > 50 * 1024 * 1024) return setMediaError("Imported media must be under 50 MB.");
+    setUploadingMedia(true);
+    try {
+      const response = await processingFetch("/api/editor-media", {
+        method: "POST",
+        headers: { "x-clip-id": clip.id, "x-file-name": encodeURIComponent(file.name) },
+        body: file,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error ?? "Could not import media.");
+      const next = [...media, { id: result.id, kind: result.kind, duration: result.duration,
+        after: selectedSegment, name: file.name, url: result.url } as EditorMedia];
+      parseMediaInserts(next, segments);
+      applyMedia(next);
+    } catch (error) {
+      setMediaError(error instanceof Error ? error.message : "Could not import media.");
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
 
   // Keep the user's hook and export choices when they close and reopen the editor.
   useEffect(() => {
@@ -214,13 +323,35 @@ export default function SavedClipEditor({
         const saved = JSON.parse(raw) as {
           hook?: string | null; hookStyle?: HookStyle;
           captionStyle?: CaptionStyle; format?: ExportFormat;
-          segments?: unknown;
+          segments?: unknown; media?: unknown;
         };
         if (typeof saved.hook === "string" || saved.hook === null) setSelectedHook(saved.hook);
         if (saved.hookStyle && HOOK_STYLES.includes(saved.hookStyle)) setHookStyle(saved.hookStyle);
         if (saved.captionStyle && CAPTION_STYLES.includes(saved.captionStyle)) setCaptionStyle(saved.captionStyle);
         if (saved.format && EXPORT_FORMATS.includes(saved.format)) setFormat(saved.format);
-        if (saved.segments) setSegments(parseSegments(saved.segments, sourceDuration));
+        const loadedSegments = saved.segments ? parseSegments(saved.segments, sourceDuration)
+          : [{ start: 0, end: sourceDuration }];
+        if (saved.segments) setSegments(loadedSegments);
+        if (saved.media) {
+          const parsed = parseMediaInserts(saved.media, loadedSegments);
+          const named = parsed.map((entry, index) => ({ ...entry,
+            name: typeof (saved.media as EditorMedia[])[index]?.name === "string"
+              ? (saved.media as EditorMedia[])[index].name.slice(0, 100) : `Imported ${entry.kind}` }));
+          setMedia(named);
+          const firstImported = named.findIndex((item) => item.after === -1);
+          if (firstImported >= 0) {
+            setActiveMediaIndex(firstImported);
+            setSelectedMediaIndex(firstImported);
+          }
+          named.forEach(async (entry) => {
+            try {
+              const response = await processingFetch(`/api/editor-media?clip_id=${encodeURIComponent(clip.id)}&id=${entry.id}&kind=${entry.kind}`);
+              if (!response.ok) return;
+              const data = await response.json();
+              setMedia((current) => current.map((item) => item.id === entry.id ? { ...item, url: data.url } : item));
+            } catch { /* The missing item remains visible so the user can remove it. */ }
+          });
+        }
       }
     } catch { /* A malformed old draft should not prevent editing. */ }
     setDraftReady(true);
@@ -231,9 +362,38 @@ export default function SavedClipEditor({
     try {
       localStorage.setItem(`klyp-editor-${clip.id}`, JSON.stringify({
         hook: selectedHook, hookStyle, captionStyle, format, segments,
+        media: media.map(({ id, kind, after, duration, name }) => ({ id, kind, after, duration, name })),
       }));
     } catch { /* Storage can be unavailable; editing and export still work. */ }
-  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format, segments]);
+  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format, segments, media]);
+
+  useEffect(() => {
+    const item = activeMediaIndex === null ? null : media[activeMediaIndex];
+    if (!item || item.kind !== "video" || !mediaVideoRef.current) return;
+    mediaVideoRef.current.currentTime = mediaTime;
+    if (playing) mediaVideoRef.current.play().catch(() => setPlaying(false));
+    else mediaVideoRef.current.pause();
+  }, [activeMediaIndex, playing, activeMedia?.url]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const item = activeMediaIndex === null ? null : media[activeMediaIndex];
+    if (!item || item.kind !== "image" || !playing) return;
+    const timelineItem = timelineItems.find((entry) => entry.mediaIndex === activeMediaIndex);
+    if (!timelineItem) return;
+    const started = performance.now() - mediaTime * 1000;
+    let frame = 0;
+    const tick = (now: number) => {
+      const elapsed = (now - started) / 1000;
+      if (elapsed >= item.duration) {
+        seekOutput(timelineItem.end, timelineItem.end < editedDuration - 0.001);
+      } else {
+        setMediaTime(elapsed);
+        frame = requestAnimationFrame(tick);
+      }
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [activeMediaIndex, playing, timelineItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live hook overlay on the preview — mirrors the export burn and reacts
   // instantly to hook/style changes (the loop redraws every frame, playing or not).
@@ -251,14 +411,14 @@ export default function SavedClipEditor({
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (selectedHook) {
-        drawHookPreview(ctx, timelineTimeAt(segments, video.currentTime - previewLeadSeconds), selectedHook, hookStyle, canvas.width, canvas.height);
+        drawHookPreview(ctx, editedTimeRef.current, selectedHook, hookStyle, canvas.width, canvas.height);
       }
       rafRef.current = requestAnimationFrame(draw);
     };
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [previewUrl, selectedHook, hookStyle, segments, previewLeadSeconds]);
+  }, [previewUrl, selectedHook, hookStyle, segments]);
 
   // The native timeupdate event fires only a few times per second. Check cut
   // boundaries each animation frame so playback does not reveal a deleted beat.
@@ -269,9 +429,8 @@ export default function SavedClipEditor({
     let frame = 0;
     const followCuts = () => {
       if (!video.paused) {
-        const logicalTime = video.currentTime - previewLeadSeconds;
-        const index = segmentIndexAtSource(segments, logicalTime);
-        if (index < 0 || logicalTime >= segments[index].end - 0.03) {
+        const active = segments[activeSourceIndexRef.current];
+        if (!active || video.currentTime - previewLeadSeconds >= active.end - 0.03) {
           onPreviewTimeUpdate(video);
         }
       }
@@ -279,7 +438,7 @@ export default function SavedClipEditor({
     };
     frame = requestAnimationFrame(followCuts);
     return () => cancelAnimationFrame(frame);
-  }, [previewUrl, segments, previewLeadSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [previewUrl, segments, media, activeMediaIndex, playing, previewLeadSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch the cut preview on expand (source video is cached server-side per URL).
   // First view of a VOD legitimately takes minutes (full source download), so
@@ -357,6 +516,7 @@ export default function SavedClipEditor({
           start_seconds: clip.start_seconds,
           end_seconds: clip.end_seconds,
           segments,
+          media: media.map(({ id, kind, after, duration }) => ({ id, kind, after, duration })),
           title: clip.title,
           style: hasWords ? captionStyle : undefined,
           words: hasWords ? clip.words : undefined,
@@ -487,15 +647,42 @@ export default function SavedClipEditor({
               className="w-full h-full object-contain cursor-pointer"
               playsInline
               onClick={togglePlayback}
-              onPlay={() => setPlaying(true)}
-              onPause={() => setPlaying(false)}
               muted={muted}
               onTimeUpdate={(e) => onPreviewTimeUpdate(e.currentTarget)}
               onLoadedMetadata={(e) => {
                 setPreviewDuration(e.currentTarget.duration || previewDuration);
                 e.currentTarget.currentTime = segments[0].start + previewLeadSeconds;
+                if (timelineItems[0]?.kind !== "source") seekOutput(0);
               }}
             />
+            {activeMedia && (
+              activeMedia.url ? activeMedia.kind === "image" ? (
+                <img src={activeMedia.url} alt={activeMedia.name}
+                  className="absolute inset-0 h-full w-full object-contain bg-black cursor-pointer"
+                  onClick={togglePlayback} />
+              ) : (
+                <video key={activeMedia.id} ref={mediaVideoRef} src={activeMedia.url}
+                  className="absolute inset-0 h-full w-full object-contain bg-black cursor-pointer"
+                  playsInline muted={muted} onClick={togglePlayback}
+                  onLoadedMetadata={(event) => { event.currentTarget.currentTime = mediaTime; }}
+                  onTimeUpdate={(event) => {
+                    const next = event.currentTarget.currentTime;
+                    setMediaTime(next);
+                    const item = timelineItems.find((entry) => entry.mediaIndex === activeMediaIndex);
+                    if (item && next >= activeMedia.duration - 0.04) {
+                      seekOutput(item.end, playing && item.end < editedDuration - 0.001);
+                    }
+                  }}
+                  onEnded={() => {
+                    const item = timelineItems.find((entry) => entry.mediaIndex === activeMediaIndex);
+                    if (item) seekOutput(item.end, playing && item.end < editedDuration - 0.001);
+                  }} />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center bg-black p-4 text-center text-xs text-red-300">
+                  This imported file is unavailable. Remove it or import it again.
+                </div>
+              )
+            )}
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           </>
         )}
@@ -714,7 +901,7 @@ export default function SavedClipEditor({
             <button
               type="button"
               onClick={splitAtPlayhead}
-              disabled={!previewUrl || exporting || splitSegment(segments, segmentIndexAtSource(segments, currentTime), currentTime) === segments}
+              disabled={!previewUrl || exporting || activeMediaIndex !== null || splitSegment(segments, segmentIndexAtSource(segments, currentTime), currentTime) === segments}
               className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40"
             >
               ✂ Split at playhead
@@ -722,7 +909,7 @@ export default function SavedClipEditor({
             <button
               type="button"
               onClick={removeSelected}
-              disabled={segments.length <= 1 || exporting}
+              disabled={(selectedMediaIndex === null && segments.length <= 1) || exporting}
               className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:border-red-400/50 disabled:opacity-40"
             >
               Delete selected
@@ -737,13 +924,68 @@ export default function SavedClipEditor({
             </button>
             <span className="text-[11px] text-foreground-muted">Select a section on the video track to remove it.</span>
           </div>
+          <div className="mb-3 rounded-lg border border-border bg-surface-2 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-foreground">Your media</p>
+                <p className="text-[11px] text-foreground-muted">Add a photo or video after the selected section. Photos start at 3 seconds; videos use up to 30 seconds.</p>
+              </div>
+              <label className="cursor-pointer rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20">
+                {uploadingMedia ? "Importing…" : "+ Add image or video"}
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm"
+                  className="sr-only" disabled={uploadingMedia || exporting}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) void uploadMedia(file);
+                  }} />
+              </label>
+            </div>
+            {mediaError && <p role="alert" className="mt-2 text-xs text-red-400">{mediaError}</p>}
+            {media.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {media.map((item, index) => (
+                  <div key={item.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background px-2 py-2 text-xs">
+                    <button type="button" className="max-w-44 truncate font-semibold text-foreground hover:text-accent"
+                      onClick={() => {
+                        const timelineItem = timelineItems.find((entry) => entry.mediaIndex === index);
+                        if (timelineItem) seekOutput(timelineItem.start);
+                      }}>{item.kind === "image" ? "▧" : "▶"} {item.name}</button>
+                    <label className="ml-auto text-foreground-muted">Place
+                      <select value={item.after} disabled={exporting}
+                        onChange={(event) => applyMedia(media.map((entry, at) => at === index
+                          ? { ...entry, after: Number(event.target.value) } : entry))}
+                        className="ml-1 rounded border border-border bg-surface-2 px-2 py-1 text-foreground">
+                        <option value={-1}>At start</option>
+                        {segments.map((_, section) => <option key={section} value={section}>After section {section + 1}</option>)}
+                      </select>
+                    </label>
+                    {item.kind === "image" ? (
+                      <label className="text-foreground-muted">Seconds
+                        <input type="number" min={0.1} max={30} step={0.1} value={item.duration}
+                          disabled={exporting} onChange={(event) => {
+                            const duration = Math.max(0.1, Math.min(30, Number(event.target.value) || 0.1));
+                            const next = media.map((entry, at) => at === index ? { ...entry, duration } : entry);
+                            try { parseMediaInserts(next, segments); applyMedia(next); setMediaError(null); }
+                            catch (error) { setMediaError(error instanceof Error ? error.message : "Invalid duration."); }
+                          }}
+                          className="ml-1 w-16 rounded border border-border bg-surface-2 px-2 py-1 text-foreground" />
+                      </label>
+                    ) : <span className="font-mono text-foreground-muted">{item.duration.toFixed(1)}s</span>}
+                    <button type="button" onClick={() => applyMedia(media.filter((_, at) => at !== index))}
+                      disabled={exporting} className="rounded border border-border px-2 py-1 text-foreground-muted hover:text-red-400">Remove</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <input
             type="range"
             min={0}
             max={Math.max(editedDuration, 0.1)}
             step={0.1}
             value={Math.min(editedTime, editedDuration)}
-            onChange={(e) => seekTo(sourceTimeAt(segments, Number(e.target.value)))}
+            onChange={(e) => seekOutput(Number(e.target.value))}
             aria-label="Seek clip timeline"
             className="w-full accent-accent"
             disabled={!previewUrl}
@@ -751,21 +993,24 @@ export default function SavedClipEditor({
           <div className="mt-2 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-3">
             <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Video</span>
             <div className="flex min-w-0 flex-1 gap-1">
-              {segments.map((segment, index) => (
+              {timelineItems.map((item, index) => (
                 <button
-                  key={`${segment.start}-${segment.end}`}
+                  key={`${item.kind}-${item.id ?? item.sourceIndex}-${index}`}
                   type="button"
-                  onClick={() => { setSelectedSegment(index); seekTo(segment.start); }}
-                  style={{ flex: `${segment.end - segment.start} 1 0%` }}
-                  aria-label={`Select section ${index + 1}, ${fmtClipTime(segment.end - segment.start)}`}
-                  aria-pressed={selectedSegment === index}
+                  onClick={() => seekOutput(item.start)}
+                  style={{ flex: `${item.end - item.start} 1 0%` }}
+                  aria-label={item.kind === "source" ? `Select section ${item.sourceIndex! + 1}` : `Select imported ${item.kind}`}
+                  aria-pressed={item.kind === "source" ? selectedMediaIndex === null && selectedSegment === item.sourceIndex
+                    : selectedMediaIndex === item.mediaIndex}
                   className={`h-10 min-w-8 truncate rounded px-2 text-left text-[11px] font-semibold transition-colors ${
-                    selectedSegment === index
+                    (item.kind === "source" ? selectedMediaIndex === null && selectedSegment === item.sourceIndex
+                      : selectedMediaIndex === item.mediaIndex)
                       ? "bg-accent/25 border-2 border-accent text-foreground"
-                      : "bg-accent/10 border border-accent/30 text-foreground-muted hover:border-accent/70"
+                      : item.kind === "source" ? "bg-accent/10 border border-accent/30 text-foreground-muted hover:border-accent/70"
+                      : "bg-violet-500/20 border border-violet-400/40 text-violet-100 hover:border-violet-300"
                   }`}
                 >
-                  Section {index + 1} · {fmtClipTime(segment.end - segment.start)}
+                  {item.kind === "source" ? `Section ${item.sourceIndex! + 1}` : item.kind === "image" ? "Image" : "Video"} · {fmtClipTime(item.end - item.start)}
                 </button>
               ))}
             </div>
@@ -793,7 +1038,7 @@ export default function SavedClipEditor({
                   <button
                     key={i}
                     type="button"
-                    onClick={() => seekTo(sourceTimeAt(segments, cue.t))}
+                    onClick={() => seekOutput(cue.t)}
                     style={{
                       left: `${(cue.t / editedDuration) * 100}%`,
                       width: `${Math.min(24, Math.max(5, 2 / editedDuration * 100))}%`,
