@@ -22,6 +22,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SavedClipEditor from "./SavedClipEditor";
+import ClipTrimControl from "./ClipTrimControl";
+import { useSparks } from "./SparksProvider";
 import { defaultClipEditDraft, readClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
 import { clipPreviewPlayback, clipPreviewActionBlocked } from "@/lib/clip-preview-state";
 import { buildCaptionCues } from "@/lib/captions";
@@ -84,6 +86,8 @@ export default function ClipPreviewModal({
   const [savedDraft, setSavedDraft] = useState(initialEdit.draft);
   const [unsupportedDraft, setUnsupportedDraft] = useState(initialEdit.unsupportedVersion);
   const [playerTime, setPlayerTime] = useState(0);
+  const { tier } = useSparks();
+  const canTrim = tier === "pro";
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
   const trimStart = draft.start_seconds - clip.start_seconds;
   const trimEnd = draft.end_seconds - clip.start_seconds;
@@ -451,6 +455,18 @@ export default function ClipPreviewModal({
           </div>
         </div>
 
+        {/* Always-visible trim range. The preview contains the original saved
+            cut; playback is bounded to these handles by clipPreviewPlayback. */}
+        <div className="px-6 pt-4">
+          <ClipTrimControl
+            originalStart={clip.start_seconds} originalEnd={clip.end_seconds}
+            start={draft.start_seconds} end={draft.end_seconds}
+            playhead={playerTime} disabled={!canTrim}
+            onChange={(start_seconds, end_seconds) => setDraft((current) => ({ ...current, start_seconds, end_seconds }))}
+          />
+          {!canTrim && <p className="mt-1 text-[10px] text-subtle">Trim editing is available with Pro.</p>}
+        </div>
+
         {/* ── Actions ── */}
         <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
           {ready ? (
@@ -558,3 +574,4 @@ export default function ClipPreviewModal({
     </div>
   );
 }
+
