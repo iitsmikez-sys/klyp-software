@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clipSeekRange, updateClipTrim } from "../lib/clip-trim.ts";
+import { archivedClipTiming, clipSeekRange, updateClipTrim } from "../lib/clip-trim.ts";
+
+test("archived media and preview account for a fractional saved start", () => {
+  const timing = archivedClipTiming(100.75);
+  assert.deepEqual(timing, { sourceStart: 100, previewLead: 0.75 });
+  // A section beginning 1.25s into the saved clip starts 2s into its archive.
+  assert.deepEqual(clipSeekRange(102, 107, timing.sourceStart, 130), { start: 2, end: 7 });
+});
 
 test("full archived clip starts at zero and ends at its duration", () => {
   assert.deepEqual(clipSeekRange(100, 130, 100, 130), { start: 0, end: 30 });
