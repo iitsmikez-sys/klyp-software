@@ -63,7 +63,7 @@ function ClipsPageContent() {
 
   const { tier, refresh } = useSparks();
   // Shared with the dashboard's Saved Clips so both behave identically.
-  const { exports, workingId, createClip, createOrDownload } = useClipExports(refresh);
+  const { exports, workingId, createClip } = useClipExports(refresh);
   const isPro = tier === "pro";
 
   useEffect(() => {
@@ -139,7 +139,7 @@ function ClipsPageContent() {
       run: (clip) => { createClip(clip, true).then((err) => err && flash(err)); },
     },
     {
-      icon: "✂️", label: "Edit Clip", pro: true,
+      icon: "✂️", label: "Open editor", pro: false,
       run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
     },
     {
@@ -201,9 +201,9 @@ function ClipsPageContent() {
   return (
     <div className="p-8 max-w-6xl mx-auto animate-fade-in">
       <header className="mb-8">
-        <h1 className="font-syne text-3xl font-bold text-foreground">My Clips</h1>
+        <h1 className="font-syne text-3xl font-bold text-foreground">Found Moments</h1>
         <p className="text-foreground-muted mt-1 text-sm">
-          Every moment Klyp has found for you — {clips.length} clip{clips.length === 1 ? "" : "s"} total.
+          {clips.length} moment{clips.length === 1 ? "" : "s"} found for you.
         </p>
       </header>
 
@@ -295,11 +295,11 @@ function ClipsPageContent() {
             </svg>
           </div>
           <p className="font-syne font-semibold text-foreground">
-            {clips.length === 0 ? "No clips yet" : "Nothing matches your filters"}
+            {clips.length === 0 ? "No moments yet" : "Nothing matches your filters"}
           </p>
           <p className="text-sm text-foreground-muted mt-1 mb-5">
             {clips.length === 0
-              ? "Analyze a VOD and your clips will land here."
+              ? "Analyze a VOD and your moments will land here."
               : "Try clearing the search or type filter."}
           </p>
           {clips.length === 0 && (
@@ -417,17 +417,18 @@ function ClipsPageContent() {
               {/* Wraps on narrow cards: primary takes its own row, secondary
                   shares the next one with delete — no squashed labels. */}
               <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
-                {/* Clips are stored as VOD timestamps, not files — this renders
-                    the MP4 on demand via /api/clip, hence "Create clip". */}
+                {/* Open the existing editor with its controls expanded. The
+                    final create action stays inside the dialog. */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    createOrDownload(clip).then((err) => err && flash(err));
+                    setPreviewId(clip.id);
+                    setPreviewDetails(true);
                   }}
-                  disabled={workingId === clip.id || footageGone(clip)}
+                  disabled={footageGone(clip)}
                   title={footageGone(clip)
                     ? "The source VOD was deleted before this clip was backed up, so there is no footage to render"
-                    : "Render this clip from the source VOD and download it"}
+                    : "Open the clip editor"}
                   className={`basis-full sm:basis-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold font-syne transition-colors disabled:opacity-60 disabled:shadow-none ${
                     // Neutral, not the accent: a bright primary button reads as
                     // something to press, and there is nothing to press here.
@@ -444,20 +445,6 @@ function ClipsPageContent() {
                       </svg>
                       Footage gone
                     </>
-                  ) : exports[clip.id]?.status === "working" ? (
-                    <>
-                      <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
-                      Creating…
-                    </>
-                  ) : exports[clip.id]?.status === "ready" ? (
-                    <>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                      Download clip
-                    </>
                   ) : (
                     <>
                       {/* scissors */}
@@ -467,7 +454,7 @@ function ClipsPageContent() {
                         <line x1="14.47" y1="14.48" x2="20" y2="20" />
                         <line x1="8.12" y1="8.12" x2="12" y2="12" />
                       </svg>
-                      Create clip
+                      Open editor
                     </>
                   )}
                 </button>

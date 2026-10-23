@@ -473,7 +473,7 @@ export default function StreamsPage() {
                 clips requested. If your balance is too low when a VOD appears, that VOD is
                 skipped and you get a notification — nothing is queued or charged later.
               </p>
-              <p>Clips land in My Clips, exactly as if you had pasted the VOD yourself.</p>
+              <p>Moments land in Found Moments, exactly as if you had pasted the VOD yourself.</p>
             </div>
           </details>
         </section>
