@@ -340,7 +340,8 @@ export async function findClips(
   clipCount: ClipCount,
   contentType: ContentType = DEFAULT_CONTENT_TYPE,
   keyword?: string,
-  keywordMatchSeconds: number[] = []
+  keywordMatchSeconds: number[] = [],
+  priorWindows: { start_seconds: number; end_seconds: number }[] = []
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -367,6 +368,9 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     : "";
 
   const keywordSection = keyword?.trim() ? formatKeywordSection(keyword.trim(), keywordMatchSeconds) : "";
+  const priorSection = priorWindows.length
+    ? `\n\n## MOMENTS ALREADY DELIVERED TO THIS USER\n\nThese time ranges were already sold from this VOD. Find the next best genuinely different moments outside these ranges. Do not return a clip within 60 seconds of any listed start or overlapping a listed range. If no other moment clears the quality floor, return an empty clips array.\n${priorWindows.map((w) => `- ${Math.round(w.start_seconds)}s to ${Math.round(w.end_seconds)}s`).join("\n")}`
+    : "";
 
   const { data: response, response: rawResponse } = await client.messages.create({
     model: "claude-opus-4-8",
@@ -472,7 +476,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
       {
         role: "user",
         content:
-          `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor.\n\n${transcriptText}` +
+      `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor.\n\n${transcriptText}${priorSection}` +
           (chatSpikes ? `\n\n${formatSpikesForPrompt(chatSpikes)}` : ""),
       },
     ],
@@ -531,8 +535,9 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
   const DEDUPE_WINDOW_S = 60;
   const deduped: Clip[] = [];
   for (const clip of clips) {
-    const collides = deduped.some(
-      (kept) => Math.abs(kept.start_seconds - clip.start_seconds) < DEDUPE_WINDOW_S
+    const collides = [...priorWindows, ...deduped].some(
+      (kept) => Math.abs(kept.start_seconds - clip.start_seconds) < DEDUPE_WINDOW_S ||
+        (kept.start_seconds < clip.end_seconds && kept.end_seconds > clip.start_seconds)
     );
     if (!collides) deduped.push(clip);
   }
@@ -543,7 +548,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
     );
   }
   clips.length = 0;
-  clips.push(...deduped);
+  clips.push(...deduped.slice(0, clipCount));
 
   console.log(
     `[analyze] content=${contentType} types:`,
@@ -617,6 +622,8 @@ export async function runAnalysisPipeline(opts: {
    *  findKeywordMatches / formatKeywordSection). Undefined falls back to
    *  scanning the whole VOD for the best overall moments, unchanged. */
   keyword?: string;
+  /** Previously delivered windows for this user and VOD. */
+  priorWindows?: { start_seconds: number; end_seconds: number }[];
   chatSpikesPromise?: Promise<ChatSpike[] | null> | null;
   onProgress?: PipelineProgress;
 }): Promise<PipelineResult> {
@@ -702,7 +709,7 @@ export async function runAnalysisPipeline(opts: {
     console.log(`[analyze] keyword="${keyword}" matched ${keywordMatchSeconds.length} time(s) in transcript`);
   }
   const { clips, skipped } = await withMem("find-clips", () =>
-    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds)
+    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds, opts.priorWindows ?? [])
   );
   progress("analyze", "done");
 
