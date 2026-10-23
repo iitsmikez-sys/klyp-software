@@ -11,7 +11,7 @@ import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { processingFetch } from "@/lib/processing-api";
-import { downloadExport } from "@/lib/clip-export";
+import { downloadExport, readyExportWarning } from "@/lib/clip-export";
 import { useClipExports } from "@/components/useClipExports";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import {
@@ -510,6 +510,9 @@ function ClipsPageContent() {
                   )}
                 </button>
               </div>
+              {readyExportWarning(exports[clip.id]) && (
+                <p role="status" className="text-xs text-amber-300 mt-2">{readyExportWarning(exports[clip.id])}</p>
+              )}
 
             </div>
           ))}

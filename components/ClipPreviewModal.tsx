@@ -83,6 +83,7 @@ export default function ClipPreviewModal({
   const [draft, setDraft] = useState(initialEdit.draft);
   const [savedDraft, setSavedDraft] = useState(initialEdit.draft);
   const [unsupportedDraft, setUnsupportedDraft] = useState(initialEdit.unsupportedVersion);
+  const [pendingLayout, setPendingLayout] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
   const trimStart = draft.start_seconds - clip.start_seconds;
@@ -101,8 +102,8 @@ export default function ClipPreviewModal({
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
+  const dirtyRef = useRef(dirty || pendingLayout);
+  dirtyRef.current = dirty || pendingLayout;
   const closeRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -299,7 +300,7 @@ export default function ClipPreviewModal({
   const isUpload = clip.url.startsWith("upload:");
   const exporting = exportState?.status === "working";
   const ready = exportState?.status === "ready";
-  const actionBlocked = clipPreviewActionBlocked(dirty);
+  const actionBlocked = clipPreviewActionBlocked(dirty || pendingLayout);
 
   /* Only opacity and transform animate; the backdrop's blur is static so it
      never triggers a per-frame filter repaint. */
@@ -522,6 +523,9 @@ export default function ClipPreviewModal({
             </button>
           </p>
         )}
+        {exportState?.status === "ready" && exportState.warning && (
+          <p role="status" className="mx-6 mt-1 px-4 py-2.5 rounded-lg border border-amber-500/30 text-sm text-amber-300">{exportState.warning}</p>
+        )}
 
         {/* ── Details: scene analysis, transcript and the full export controls ── */}
         <div className="px-6 pb-6 pt-3">
@@ -550,7 +554,7 @@ export default function ClipPreviewModal({
                   setSavedDraft(persisted);
                   setUnsupportedDraft(false);
                   onClipSaved(value);
-                }} dirty={dirty} hidePreview />
+                }} dirty={dirty} hidePreview sourcePreviewUrl={previewUrl} onLayoutPendingChange={setPendingLayout} />
             </>
           )}
         </div>
