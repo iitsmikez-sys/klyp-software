@@ -7,7 +7,8 @@ import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { resolveBin, run, runCapture } from "@/lib/bin";
+import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
+import { runQueued } from "@/lib/job-queue";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { getArchivedClip, CLIP_BUCKET } from "@/lib/clip-archive";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -100,10 +101,11 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       const seconds = Number(probe.trim());
       if (!Number.isFinite(seconds) || seconds < 0.1) throw new Error("Could not read the imported video's duration.");
       duration = Math.round(Math.min(30, seconds) * 100) / 100;
-      await run(resolveBin("ffmpeg"), ["-v", "error", "-y", "-i", input, "-t", String(duration),
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-movflags", "+faststart", output], { maxRunMs: 4 * 60_000 });
+      await runQueued(`editor-media:${clipId}`, () => run(resolveBin("ffmpeg"),
+        ["-v", "error", "-y", "-i", input, "-t", String(duration),
+          "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2",
+          "-c:v", "libx264", "-threads", String(FFMPEG_THREADS), "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
+          "-c:a", "aac", "-movflags", "+faststart", output], { maxRunMs: 4 * 60_000 }));
       const outputProbe = await runCapture(resolveBin("ffprobe"), ["-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", output], { maxRunMs: 30_000 });
       duration = Math.round(Math.min(30, Number(outputProbe.trim())) * 100) / 100;

@@ -23,6 +23,7 @@ import {
   CAPTION_STYLES,
   EXPORT_FORMATS,
   FORMAT_DIMENSIONS,
+  resolveExportFormat,
   type CaptionStyle,
   type ExportFormat,
   type TimedWord,
@@ -312,8 +313,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
   const sparksBalance = profile.sparks;
 
-  // Format switching is Pro — free tier always exports the 9:16 default.
-  if (!isPro) format = "9:16";
+  format = resolveExportFormat(format, isPro);
 
   if (upscale) {
     if (!isPro) {

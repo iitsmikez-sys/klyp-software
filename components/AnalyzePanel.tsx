@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, FormEvent } from "react";
 import type { ClipType, AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, canUseExportFormat, resolveExportFormat } from "@/lib/clips";
 import {
   MIN_ANALYZE_COST,
   CLIP_COUNT_OPTIONS,
@@ -574,7 +574,7 @@ export default function AnalyzePanel() {
               hook: clipHooks[index] ?? undefined,
               // Keep the burn identical to the preview overlay (black pill bar).
               hook_style: "IMPACT",
-              aspect_ratio: clipFormats[index] ?? "9:16",
+              aspect_ratio: resolveExportFormat(clipFormats[index] ?? "9:16", isPro),
             }
       ),
     });
@@ -1282,7 +1282,7 @@ export default function AnalyzePanel() {
                   </p>
                   <div className="flex rounded-lg border border-border overflow-hidden">
                     {EXPORT_FORMATS.map((f) => {
-                      const locked = !isPro && f !== "9:16";
+                      const locked = !canUseExportFormat(f, isPro);
                       return (
                         <button
                           key={f}
@@ -1290,9 +1290,9 @@ export default function AnalyzePanel() {
                             locked ? setProGateOpen(true) : setClipFormats((prev) => ({ ...prev, [i]: f }))
                           }
                           disabled={busy}
-                          title={locked ? "Format switching is a Pro feature" : FORMAT_LABELS[f]}
+                          title={locked ? "Square and wide formats require Pro" : FORMAT_LABELS[f]}
                           className={`px-2.5 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
-                            (clipFormats[i] ?? "9:16") === f
+                            resolveExportFormat(clipFormats[i] ?? "9:16", isPro) === f
                               ? "bg-accent-glow text-accent"
                               : "bg-surface-2 text-foreground-muted hover:text-foreground"
                           } ${locked ? "opacity-60" : ""}`}
@@ -1304,7 +1304,7 @@ export default function AnalyzePanel() {
                     })}
                   </div>
                   <span className="text-xs text-foreground-muted">
-                    {FORMAT_LABELS[clipFormats[i] ?? "9:16"]}
+                    {FORMAT_LABELS[resolveExportFormat(clipFormats[i] ?? "9:16", isPro)]}
                   </span>
                 </div>
 

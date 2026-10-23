@@ -8,7 +8,7 @@
  * migration can still be previewed and exported, just without those extras.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, type CaptionStyle, type ExportFormat, type TimedWord } from "@/lib/clips";
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, canUseExportFormat, resolveExportFormat, type CaptionStyle, type ExportFormat, type TimedWord } from "@/lib/clips";
 import { buildCaptionCues, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { drawCaptionPreview } from "@/lib/caption-preview";
@@ -100,6 +100,7 @@ export default function SavedClipEditor({
   const [editingCaptionIndex, setEditingCaptionIndex] = useState<number | null>(null);
   const [editingHook, setEditingHook] = useState(false);
   const [format, setFormat] = useState<ExportFormat>("9:16");
+  const exportFormat = resolveExportFormat(format, isPro);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
@@ -680,7 +681,7 @@ export default function SavedClipEditor({
           hook: selectedHook ?? undefined,
           hook_style: hookStyle,
           handle: getStoredHandle(),
-          aspect_ratio: format,
+          aspect_ratio: exportFormat,
         }),
       });
       if (!res.ok) {
@@ -723,7 +724,7 @@ export default function SavedClipEditor({
               title="Undo" aria-label="Undo" className="hidden sm:inline rounded px-2 text-xl text-foreground-muted hover:text-white disabled:opacity-40">↶</button>
             <button type="button" onClick={redoEdit} disabled={redoStack.length === 0 || exporting}
               title="Redo" aria-label="Redo" className="hidden sm:inline rounded px-2 text-xl text-foreground-muted hover:text-white disabled:opacity-40">↷</button>
-            <span className="hidden sm:inline rounded-md border border-border px-3 py-1.5 text-xs text-foreground-muted">{format}</span>
+            <span className="hidden sm:inline rounded-md border border-border px-3 py-1.5 text-xs text-foreground-muted">{exportFormat}</span>
             <button type="button" onClick={exportClip} disabled={exporting}
               className="rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-background hover:bg-accent-dim disabled:opacity-50">
               {exporting ? "Exporting…" : "↑ Export"}
@@ -979,12 +980,12 @@ export default function SavedClipEditor({
               aria-label="Forward five seconds" className="px-1 text-lg hover:text-accent disabled:opacity-40">⏭</button>
           </div>
           <div className="flex items-center gap-2">
-            <select value={format} onChange={(event) => {
+            <select value={exportFormat} onChange={(event) => {
               const next = event.target.value as ExportFormat;
-              if (!isPro && next !== "9:16") setProGateOpen(true);
+              if (!canUseExportFormat(next, isPro)) setProGateOpen(true);
               else setFormat(next);
             }} aria-label="Export format" className="rounded border border-[#29424c] bg-[#07141c] px-2 py-1.5 text-white">
-              {EXPORT_FORMATS.map((option) => <option key={option} value={option}>{option}{!isPro && option !== "9:16" ? " 🔒" : ""}</option>)}
+              {EXPORT_FORMATS.map((option) => <option key={option} value={option}>{option}{!canUseExportFormat(option, isPro) ? " 🔒" : ""}</option>)}
             </select>
             <button type="button" onClick={() => void previewFrameRef.current?.requestFullscreen?.()}
               aria-label="Full screen preview" className="rounded border border-[#29424c] px-2 py-1.5 text-white hover:border-accent">⛶</button>
@@ -1170,15 +1171,15 @@ export default function SavedClipEditor({
         </p>
         <div className="flex rounded-lg border border-border overflow-hidden">
           {EXPORT_FORMATS.map((f) => {
-            const locked = !isPro && f !== "9:16";
+            const locked = !canUseExportFormat(f, isPro);
             return (
               <button
                 key={f}
                 onClick={() => (locked ? setProGateOpen(true) : setFormat(f))}
                 disabled={exporting}
-                title={locked ? "Format switching is a Pro feature" : FORMAT_LABELS[f]}
+                title={locked ? "Square and wide formats require Pro" : FORMAT_LABELS[f]}
                 className={`px-2.5 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
-                  format === f
+                  exportFormat === f
                     ? "bg-accent-glow text-accent"
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
                 } ${locked ? "opacity-60" : ""}`}
@@ -1189,7 +1190,7 @@ export default function SavedClipEditor({
             );
           })}
         </div>
-        <span className="text-[10px] text-subtle">{FORMAT_LABELS[format]}</span>
+        <span className="text-[10px] text-subtle">{FORMAT_LABELS[exportFormat]}</span>
       </div>}
 
       {workspace && <div className="grid grid-cols-1 gap-2 2xl:grid-cols-2">
