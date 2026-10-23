@@ -8,7 +8,7 @@
  * migration can still be previewed and exported, just without those extras.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, type CaptionStyle, type ExportFormat } from "@/lib/clips";
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, canUseExportFormat, resolveExportFormat, type CaptionStyle, type ExportFormat } from "@/lib/clips";
 import { HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { useSparks } from "./SparksProvider";
@@ -76,6 +76,7 @@ export default function SavedClipEditor({
   const [hookStyle, setHookStyle] = useState<HookStyle>("IMPACT");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("BOLD");
   const [format, setFormat] = useState<ExportFormat>("9:16");
+  const exportFormat = resolveExportFormat(format, isPro);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
@@ -363,7 +364,7 @@ export default function SavedClipEditor({
           hook: selectedHook ?? undefined,
           hook_style: hookStyle,
           handle: getStoredHandle(),
-          aspect_ratio: format,
+          aspect_ratio: exportFormat,
         }),
       });
       if (!res.ok) {
@@ -640,15 +641,15 @@ export default function SavedClipEditor({
         </p>
         <div className="flex rounded-lg border border-border overflow-hidden">
           {EXPORT_FORMATS.map((f) => {
-            const locked = !isPro && f !== "9:16";
+            const locked = !canUseExportFormat(f, isPro);
             return (
               <button
                 key={f}
                 onClick={() => (locked ? setProGateOpen(true) : setFormat(f))}
                 disabled={exporting}
-                title={locked ? "Format switching is a Pro feature" : FORMAT_LABELS[f]}
+                title={locked ? "Square and wide formats require Pro" : FORMAT_LABELS[f]}
                 className={`px-2.5 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
-                  format === f
+                  exportFormat === f
                     ? "bg-accent-glow text-accent"
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
                 } ${locked ? "opacity-60" : ""}`}
@@ -659,7 +660,7 @@ export default function SavedClipEditor({
             );
           })}
         </div>
-        <span className="text-[10px] text-subtle">{FORMAT_LABELS[format]}</span>
+        <span className="text-[10px] text-subtle">{FORMAT_LABELS[exportFormat]}</span>
       </div>
 
       {exportError && (
