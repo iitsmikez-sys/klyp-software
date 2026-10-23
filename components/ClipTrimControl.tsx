@@ -117,4 +117,3 @@ export default function ClipTrimControl({ originalStart, originalEnd, start, end
     </div>
   );
 }
-
