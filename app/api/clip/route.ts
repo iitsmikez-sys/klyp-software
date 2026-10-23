@@ -34,6 +34,7 @@ import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { archivedClipTiming } from "@/lib/clip-trim";
 import { buildSegmentFilter, parseSegments, retimeWords, timelineDuration, type EditSegment } from "@/lib/edit-segments";
 
 export const runtime = "nodejs";
@@ -340,6 +341,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       if (clipId) {
         const archived = await getArchivedClip(clipId, profile.id);
         if (archived?.masterPath && archived.status === "stored") {
+          if (Math.abs(start - archived.originalStartSeconds) > 0.001 ||
+              Math.abs(end - archived.originalEndSeconds) > 0.001) {
+            throw new RangeError("Edited clip does not match the saved original.");
+          }
           const bytes = await readArchivedObject(archived.masterPath);
           if (bytes) {
             archivedMaster = path.join(CACHE_DIR, `master-${archived.id}.mp4`);
@@ -352,9 +357,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
 
       if (archivedMaster) {
-        // The master already starts at the clip's start, so no rebasing.
+        // Archive jobs floor the saved clip's start before encoding the master.
         sourcePath = archivedMaster;
-        offsetSeconds = start;
+        offsetSeconds = archivedClipTiming(start).sourceStart;
       } else {
         const resolved = await resolveSourceSegment(url, start, end);
         sourcePath = resolved.path;
@@ -425,10 +430,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Clip generation failed.";
     log("FAILED:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
   } finally {
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
     if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});
   }
 }
-
