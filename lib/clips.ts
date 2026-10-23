@@ -10,6 +10,16 @@ export type CaptionStyle = (typeof CAPTION_STYLES)[number];
 export const EXPORT_FORMATS = ["9:16", "1:1", "16:9", "Original"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
+/** Free exports may stay vertical or retain the source aspect ratio. */
+export function canUseExportFormat(format: ExportFormat, isPro: boolean): boolean {
+  return isPro || format === "9:16" || format === "Original";
+}
+
+/** Enforce format access at the export boundary, even for direct API requests. */
+export function resolveExportFormat(format: ExportFormat, isPro: boolean): ExportFormat {
+  return canUseExportFormat(format, isPro) ? format : "9:16";
+}
+
 /** Fixed output dimensions per cropped format — "Original" keeps the source's native size. */
 export const FORMAT_DIMENSIONS: Record<Exclude<ExportFormat, "Original">, { w: number; h: number }> = {
   "9:16": { w: 1080, h: 1920 },

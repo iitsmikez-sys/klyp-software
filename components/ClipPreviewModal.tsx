@@ -303,12 +303,14 @@ export default function ClipPreviewModal({
         aria-label={`${detailsOpen ? "Editor" : "Preview"}: ${clip.title}`}
         style={panelStyle}
         className={detailsOpen
-          ? "w-full h-[100dvh] overflow-y-auto scrollbar-thin bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
+          ? "w-full h-[100dvh] overflow-y-auto xl:overflow-hidden xl:flex xl:flex-col bg-[#080f13] border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
           : "w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"}
       >
         {/* ── Header ── */}
-        <div className={`flex items-start justify-between gap-4 px-6 pt-6 pb-4 ${detailsOpen ? "border-b border-border" : ""}`}>
-          <div className="min-w-0">
+        <div className={detailsOpen
+          ? "absolute right-3 top-3 z-30"
+          : "flex items-start justify-between gap-4 px-6 pt-6 pb-4"}>
+          {!detailsOpen && <div className="min-w-0">
             {/* Wraps rather than truncates — on a phone the tail of a title is
                 often the point of it ("…Then THIS Happened"). */}
             <h2 className="font-geist text-xl sm:text-2xl font-bold text-white leading-tight line-clamp-2">
@@ -327,7 +329,7 @@ export default function ClipPreviewModal({
                 {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)}
               </span>
             </div>
-          </div>
+          </div>}
           <button
             ref={closeRef}
             onClick={beginClose}
@@ -469,7 +471,7 @@ export default function ClipPreviewModal({
         )}
 
         {/* ── Editor: scene analysis, transcript and export controls ── */}
-        <div className={detailsOpen ? "px-4 pb-4" : "px-6 pb-6 pt-3"}>
+        <div className={detailsOpen ? "xl:flex-1 xl:min-h-0 xl:overflow-hidden" : "px-6 pb-6 pt-3"}>
           {!detailsOpen && (
           <button
             onClick={() => setDetailsOpen((v) => !v)}

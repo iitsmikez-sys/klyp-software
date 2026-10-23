@@ -18,6 +18,8 @@ export const CLIP_BUCKET = "clip-media";
 
 export type ArchivedClip = {
   id: string;
+  originalStartSeconds: number;
+  originalEndSeconds: number;
   masterPath: string | null;
   proxyPath: string | null;
   posterPath: string | null;
@@ -33,13 +35,15 @@ export async function getArchivedClip(clipId: string, userId: string): Promise<A
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("clips")
-    .select("id, master_path, proxy_path, poster_path, archive_status")
+    .select("id, start_seconds, end_seconds, master_path, proxy_path, poster_path, archive_status")
     .eq("id", clipId)
     .eq("user_id", userId) // scoping, not decoration: this is the access check
     .maybeSingle();
   if (error || !data) return null;
   return {
     id: data.id,
+    originalStartSeconds: data.start_seconds,
+    originalEndSeconds: data.end_seconds,
     masterPath: data.master_path,
     proxyPath: data.proxy_path,
     posterPath: data.poster_path,
