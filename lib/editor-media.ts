@@ -6,6 +6,8 @@ export type MediaInsert = {
   kind: "image" | "video";
   after: number; // -1 means before the first source section
   duration: number;
+  placement?: "overlay"; // absent in older drafts: a full-frame insert
+  at?: number; // output seconds, only for photo overlays
 };
 
 export type EditorTimelineItem = {
@@ -37,19 +39,27 @@ export function parseMediaInserts(value: unknown, segments: EditSegment[]): Medi
   const media: MediaInsert[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object") throw new Error("Invalid imported media.");
-    const { id, kind, after, duration } = item as Record<string, unknown>;
+    const { id, kind, after, duration, placement, at } = item as Record<string, unknown>;
+    const isOverlay = placement === "overlay";
     if (typeof id !== "string" || !MEDIA_ID.test(id) || ids.has(id) ||
         (kind !== "image" && kind !== "video") ||
         typeof after !== "number" || !Number.isInteger(after) || after < -1 || after >= segments.length ||
-        typeof duration !== "number" || !Number.isFinite(duration) || duration < 0.1 || duration > MAX_MEDIA_SECONDS) {
+        typeof duration !== "number" || !Number.isFinite(duration) || duration < 0.1 || duration > MAX_MEDIA_SECONDS ||
+        (placement !== undefined && !isOverlay) ||
+        (isOverlay && (kind !== "image" || typeof at !== "number" || !Number.isFinite(at) || at < 0)) ||
+        (!isOverlay && at !== undefined)) {
       throw new Error("Invalid imported media placement or duration.");
     }
     ids.add(id);
-    media.push({ id, kind, after, duration });
+    media.push(isOverlay ? { id, kind, after, duration, placement: "overlay", at: at as number }
+      : { id, kind, after, duration });
   }
   const total = segments.reduce((sum, item) => sum + item.end - item.start, 0) +
-    media.reduce((sum, item) => sum + item.duration, 0);
+    media.reduce((sum, item) => sum + (item.placement === "overlay" ? 0 : item.duration), 0);
   if (total > MAX_EDITOR_SECONDS + 0.001) throw new Error("Edited clips are capped at 3 minutes.");
+  if (media.some((item) => item.placement === "overlay" && item.at! + item.duration > total + 0.001)) {
+    throw new Error("Photo overlays must fit inside the edited clip.");
+  }
   return media;
 }
 
@@ -58,7 +68,7 @@ export function buildEditorTimeline(segments: EditSegment[], media: MediaInsert[
   let cursor = 0;
   const addMediaAfter = (index: number) => {
     media.forEach((entry, mediaIndex) => {
-      if (entry.after !== index) return;
+      if (entry.after !== index || entry.placement === "overlay") return;
       items.push({ kind: entry.kind, id: entry.id, mediaIndex, start: cursor, end: cursor + entry.duration });
       cursor += entry.duration;
     });
@@ -78,6 +88,11 @@ export function timelineItemAt(items: EditorTimelineItem[], time: number): Edito
   if (!items.length) return null;
   const clamped = Math.max(0, Math.min(time, items[items.length - 1].end));
   return items.find((item) => clamped < item.end - 0.001) ?? items[items.length - 1];
+}
+
+/** The first sequential insert may become the opening shot; overlays never replace the player. */
+export function firstOpeningInsertIndex(media: MediaInsert[]): number {
+  return media.findIndex((item) => item.after === -1 && item.placement !== "overlay");
 }
 
 export function outputTimeForSource(items: EditorTimelineItem[], sourceTime: number): number {

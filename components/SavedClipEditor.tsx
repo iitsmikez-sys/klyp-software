@@ -16,6 +16,7 @@ import { CAPTION_COLORS, CAPTION_HEX, CAPTION_POSITIONS, type CaptionColor, type
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
 import ClipTrimControl from "./ClipTrimControl";
+import EditorTimeline from "./EditorTimeline";
 import { archivedClipTiming } from "@/lib/clip-trim";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
@@ -26,7 +27,7 @@ import {
   timelineDuration, trimSegment, type EditSegment,
 } from "@/lib/edit-segments";
 import {
-  buildEditorTimeline, mediaAfterDelete, mediaAfterSplit, outputTimeForSource,
+  buildEditorTimeline, firstOpeningInsertIndex, mediaAfterDelete, mediaAfterSplit, outputTimeForSource,
   parseMediaInserts, retimeWordsWithMedia, timelineItemAt, type MediaInsert,
 } from "@/lib/editor-media";
 
@@ -63,6 +64,7 @@ export default function SavedClipEditor({
   const [leftTab, setLeftTab] = useState<"transcript" | "scene" | "media">("transcript");
   const [transcriptSearch, setTranscriptSearch] = useState("");
   const [timelinePoster, setTimelinePoster] = useState<string | null>(() => peekClipThumbnail(clip));
+  const [timelineFrames, setTimelineFrames] = useState<string[]>([]);
   const [sourcePeaks, setSourcePeaks] = useState<number[]>([]);
   const [proGateOpen, setProGateOpen] = useState(false);
   const { tier } = useSparks();
@@ -132,6 +134,8 @@ export default function SavedClipEditor({
     : (timelineItems.find((item) => item.mediaIndex === activeMediaIndex)?.start ?? 0) + mediaTime;
   const editedTimeRef = useRef(editedTime);
   editedTimeRef.current = editedTime;
+  const visibleOverlay = [...media].reverse().find((item) => item.placement === "overlay" &&
+    editedTime >= item.at! && editedTime < item.at! + item.duration && item.url);
   const outputCaptionWords = useMemo(() => {
     if (!hasWords) return [];
     const words = media.length
@@ -234,7 +238,10 @@ export default function SavedClipEditor({
     }
     lastTrimRef.current = trim ? { section: selected, at: now } : null;
     setSegments(next);
-    setMedia(nextMedia);
+    const nextDuration = buildEditorTimeline(next, nextMedia).at(-1)?.end ?? timelineDuration(next);
+    setMedia(nextMedia.map((item) => item.placement === "overlay"
+      ? { ...item, at: Math.max(0, Math.min(item.at!, Math.max(0, nextDuration - item.duration))),
+          duration: Math.min(item.duration, nextDuration) } : item));
     setActiveMediaIndex(null);
     setPlaying(false);
     setSelectedSegment(selected);
@@ -268,7 +275,7 @@ export default function SavedClipEditor({
     setRedoStack([]);
     setUndoStack((history) => [...history.slice(-29), { segments, media, selected: selectedSegment, time: currentTime }]);
     setMedia(next);
-    const firstImported = next.findIndex((item) => item.after === -1);
+    const firstImported = firstOpeningInsertIndex(next);
     setActiveMediaIndex(firstImported >= 0 && currentTime <= segments[0].start ? firstImported : null);
     setSelectedMediaIndex(firstImported >= 0 && currentTime <= segments[0].start ? firstImported : null);
     setMediaTime(0);
@@ -331,6 +338,47 @@ export default function SavedClipEditor({
 
   useEffect(() => {
     if (!previewUrl || !workspace) return;
+    let cancelled = false;
+    const probe = document.createElement("video");
+    probe.muted = true;
+    probe.preload = "auto";
+    probe.src = previewUrl;
+    const capture = async () => {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          probe.onloadedmetadata = () => resolve();
+          probe.onerror = () => reject(new Error("Preview frames unavailable"));
+        });
+        const count = Math.min(32, Math.max(8, Math.ceil(sourceDuration / 3)));
+        const canvas = document.createElement("canvas");
+        canvas.width = 112; canvas.height = 64;
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        const frames: string[] = [];
+        for (let index = 0; index < count && !cancelled; index++) {
+          const target = Math.min(Math.max(0.05, probe.duration - 0.05),
+            Math.max(0.05, previewLeadSeconds + index / count * sourceDuration));
+          await new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 1200);
+            probe.onseeked = () => { clearTimeout(timeout); resolve(); };
+            probe.currentTime = target;
+          });
+          if (probe.readyState < 2) continue;
+          const scale = Math.max(canvas.width / probe.videoWidth, canvas.height / probe.videoHeight);
+          const width = probe.videoWidth * scale;
+          const height = probe.videoHeight * scale;
+          context.drawImage(probe, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+          frames.push(canvas.toDataURL("image/jpeg", 0.66));
+        }
+        if (!cancelled) setTimelineFrames(frames);
+      } catch { if (!cancelled) setTimelineFrames([]); }
+    };
+    void capture();
+    return () => { cancelled = true; probe.pause(); probe.removeAttribute("src"); probe.load(); };
+  }, [previewUrl, previewLeadSeconds, sourceDuration, workspace]);
+
+  useEffect(() => {
+    if (!previewUrl || !workspace) return;
     let live = true;
     let context: AudioContext | null = null;
     (async () => {
@@ -368,8 +416,11 @@ export default function SavedClipEditor({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error ?? "Could not import media.");
-      const next = [...media, { id: result.id, kind: result.kind, duration: result.duration,
-        after: selectedSegment, name: file.name, url: result.url } as EditorMedia];
+      const overlay = result.kind === "image" && editedDuration >= 0.1;
+      const duration = overlay ? Math.min(result.duration, editedDuration) : result.duration;
+      const next = [...media, { id: result.id, kind: result.kind, duration,
+        after: selectedSegment, ...(overlay ? { placement: "overlay", at: Math.min(editedTime, editedDuration - duration) } : {}),
+        name: file.name, url: result.url } as EditorMedia];
       parseMediaInserts(next, segments);
       applyMedia(next);
     } catch (error) {
@@ -411,7 +462,7 @@ export default function SavedClipEditor({
             name: typeof (saved.media as EditorMedia[])[index]?.name === "string"
               ? (saved.media as EditorMedia[])[index].name.slice(0, 100) : `Imported ${entry.kind}` }));
           setMedia(named);
-          const firstImported = named.findIndex((item) => item.after === -1);
+          const firstImported = firstOpeningInsertIndex(named);
           if (firstImported >= 0) {
             setActiveMediaIndex(firstImported);
             setSelectedMediaIndex(firstImported);
@@ -436,7 +487,7 @@ export default function SavedClipEditor({
       localStorage.setItem(`klyp-editor-${clip.id}`, JSON.stringify({
         hook: selectedHook, hookStyle, captionStyle, captionColor, captionPosition,
         captionEdits: captionWords.map((word) => word.text), format, segments,
-        media: media.map(({ id, kind, after, duration, name }) => ({ id, kind, after, duration, name })),
+        media: media.map(({ id, kind, after, duration, placement, at, name }) => ({ id, kind, after, duration, placement, at, name })),
       }));
     } catch { /* Storage can be unavailable; editing and export still work. */ }
   }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, captionColor, captionPosition, captionWords, format, segments, media]);
@@ -615,7 +666,7 @@ export default function SavedClipEditor({
           start_seconds: clip.start_seconds,
           end_seconds: clip.end_seconds,
           segments,
-          media: media.map(({ id, kind, after, duration }) => ({ id, kind, after, duration })),
+          media: media.map(({ id, kind, after, duration, placement, at }) => ({ id, kind, after, duration, placement, at })),
           title: clip.title,
           style: hasWords ? captionStyle : undefined,
           words: hasWords ? clip.words : undefined,
@@ -757,7 +808,11 @@ export default function SavedClipEditor({
             {uploadingMedia && <p className="text-xs text-accent">Importing media…</p>}
             {mediaError && <p role="alert" className="text-xs text-red-400">{mediaError}</p>}
             {media.map((item, index) => (
-              <button type="button" key={item.id} onClick={() => { const entry = timelineItems.find((part) => part.mediaIndex === index); if (entry) seekOutput(entry.start); }}
+              <button type="button" key={item.id} onClick={() => {
+                const entry = timelineItems.find((part) => part.mediaIndex === index);
+                if (item.placement === "overlay") { seekOutput(item.at!); setSelectedMediaIndex(index); }
+                else if (entry) seekOutput(entry.start);
+              }}
                 className="flex w-full items-center gap-2 rounded-lg border border-[#30424c] bg-[#101c23] p-2 text-left text-xs text-foreground hover:border-accent/60">
                 {item.kind === "image" && item.url ? <img src={item.url} alt="" className="h-10 w-10 rounded object-cover" /> : <span className="flex h-10 w-10 items-center justify-center rounded bg-violet-500/20">▶</span>}
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
@@ -842,6 +897,10 @@ export default function SavedClipEditor({
                   This imported file is unavailable. Remove it or import it again.
                 </div>
               )
+            )}
+            {visibleOverlay && (
+              <img src={visibleOverlay.url} alt={visibleOverlay.name}
+                className="absolute inset-0 h-full w-full object-cover pointer-events-none" />
             )}
             <canvas ref={canvasRef} onClick={onPreviewOverlayClick}
               aria-label="Click the hook or captions to edit them; click elsewhere to play or pause"
@@ -1103,7 +1162,7 @@ export default function SavedClipEditor({
       {workspace && (
         <div className="rounded-lg border border-border bg-surface-2 p-3">
           <p className="text-xs font-semibold text-foreground">Your media</p>
-          <p className="mt-1 text-[11px] text-foreground-muted">Add photos or videos after the selected section. Photos start at 3 seconds; videos use up to 30 seconds.</p>
+          <p className="mt-1 text-[11px] text-foreground-muted">Photos appear over the video at the playhead. Videos are inserted after the selected section.</p>
           <label className="mt-3 inline-flex cursor-pointer rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20">
             {uploadingMedia ? "Importing…" : "+ Add image or video"}
             <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm"
@@ -1123,13 +1182,22 @@ export default function SavedClipEditor({
                     <button type="button" className="min-w-0 flex-1 truncate text-left font-semibold text-foreground hover:text-accent"
                       onClick={() => {
                         const timelineItem = timelineItems.find((entry) => entry.mediaIndex === index);
-                        if (timelineItem) seekOutput(timelineItem.start);
+                        if (item.placement === "overlay") { seekOutput(item.at!); setSelectedMediaIndex(index); }
+                        else if (timelineItem) seekOutput(timelineItem.start);
                       }}>{item.kind === "image" ? "▧" : "▶"} {item.name}</button>
                     <button type="button" onClick={() => applyMedia(media.filter((_, at) => at !== index))}
                       disabled={exporting} className="rounded border border-border px-2 py-1 text-foreground-muted hover:text-red-400">Remove</button>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="text-foreground-muted">Place
+                    {item.placement === "overlay" ? (
+                      <label className="text-foreground-muted">Start
+                        <input type="number" min={0} max={Math.max(0, editedDuration - item.duration)} step={0.1}
+                          value={item.at} disabled={exporting}
+                          onChange={(event) => applyMedia(media.map((entry, at) => at === index
+                            ? { ...entry, at: Math.max(0, Math.min(editedDuration - entry.duration, Number(event.target.value) || 0)) } : entry))}
+                          className="ml-1 w-16 rounded border border-border bg-surface-2 px-2 py-1 text-foreground" /> s
+                      </label>
+                    ) : <label className="text-foreground-muted">Place
                       <select value={item.after} disabled={exporting}
                         onChange={(event) => applyMedia(media.map((entry, at) => at === index
                           ? { ...entry, after: Number(event.target.value) } : entry))}
@@ -1137,12 +1205,12 @@ export default function SavedClipEditor({
                         <option value={-1}>At start</option>
                         {segments.map((_, section) => <option key={section} value={section}>After section {section + 1}</option>)}
                       </select>
-                    </label>
+                    </label>}
                     {item.kind === "image" ? (
                       <label className="text-foreground-muted">Seconds
                         <input type="number" min={0.1} max={30} step={0.1} value={item.duration}
                           disabled={exporting} onChange={(event) => {
-                            const duration = Math.max(0.1, Math.min(30, Number(event.target.value) || 0.1));
+                            const duration = Math.max(0.1, Math.min(30, item.placement === "overlay" ? editedDuration - item.at! : 30, Number(event.target.value) || 0.1));
                             const next = media.map((entry, at) => at === index ? { ...entry, duration } : entry);
                             try { parseMediaInserts(next, segments); applyMedia(next); setMediaError(null); }
                             catch (error) { setMediaError(error instanceof Error ? error.message : "Invalid duration."); }
@@ -1198,159 +1266,46 @@ export default function SavedClipEditor({
       </div>
       </div>
 
-      {workspace && (
-        <div className="relative shrink-0 bg-[#091218] p-2.5 xl:h-[34dvh] xl:min-h-[300px] xl:max-h-[340px] xl:overflow-y-auto">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">Timeline</h3>
-            <span className="font-mono text-xs text-foreground-muted">
-              {fmtClipTime(editedTime)} / {fmtClipTime(editedDuration)}
-            </span>
-          </div>
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={splitAtPlayhead}
-              disabled={!previewUrl || exporting || activeMediaIndex !== null || splitSegment(segments, segmentIndexAtSource(segments, currentTime), currentTime) === segments}
-              className="rounded-lg border border-border px-3 py-1 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40"
-            >
-              ✂ Split at playhead
-            </button>
-            <button
-              type="button"
-              onClick={removeSelected}
-              disabled={(selectedMediaIndex === null && segments.length <= 1) || exporting}
-              className="rounded-lg border border-border px-3 py-1 text-xs font-semibold text-foreground hover:border-red-400/50 disabled:opacity-40"
-            >
-              Delete selected
-            </button>
-            <button
-              type="button"
-              onClick={undoEdit}
-              title="Undo the last timeline change"
-              disabled={undoStack.length === 0 || exporting}
-              className="rounded-lg border border-border px-3 py-1 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40"
-            >
-              Undo
-            </button>
-            <button type="button" onClick={redoEdit} disabled={redoStack.length === 0 || exporting}
-              title="Redo the last timeline change"
-              className="rounded-lg border border-border px-3 py-1 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40">
-              Redo
-            </button>
-            <span className="text-[11px] text-foreground-muted">Select a section to trim, split, or remove it.</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(editedDuration, 0.1)}
-            step={0.1}
-            value={Math.min(editedTime, editedDuration)}
-            onChange={(e) => seekOutput(Number(e.target.value))}
-            aria-label="Seek clip timeline"
-            className="w-full accent-accent"
-            disabled={!previewUrl}
-          />
-          <div className="relative ml-[88px] mr-3 mt-1 h-5 text-[10px] font-mono text-foreground-muted">
-            {Array.from({ length: Math.floor(editedDuration / (editedDuration <= 30 ? 5 : editedDuration <= 90 ? 10 : 20)) + 1 }, (_, index) => {
-              const seconds = index * (editedDuration <= 30 ? 5 : editedDuration <= 90 ? 10 : 20);
-              return <span key={seconds} className="absolute top-0 border-l border-[#30424c] pl-1"
-                style={{ left: `${seconds / Math.max(editedDuration, 0.1) * 100}%` }}>{fmtClipTime(seconds)}</span>;
-            })}
-          </div>
-          <div className="relative">
-          <div className="pointer-events-none absolute inset-y-0 left-[88px] right-3 z-10">
-            <span className="absolute top-0 bottom-0 w-px bg-white/90 shadow-[0_0_8px_white]"
-              style={{ left: `${Math.min(100, editedTime / Math.max(editedDuration, 0.1) * 100)}%` }} />
-          </div>
-          <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-1">
-            <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Video</span>
-            <div className="flex min-w-0 flex-1 gap-1">
-              {timelineItems.map((item, index) => (
-                <button
-                  key={`${item.kind}-${item.id ?? item.sourceIndex}-${index}`}
-                  type="button"
-                  onClick={() => seekOutput(item.start)}
-                  style={{ flex: `${item.end - item.start} 1 0%` }}
-                  aria-label={item.kind === "source" ? `Select section ${item.sourceIndex! + 1}` : `Select imported ${item.kind}`}
-                  aria-pressed={item.kind === "source" ? selectedMediaIndex === null && selectedSegment === item.sourceIndex
-                    : selectedMediaIndex === item.mediaIndex}
-                  className={`relative h-10 min-w-8 overflow-hidden truncate rounded px-2 text-left text-[11px] font-semibold transition-colors ${
-                    (item.kind === "source" ? selectedMediaIndex === null && selectedSegment === item.sourceIndex
-                      : selectedMediaIndex === item.mediaIndex)
-                      ? "bg-sky-600/40 border-2 border-accent text-white"
-                      : item.kind === "source" ? "bg-sky-600/30 border border-sky-400/50 text-sky-50 hover:border-sky-300"
-                      : "bg-violet-500/30 border border-violet-400/60 text-violet-100 hover:border-violet-300"
-                  }`}
-                >
-                  {(item.kind === "source" ? timelinePoster : item.kind === "image" ? media[item.mediaIndex!]?.url : null) &&
-                    <img src={item.kind === "source" ? timelinePoster! : media[item.mediaIndex!].url}
-                      alt="" className="absolute inset-y-0 left-0 h-full w-12 object-cover opacity-75" />}
-                  <span className="relative z-[1] block pl-10 drop-shadow-[0_1px_2px_black]">
-                    {item.kind === "source" ? `Section ${item.sourceIndex! + 1}` : item.kind === "image" ? "Imported photo" : "Imported video"}
-                    <span className="block text-[10px] font-normal">{fmtClipTime(item.end - item.start)}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-          {liveCaptionCues.length > 0 && (
-            <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-1">
-              <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Captions</span>
-              <div className="relative h-7 min-w-0 flex-1 overflow-hidden">
-                {liveCaptionCues.map((cue, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => seekOutput(cue.startMs / 1000)}
-                    style={{
-                      left: `${(cue.startMs / Math.max(editedDuration * 1000, 1)) * 100}%`,
-                      width: `${Math.max(1, (cue.endMs - cue.startMs) / Math.max(editedDuration * 1000, 1) * 100)}%`,
-                    }}
-                    className="absolute top-0 h-7 truncate rounded bg-emerald-500/25 border border-emerald-400/40 px-2 text-left text-[10px] text-emerald-100 hover:border-emerald-300"
-                    title={`${fmtClipTime(cue.startMs / 1000)} ${cue.text}`}
-                  >
-                    {cue.text}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {sourcePeaks.length > 0 && (
-            <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-1">
-              <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Audio</span>
-              <div className="flex h-6 min-w-0 flex-1 gap-1">
-                {timelineItems.map((item, index) => (
-                  <div key={`${item.kind}-${index}`} style={{ flex: `${item.end - item.start} 1 0%` }}
-                    className="flex min-w-0 items-center overflow-hidden rounded bg-emerald-500/10">
-                    {item.kind === "source" && Array.from({ length: Math.max(4, Math.ceil((item.end - item.start) / Math.max(editedDuration, 1) * 100)) }, (_, bar) => {
-                      const fraction = bar / Math.max(1, Math.ceil((item.end - item.start) / Math.max(editedDuration, 1) * 100) - 1);
-                      const sourceTime = item.sourceStart! + fraction * (item.sourceEnd! - item.sourceStart!);
-                      const sample = sourcePeaks[Math.min(sourcePeaks.length - 1, Math.max(0,
-                        Math.floor((sourceTime + previewLeadSeconds) / Math.max(previewDuration, 0.1) * sourcePeaks.length)))] ?? 0;
-                      return <span key={bar} className="min-w-px flex-1 rounded-full bg-emerald-400/75"
-                        style={{ height: `${Math.max(8, Math.min(100, sample * 150))}%` }} />;
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {selectedHook && (
-            <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-1">
-              <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Hook</span>
-              <div className="relative h-6 min-w-0 flex-1">
-                <button type="button" onClick={() => seekOutput(0)} title="Opening hook: first 3 seconds"
-                  style={{ width: `${Math.min(100, 3 / Math.max(editedDuration, 0.1) * 100)}%` }}
-                  className="h-full min-w-16 truncate rounded border border-violet-400/50 bg-violet-500/40 px-2 text-left text-[10px] font-semibold text-violet-100">
-                  ✧ {selectedHook}
-                </button>
-              </div>
-            </div>
-          )}
-          </div>
-        </div>
-      )}
-
+      {workspace && <EditorTimeline
+        items={timelineItems} media={media} cues={liveCaptionCues} peaks={sourcePeaks}
+        frames={timelineFrames} poster={timelinePoster} sourceDuration={sourceDuration}
+        previewDuration={previewDuration} previewLeadSeconds={previewLeadSeconds}
+        duration={editedDuration} time={editedTime} selectedSegment={selectedSegment}
+        selectedMediaIndex={selectedMediaIndex} hook={selectedHook}
+        ready={Boolean(previewUrl)} exporting={exporting}
+        canSplit={Boolean(previewUrl) && activeMediaIndex === null &&
+          splitSegment(segments, segmentIndexAtSource(segments, currentTime), currentTime) !== segments}
+        canDelete={selectedMediaIndex !== null || segments.length > 1}
+        canUndo={undoStack.length > 0} canRedo={redoStack.length > 0}
+        onSeek={(seconds) => seekOutput(seconds)} onSplit={splitAtPlayhead} onDelete={removeSelected}
+        onUndo={undoEdit} onRedo={redoEdit}
+        onSelectMedia={(index) => {
+          const item = media[index];
+          if (item.placement === "overlay") { seekOutput(item.at!); setSelectedMediaIndex(index); }
+          else { const entry = timelineItems.find((part) => part.mediaIndex === index); if (entry) seekOutput(entry.start); }
+        }}
+        onMoveOverlay={(index, at) => {
+          if (exporting) return;
+          applyMedia(media.map((entry, current) => current === index ? { ...entry, at } : entry));
+          setSelectedMediaIndex(index);
+        }}
+        onResizeOverlay={(index, duration) => {
+          if (exporting) return;
+          const entry = media[index];
+          applyMedia(media.map((item, current) => current === index
+            ? { ...item, duration: Math.max(0.1, Math.min(30, editedDuration - entry.at!, duration)) } : item));
+          setSelectedMediaIndex(index);
+        }}
+        onTrimSource={(index, edge, delta) => {
+          if (exporting) return;
+          if (!isPro) { setProGateOpen(true); return; }
+          const entry = segments[index];
+          if (!entry) return;
+          const next = trimSegment(segments, index, edge,
+            (edge === "start" ? entry.start : entry.end) + delta, sourceDuration);
+          applySegments(next, index, true);
+        }}
+      />}
       {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}
     </div>
   );

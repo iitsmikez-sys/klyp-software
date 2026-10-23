@@ -25,7 +25,7 @@ export function buildEditorMediaFilter(
     labels.push(`[v${prefix}][a${prefix}]`);
   };
   const appendMediaAfter = (section: number) => media.forEach((entry, mediaIndex) => {
-    if (entry.after === section) append(mediaIndex + 1, 0, entry.duration, mediaHasAudio[mediaIndex] === true);
+    if (entry.after === section && entry.placement !== "overlay") append(mediaIndex + 1, 0, entry.duration, mediaHasAudio[mediaIndex] === true);
   });
   appendMediaAfter(-1);
   segments.forEach((section, sectionIndex) => {
@@ -33,6 +33,17 @@ export function buildEditorMediaFilter(
     appendMediaAfter(sectionIndex);
   });
   parts.push(`${labels.join("")}concat=n=${labels.length}:v=1:a=1[vcat][acat]`);
-  if (postFilter) parts.push(`[vcat]${postFilter}[vout]`);
-  return { graph: parts.join(";"), videoLabel: postFilter ? "[vout]" : "[vcat]", audioLabel: "[acat]" };
+  let videoLabel = "[vcat]";
+  media.forEach((entry, mediaIndex) => {
+    if (entry.placement !== "overlay") return;
+    const overlayLabel = `overlay${mediaIndex}`;
+    const nextLabel = `composite${mediaIndex}`;
+    parts.push(`[${mediaIndex + 1}:v]trim=duration=${entry.duration},setpts=PTS-STARTPTS+${entry.at}/TB,` +
+      `fps=30,scale=${width}:${height}:force_original_aspect_ratio=increase:force_divisible_by=2,` +
+      `crop=${width}:${height},setsar=1,format=yuv420p[${overlayLabel}]`);
+    parts.push(`${videoLabel}[${overlayLabel}]overlay=0:0:eof_action=pass:enable='between(t,${entry.at},${entry.at! + entry.duration})'[${nextLabel}]`);
+    videoLabel = `[${nextLabel}]`;
+  });
+  if (postFilter) { parts.push(`${videoLabel}${postFilter}[vout]`); videoLabel = "[vout]"; }
+  return { graph: parts.join(";"), videoLabel, audioLabel: "[acat]" };
 }

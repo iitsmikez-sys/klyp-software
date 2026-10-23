@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildEditorTimeline, parseMediaInserts, mediaAfterSplit, mediaAfterDelete, editorMediaPath,
-  retimeWordsWithMedia, timelineItemAt, outputTimeForSource,
+  retimeWordsWithMedia, timelineItemAt, outputTimeForSource, firstOpeningInsertIndex,
 } from "../lib/editor-media.ts";
 
 const photo = { id: "11111111-1111-4111-8111-111111111111", kind: "image", after: 0, duration: 3 };
@@ -54,4 +54,24 @@ test("stored media paths stay inside the owning clip", () => {
   assert.equal(editorMediaPath(photo.id, video.id, photo.id, "image"),
     `${photo.id}/${video.id}/editor-${photo.id}.jpg`);
   assert.throws(() => editorMediaPath("../other", video.id, photo.id, "image"));
+});
+
+test("photo overlays keep the source length and caption timing", () => {
+  const overlay = { ...photo, placement: "overlay", at: 4 };
+  assert.deepEqual(parseMediaInserts([overlay], sections), [overlay]);
+  const items = buildEditorTimeline(sections, [overlay]);
+  assert.deepEqual(items.map(({ kind, start, end }) => ({ kind, start, end })), [
+    { kind: "source", start: 0, end: 10 }, { kind: "source", start: 10, end: 20 },
+  ]);
+  assert.equal(outputTimeForSource(items, 22), 12);
+  assert.throws(() => parseMediaInserts([{ ...overlay, at: 19, duration: 3 }], sections));
+  assert.throws(() => parseMediaInserts([{ ...overlay, kind: "video" }], sections));
+});
+
+test("an overlay before the first section does not take over opening playback", () => {
+  const overlay = { ...photo, after: -1, placement: "overlay", at: 0 };
+  assert.equal(firstOpeningInsertIndex([overlay]), -1);
+  assert.equal(firstOpeningInsertIndex([overlay, { ...video, after: -1 }]), 1);
+  assert.equal(firstOpeningInsertIndex(mediaAfterDelete([{ ...overlay, after: 0 }], 0)), -1);
+  assert.equal(timelineItemAt(buildEditorTimeline(sections, [overlay]), 0)?.kind, "source");
 });
