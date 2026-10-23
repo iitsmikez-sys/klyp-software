@@ -38,6 +38,7 @@ import { archivedClipTiming } from "@/lib/clip-trim";
 import { buildSegmentFilter, parseSegments, retimeWords, timelineDuration, type EditSegment } from "@/lib/edit-segments";
 import { editorMediaPath, parseMediaInserts, retimeWordsWithMedia, buildEditorTimeline, type MediaInsert } from "@/lib/editor-media";
 import { buildEditorMediaFilter } from "@/lib/editor-media-render";
+import { parseCaptionOptions, parseEditedWords } from "@/lib/editor-captions";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -213,6 +214,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let url: string, start: number, end: number, title: string, clipId: string;
   let style: CaptionStyle | undefined;
   let words: TimedWord[] | undefined;
+  let captionOptions = parseCaptionOptions({});
   let handle: string | undefined;
   let format: ExportFormat = "9:16";
   let hook: string | undefined;
@@ -258,8 +260,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     if (Array.isArray(body.words) && body.words.length > 0) {
       words = body.words as TimedWord[];
     }
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    captionOptions = parseCaptionOptions(body);
+    if (body.caption_edits !== undefined) {
+      if (!words) throw new Error("Captions are unavailable for this clip.");
+      words = parseEditedWords(body.caption_edits, words);
+    }
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Invalid JSON body." }, { status: 400 });
   }
 
   if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
@@ -434,7 +441,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         assPath = path.join(assDir!, "captions.ass");
         const editedWords = media.length ? retimeWordsWithMedia(words, start, segments, media) : retimeWords(words, start, segments);
         const duration = media.length ? buildEditorTimeline(segments, media).at(-1)!.end : timelineDuration(segments);
-        const assContent = generateAss(editedWords, 0, duration * 1000, style, res);
+        const assContent = generateAss(editedWords, 0, duration * 1000, style, res, captionOptions);
         await writeFile(assPath, assContent, "utf-8");
       }
       if (hook) {

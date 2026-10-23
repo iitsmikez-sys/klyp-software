@@ -8,9 +8,11 @@
  * migration can still be previewed and exported, just without those extras.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, type CaptionStyle, type ExportFormat } from "@/lib/clips";
-import { HOOK_STYLES, type HookStyle } from "@/lib/captions";
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, type CaptionStyle, type ExportFormat, type TimedWord } from "@/lib/clips";
+import { buildCaptionCues, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
+import { drawCaptionPreview } from "@/lib/caption-preview";
+import { CAPTION_COLORS, CAPTION_HEX, CAPTION_POSITIONS, type CaptionColor, type CaptionPosition } from "@/lib/editor-captions";
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
 import ClipTrimControl from "./ClipTrimControl";
@@ -81,6 +83,11 @@ export default function SavedClipEditor({
   const [selectedHook, setSelectedHook] = useState<string | null>(hooks[0] ?? null);
   const [hookStyle, setHookStyle] = useState<HookStyle>("IMPACT");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("BOLD");
+  const [captionColor, setCaptionColor] = useState<CaptionColor>("DEFAULT");
+  const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("BOTTOM");
+  const [captionWords, setCaptionWords] = useState<TimedWord[]>(Array.isArray(clip.words) ? clip.words : []);
+  const [editingCaptionIndex, setEditingCaptionIndex] = useState<number | null>(null);
+  const [editingHook, setEditingHook] = useState(false);
   const [format, setFormat] = useState<ExportFormat>("9:16");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -117,18 +124,23 @@ export default function SavedClipEditor({
     : (timelineItems.find((item) => item.mediaIndex === activeMediaIndex)?.start ?? 0) + mediaTime;
   const editedTimeRef = useRef(editedTime);
   editedTimeRef.current = editedTime;
-  const editedCaptionCues = useMemo(() => {
-    if (!Array.isArray(clip.words)) return [];
+  const outputCaptionWords = useMemo(() => {
+    if (!hasWords) return [];
     const words = media.length
-      ? retimeWordsWithMedia(clip.words, clip.start_seconds, segments, media)
-      : retimeWords(clip.words, clip.start_seconds, segments);
+      ? retimeWordsWithMedia(captionWords, clip.start_seconds, segments, media)
+      : retimeWords(captionWords, clip.start_seconds, segments);
+    return words;
+  }, [captionWords, clip.start_seconds, hasWords, segments, media]);
+  const liveCaptionCues = useMemo(() => buildCaptionCues(outputCaptionWords, 0, editedDuration * 1000,
+    captionStyle === "KLYP" ? 1 : 4), [outputCaptionWords, editedDuration, captionStyle]);
+  const editedCaptionCues = useMemo(() => {
     const cues: { t: number; text: string }[] = [];
-    for (let i = 0; i < words.length; i += 8) {
-      const group = words.slice(i, i + 8);
+    for (let i = 0; i < outputCaptionWords.length; i += 8) {
+      const group = outputCaptionWords.slice(i, i + 8);
       cues.push({ t: group[0].start / 1000, text: group.map((word) => word.text).join(" ") });
     }
     return cues;
-  }, [clip, segments, media]);
+  }, [outputCaptionWords]);
 
   const seekOutput = (seconds: number, autoPlay = false) => {
     const target = Math.max(0, Math.min(seconds, editedDuration));
@@ -322,12 +334,21 @@ export default function SavedClipEditor({
       if (raw) {
         const saved = JSON.parse(raw) as {
           hook?: string | null; hookStyle?: HookStyle;
-          captionStyle?: CaptionStyle; format?: ExportFormat;
+          captionStyle?: CaptionStyle; captionColor?: CaptionColor;
+          captionPosition?: CaptionPosition; captionEdits?: unknown;
+          format?: ExportFormat;
           segments?: unknown; media?: unknown;
         };
         if (typeof saved.hook === "string" || saved.hook === null) setSelectedHook(saved.hook);
         if (saved.hookStyle && HOOK_STYLES.includes(saved.hookStyle)) setHookStyle(saved.hookStyle);
         if (saved.captionStyle && CAPTION_STYLES.includes(saved.captionStyle)) setCaptionStyle(saved.captionStyle);
+        if (saved.captionColor && CAPTION_COLORS.includes(saved.captionColor)) setCaptionColor(saved.captionColor);
+        if (saved.captionPosition && CAPTION_POSITIONS.includes(saved.captionPosition)) setCaptionPosition(saved.captionPosition);
+        const savedEdits = saved.captionEdits;
+        if (Array.isArray(savedEdits) && savedEdits.length === clip.words?.length &&
+            savedEdits.every((text) => typeof text === "string" && text.length <= 80)) {
+          setCaptionWords(clip.words!.map((word, index) => ({ ...word, text: savedEdits[index] as string })));
+        }
         if (saved.format && EXPORT_FORMATS.includes(saved.format)) setFormat(saved.format);
         const loadedSegments = saved.segments ? parseSegments(saved.segments, sourceDuration)
           : [{ start: 0, end: sourceDuration }];
@@ -361,11 +382,12 @@ export default function SavedClipEditor({
     if (!draftReady) return;
     try {
       localStorage.setItem(`klyp-editor-${clip.id}`, JSON.stringify({
-        hook: selectedHook, hookStyle, captionStyle, format, segments,
+        hook: selectedHook, hookStyle, captionStyle, captionColor, captionPosition,
+        captionEdits: captionWords.map((word) => word.text), format, segments,
         media: media.map(({ id, kind, after, duration, name }) => ({ id, kind, after, duration, name })),
       }));
     } catch { /* Storage can be unavailable; editing and export still work. */ }
-  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format, segments, media]);
+  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, captionColor, captionPosition, captionWords, format, segments, media]);
 
   useEffect(() => {
     const item = activeMediaIndex === null ? null : media[activeMediaIndex];
@@ -413,12 +435,37 @@ export default function SavedClipEditor({
       if (selectedHook) {
         drawHookPreview(ctx, editedTimeRef.current, selectedHook, hookStyle, canvas.width, canvas.height);
       }
+      drawCaptionPreview(ctx, editedTimeRef.current, liveCaptionCues, captionStyle,
+        { color: captionColor, position: captionPosition }, canvas.width, canvas.height);
       rafRef.current = requestAnimationFrame(draw);
     };
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [previewUrl, selectedHook, hookStyle, segments]);
+  }, [previewUrl, selectedHook, hookStyle, liveCaptionCues, captionStyle, captionColor, captionPosition]);
+
+  const onPreviewOverlayClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const y = event.nativeEvent.offsetY / Math.max(canvas.clientHeight, 1);
+    const captionY = captionPosition === "TOP" ? 400 / 1920
+      : captionPosition === "CENTER" ? 0.5 : 1 - 80 / 1920;
+    const activeCue = liveCaptionCues.find((cue) => editedTime * 1000 >= cue.startMs && editedTime * 1000 < cue.endMs);
+    if (activeCue && activeMediaIndex === null && Math.abs(y - captionY) < 0.12) {
+      const sourceMs = (clip.start_seconds + currentTime) * 1000;
+      let index = captionWords.findIndex((word) => sourceMs >= word.start && sourceMs < word.end);
+      if (index < 0) index = captionWords.findIndex((word) => word.start >= sourceMs);
+      if (index < 0) index = captionWords.length - 1;
+      setEditingCaptionIndex(index);
+      setEditingHook(false);
+      return;
+    }
+    if (selectedHook && editedTime < 3 && y < 0.35) {
+      setEditingHook(true);
+      setEditingCaptionIndex(null);
+      return;
+    }
+    togglePlayback();
+  };
 
   // The native timeupdate event fires only a few times per second. Check cut
   // boundaries each animation frame so playback does not reveal a deleted beat.
@@ -520,6 +567,9 @@ export default function SavedClipEditor({
           title: clip.title,
           style: hasWords ? captionStyle : undefined,
           words: hasWords ? clip.words : undefined,
+          caption_edits: hasWords ? captionWords.map((word) => ({ text: word.text })) : undefined,
+          caption_color: captionColor,
+          caption_position: captionPosition,
           hook: selectedHook ?? undefined,
           hook_style: hookStyle,
           handle: getStoredHandle(),
@@ -683,7 +733,36 @@ export default function SavedClipEditor({
                 </div>
               )
             )}
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+            <canvas ref={canvasRef} onClick={onPreviewOverlayClick}
+              aria-label="Click the hook or captions to edit them; click elsewhere to play or pause"
+              className="absolute inset-0 w-full h-full cursor-text" />
+            {editingHook && (
+              <div className="absolute left-3 right-3 top-[8%] z-10 rounded-lg border border-accent bg-background/95 p-2 shadow-xl">
+                <label className="block text-[10px] font-bold text-accent mb-1">Edit hook</label>
+                <input autoFocus value={selectedHook ?? ""} maxLength={80}
+                  onChange={(event) => setSelectedHook(event.target.value || null)}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Escape") setEditingHook(false); }}
+                  className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs text-foreground" />
+                <button type="button" onClick={() => setEditingHook(false)} className="mt-1 text-[10px] text-accent">Done</button>
+              </div>
+            )}
+            {editingCaptionIndex !== null && captionWords[editingCaptionIndex] && (
+              <div className="absolute left-3 right-3 top-[38%] z-10 rounded-lg border border-accent bg-background/95 p-2 shadow-xl">
+                <label className="block text-[10px] font-bold text-accent mb-1">Edit caption word {editingCaptionIndex + 1} of {captionWords.length}</label>
+                <input autoFocus value={captionWords[editingCaptionIndex].text} maxLength={80}
+                  onChange={(event) => setCaptionWords((current) => current.map((word, index) =>
+                    index === editingCaptionIndex ? { ...word, text: event.target.value } : word))}
+                  onKeyDown={(event) => { if (event.key === "Escape") setEditingCaptionIndex(null); }}
+                  className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs text-foreground" />
+                <div className="mt-1 flex items-center justify-between text-[10px] text-accent">
+                  <button type="button" disabled={editingCaptionIndex === 0}
+                    onClick={() => setEditingCaptionIndex((index) => index === null ? null : Math.max(0, index - 1))}>Previous</button>
+                  <button type="button" onClick={() => setEditingCaptionIndex(null)}>Done</button>
+                  <button type="button" disabled={editingCaptionIndex === captionWords.length - 1}
+                    onClick={() => setEditingCaptionIndex((index) => index === null ? null : Math.min(captionWords.length - 1, index + 1))}>Next</button>
+                </div>
+              </div>
+            )}
           </>
         )}
         </div>
@@ -697,7 +776,7 @@ export default function SavedClipEditor({
           </button>
         </div>
       <p className="text-[10px] text-subtle text-center mt-1">
-        Hook shown live — captions are burned in on export.
+        Click the hook or captions in the preview to edit their text.
       </p>
       </div>
 
@@ -819,6 +898,42 @@ export default function SavedClipEditor({
           </p>
         )}
       </div>
+
+      {hasWords && (
+        <div className="space-y-3">
+          <div>
+            <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">Caption color</p>
+            <div className="flex flex-wrap gap-1.5">
+              {CAPTION_COLORS.map((color) => (
+                <button key={color} type="button" onClick={() => setCaptionColor(color)} disabled={exporting}
+                  className={`rounded-md border px-2 py-1 text-[10px] font-bold ${captionColor === color ? "border-accent text-accent bg-accent-glow" : "border-border text-foreground-muted"}`}>
+                  {color !== "DEFAULT" && <span className="mr-1 inline-block h-2 w-2 rounded-full border border-black/30" style={{ background: CAPTION_HEX[color] }} />}
+                  {color === "DEFAULT" ? "Style default" : color[0] + color.slice(1).toLowerCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">Caption position</p>
+            <div className="flex gap-1.5">
+              {CAPTION_POSITIONS.map((position) => (
+                <button key={position} type="button" onClick={() => setCaptionPosition(position)} disabled={exporting}
+                  className={`flex-1 rounded-md border px-2 py-1.5 text-[10px] font-bold ${captionPosition === position ? "border-accent text-accent bg-accent-glow" : "border-border text-foreground-muted"}`}>
+                  {position[0] + position.slice(1).toLowerCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button type="button" onClick={() => {
+            const sourceMs = (clip.start_seconds + currentTime) * 1000;
+            const index = captionWords.findIndex((word) => word.end >= sourceMs);
+            setEditingCaptionIndex(index < 0 ? captionWords.length - 1 : index);
+            setEditingHook(false);
+          }} className="text-[11px] font-semibold text-accent hover:underline">
+            Edit caption words at playhead
+          </button>
+        </div>
+      )}
 
       {/* Format */}
       <div className="flex items-center gap-2">

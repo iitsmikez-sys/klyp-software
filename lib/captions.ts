@@ -11,6 +11,7 @@
  * captions look the same relative size in 1:1 and 16:9 exports.
  */
 import type { TimedWord, CaptionStyle } from "./clips";
+import type { CaptionOptions } from "./editor-captions";
 
 export type PlayRes = { w: number; h: number };
 const DEFAULT_RES: PlayRes = { w: 1080, h: 1920 };
@@ -113,16 +114,27 @@ const STYLE_PARAMS: Record<
   KLYP: { fontSize: 82, color: "&H00A0E500", bold: 1, outline: 4, shadow: 0 },
 };
 
-function styleBlock(style: CaptionStyle, res: PlayRes): string {
+function assColor(hex: string): string {
+  return `&H00${hex.slice(5, 7)}${hex.slice(3, 5)}${hex.slice(1, 3)}`;
+}
+
+const CAPTION_HEX = {
+  WHITE: "#FFFFFF", YELLOW: "#FFFF00", GREEN: "#00E5A0", PINK: "#FF5DAA",
+} as const;
+
+function styleBlock(style: CaptionStyle, res: PlayRes, options?: CaptionOptions): string {
   const p = STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
   const size = Math.round(p.fontSize * scale);
   const outline = Math.max(1, Math.round(p.outline * scale));
-  const marginV = Math.round(80 * scale);
+  const position = options?.position ?? "BOTTOM";
+  const marginV = Math.round((position === "TOP" ? 400 : position === "CENTER" ? 0 : 80) * scale);
+  const alignment = position === "TOP" ? 8 : position === "CENTER" ? 5 : 2;
+  const color = options?.color && options.color !== "DEFAULT" ? assColor(CAPTION_HEX[options.color]) : p.color;
   return [
     "[V4+ Styles]",
     STYLES_FORMAT,
-    `Style: Default,Arial,${size},${p.color},&H00FFFFFF,&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,1,${outline},${p.shadow},2,10,10,${marginV},1`,
+    `Style: Default,Arial,${size},${color},&H00FFFFFF,&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,1,${outline},${p.shadow},${alignment},10,10,${marginV},1`,
   ].join("\n");
 }
 
@@ -156,9 +168,10 @@ export function generateAss(
   clipStartMs: number,
   clipEndMs: number,
   style: CaptionStyle,
-  res: PlayRes = DEFAULT_RES
+  res: PlayRes = DEFAULT_RES,
+  options?: CaptionOptions
 ): string {
-  const sections = [assHeader(res), "", styleBlock(style, res), "", EVENTS_HEADER];
+  const sections = [assHeader(res), "", styleBlock(style, res, options), "", EVENTS_HEADER];
 
   // KLYP shows one word at a time; other styles show small word groups.
   const cues = buildCaptionCues(words, clipStartMs, clipEndMs, style === "KLYP" ? 1 : CUE_MAX_WORDS);
