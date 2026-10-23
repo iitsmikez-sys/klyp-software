@@ -37,4 +37,3 @@ test("timeline thumb positions can select a precise 25 second excerpt", () => {
   assert.deepEqual(second, { start: 112.5, end: 137.5 });
   assert.deepEqual(clipSeekRange(second.start, second.end, 100, 160), { start: 12.5, end: 37.5 });
 });
-
