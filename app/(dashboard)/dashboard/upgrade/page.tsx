@@ -27,7 +27,7 @@ function Warn() {
 const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.free)}` },
   { ok: true, text: "AI clip detection with viral scores" },
-  { ok: true, text: "9:16 vertical exports, 1080×1920" },
+  { ok: true, text: "9:16 vertical and Original (no crop) exports" },
   { ok: true, text: "AI captions — BOLD, CLEAN & KLYP styles" },
   { ok: false, text: "Moving klyp.world watermark on every clip" },
 ];
@@ -35,6 +35,7 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
 const PRO_FEATURES: string[] = [
   `${SPARKS_ALLOWANCE.pro} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.pro)}`,
   "No watermark. Clean clips, your brand only",
+  "All export formats: 9:16, Original, 1:1 and 16:9",
   "Raw exports — edit clips yourself in CapCut",
   "Streamer handle overlay on exports",
   "Twitch chat spike detection",
