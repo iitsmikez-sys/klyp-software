@@ -18,6 +18,7 @@ export function corsHeaders(): Record<string, string> {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, x-file-name",
+    "Access-Control-Expose-Headers": "X-Klyp-Source",
   };
 }
 
