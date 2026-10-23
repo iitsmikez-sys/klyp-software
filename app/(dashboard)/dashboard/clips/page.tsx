@@ -140,8 +140,8 @@ function ClipsPageContent() {
       run: (clip) => { createClip(clip, true).then((err) => err && flash(err)); },
     },
     {
-      icon: "✂️", label: "Edit Clip", pro: true,
-      run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
+      icon: "✂️", label: "Edit Clip", pro: false,
+      run: (clip) => { window.location.href = `/dashboard/clips/${clip.id}/edit`; },
     },
     {
       icon: "🎤", label: "AI Hook", pro: true,
@@ -418,6 +418,7 @@ function ClipsPageContent() {
               {/* Wraps on narrow cards: primary takes its own row, secondary
                   shares the next one with delete — no squashed labels. */}
               <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
+                <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => e.stopPropagation()} className="px-4 py-2.5 rounded-lg border border-accent/40 text-accent font-bold">Edit</Link>
                 {/* Clips are stored as VOD timestamps, not files — this renders
                     the MP4 on demand via /api/clip, hence "Create clip". */}
                 <button

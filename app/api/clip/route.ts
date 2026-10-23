@@ -14,11 +14,16 @@
  *   5. Stream the MP4 back as a file download
  */
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { renderKeptSegments, validateEditorExportRequest } from "@/lib/editor-render";
+import { ClipEditDraftError, type ClipEditDraftV2 } from "@/lib/clip-edit-draft";
+import { resolveEditorCues, captionAppearance } from "@/lib/editor-captions";
+import type { SavedClip } from "@/lib/clip-ui";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
-import { generateAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
+import { generateAss, generateTimedCueAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
   EXPORT_FORMATS,
@@ -31,7 +36,7 @@ import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache"
 import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
-import { planVerticalLayout, validateVerticalLayout, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
+import { planClipComposition, validateVerticalLayout, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { buildVerticalFilterGraph } from "@/lib/vertical-layout-ffmpeg";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { clipSeekRange } from "@/lib/clip-trim";
@@ -196,8 +201,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let raw = false;
   let upscale = false;
   let requestedLayout: unknown;
+  let requestBody: Record<string, unknown>;
+  let editorDraft: ClipEditDraftV2 | null = null;
+  let ownedEditorClip: SavedClip | null = null;
   try {
     const body = await req.json();
+    requestBody = body;
     clipId = String(body.clip_id ?? "");
     raw = body.raw === true;
     upscale = body.upscale === true && !raw; // upscale applies to rendered exports only
@@ -236,16 +245,6 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
-    return NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 });
-  }
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-    return NextResponse.json({ error: "Invalid start/end timestamps." }, { status: 400 });
-  }
-  if (end - start > 180) {
-    return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
-  }
-
   // Require a signed-in session, verified via Bearer token (not cookies —
   // this service is on a different origin than the frontend that calls it).
   const token = bearerToken(req);
@@ -265,12 +264,49 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // why the raw tier flag alone isn't trusted (it can drift from reality).
   const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
   const sparksBalance = profile.sparks;
+  const editorRequested = requestBody.edit_draft !== undefined || requestBody.editor_export === true || requestBody.segments !== undefined || requestBody.caption_cues !== undefined;
+  if (editorRequested) {
+    if (!isPro) return NextResponse.json({ error: "Editing saved clips requires Pro." }, { status: 403 });
+    try {
+      const { data, error } = await createAdminClient().from("clips")
+        .select("id,url,title,start_seconds,end_seconds,words,edit_draft")
+        .eq("id", clipId).eq("user_id", profile.id).maybeSingle();
+      if (error) throw error;
+      if (!data) return NextResponse.json({ error: "Clip not found." }, { status: 404 });
+      ownedEditorClip = data as SavedClip;
+      editorDraft = validateEditorExportRequest(requestBody, ownedEditorClip);
+      if (editorDraft) {
+        url = ownedEditorClip.url;
+        start = editorDraft.start_seconds;
+        end = editorDraft.end_seconds;
+        title = editorDraft.title;
+        hook = editorDraft.hook || undefined;
+        hookStyle = editorDraft.hook_style;
+        style = editorDraft.caption_style;
+        words = undefined;
+        format = editorDraft.aspect_ratio;
+        requestedLayout = editorDraft.vertical_layout;
+      }
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid editor export." }, { status: error instanceof ClipEditDraftError || error instanceof RangeError ? 400 : 500 });
+    }
+  }
+  if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
+    return NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 });
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return NextResponse.json({ error: "Invalid start/end timestamps." }, { status: 400 });
+  }
+  if (!editorDraft && end - start > 180) {
+    return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
+  }
   // Format switching is Pro — free tier always exports the 9:16 default.
   if (!isPro) format = "9:16";
   let verticalLayout: VerticalLayoutV1 | null = null;
   let layoutWarning: string | null = null;
   if (!raw && format === "9:16") {
-    const override = isPro && requestedLayout != null;
+    // Omitted means inherit; explicit null means full frame, matching the editor.
+    const override = isPro && requestedLayout !== undefined;
     const selected = override ? requestedLayout : profile.vertical_layout;
     try { verticalLayout = selected ? validateVerticalLayout(selected) : null; }
     catch {
@@ -312,6 +348,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
   let clipPath: string | null = null;
   let assDir: string | null = null;
+  let editorDir: string | null = null;
   try {
     const t0 = Date.now();
     // Concurrency-capped: the download (yt-dlp) + encode (ffmpeg) below are
@@ -357,6 +394,15 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
       }
 
+      let editedDuration: number | null = null;
+      if (editorDraft) {
+        editorDir = await mkdtemp(path.join(tmpdir(), "klyp-editor-"));
+        const editedPath = path.join(editorDir, "kept.mp4");
+        const rendered = await renderKeptSegments(sourcePath, offsetSeconds, editorDraft.segments, editedPath);
+        sourcePath = editedPath;
+        editedDuration = rendered.duration;
+      }
+
       // ASS PlayRes must match the output resolution so burned text scales with it.
       // "Original" has no fixed dimensions — probe the source for its native size.
       let res: { w: number; h: number };
@@ -369,21 +415,27 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (upscale) res = { w: res.w * 2, h: res.h * 2 };
       let verticalPlan: VerticalLayoutPlan | undefined;
-      if (!raw && format === "9:16") {
+      if (!raw && format !== "Original") {
         const native = await probeVideoSize(sourcePath);
         if (!native && verticalLayout) {
           verticalLayout = null;
           layoutWarning = "Source dimensions could not be read; the full frame was exported.";
         }
-        verticalPlan = planVerticalLayout(native ?? { w: 1920, h: 1080 }, verticalLayout, res);
+        // When probing fails, nonvertical exports retain the dynamic scale/crop fallback.
+        if (native || format === "9:16") verticalPlan = planClipComposition(native ?? { w: 1920, h: 1080 }, format, verticalLayout, res);
       }
 
       let assPath: string | undefined;
       let hookAssPath: string | undefined;
-      if ((style && words && words.length > 0) || hook) {
+      if ((style && (editorDraft || (words && words.length > 0))) || hook) {
         assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
       }
-      if (style && words && words.length > 0) {
+      if (style && editorDraft && ownedEditorClip && !raw) {
+        assPath = path.join(assDir!, "captions.ass");
+        const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.dest;
+        const cues = resolveEditorCues(editorDraft, ownedEditorClip);
+        await writeFile(assPath, generateTimedCueAss(cues, style, captionAppearance(editorDraft), res, safe), "utf-8");
+      } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
         const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.h
           : verticalPlan?.mode === "full_frame" ? res.h - verticalPlan.dest.y - verticalPlan.dest.h : 0;
@@ -396,7 +448,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
 
       const t2 = Date.now();
-      const seek = clipSeekRange(start, end, offsetSeconds, archivedEndSeconds);
+      const seek = editedDuration !== null ? { start: 0, end: editedDuration } : clipSeekRange(start, end, offsetSeconds, archivedEndSeconds);
       const result = await cutClip(
         sourcePath,
         seek.start,
@@ -435,6 +487,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
   } finally {
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
-    if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});
+    if (assDir) await rm(assDir, { recursive: true, force: true }).catch(() => {});
+    if (editorDir) await rm(editorDir, { recursive: true, force: true }).catch(() => {});
   }
 }
