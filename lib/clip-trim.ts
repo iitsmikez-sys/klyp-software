@@ -32,4 +32,3 @@ export function updateClipTrim(
   }
   return { start, end: round(Math.min(originalEnd, Math.max(proposed, round(start + 0.1)))) };
 }
-
