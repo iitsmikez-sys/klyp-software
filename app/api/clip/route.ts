@@ -34,6 +34,7 @@ import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { buildSegmentFilter, parseSegments, retimeWords, timelineDuration, type EditSegment } from "@/lib/edit-segments";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -87,10 +88,19 @@ async function probeVideoSize(sourcePath: string): Promise<{ w: number; h: numbe
   return { w: 1920, h: 1080 };
 }
 
+async function hasAudioStream(sourcePath: string): Promise<boolean> {
+  const out = await runCapture(resolveBin("ffprobe"), [
+    "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index",
+    "-of", "csv=p=0", sourcePath,
+  ], { maxRunMs: 30_000 });
+  return out.trim().length > 0;
+}
+
 async function cutClip(
   sourcePath: string,
   startSeconds: number,
   endSeconds: number,
+  segments: EditSegment[],
   isPro: boolean,
   format: ExportFormat,
   assPath?: string,
@@ -99,7 +109,10 @@ async function cutClip(
   raw = false,
   upscale = false
 ): Promise<string> {
-  const duration = endSeconds - startSeconds;
+  const first = segments[0];
+  const multiSection = segments.length > 1;
+  const inputStart = multiSection ? startSeconds : startSeconds + first.start;
+  const inputDuration = multiSection ? endSeconds - startSeconds : first.end - first.start;
   const outPath = path.join(
     CACHE_DIR,
     `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`
@@ -135,11 +148,16 @@ async function cutClip(
     vf += `,${watermarkFilter()}`;
   }
 
+  const audio = multiSection ? await hasAudioStream(sourcePath) : true;
+  const segmentFilter = multiSection ? buildSegmentFilter(segments, raw ? undefined : vf, audio) : null;
   await run(resolveBin("ffmpeg"), [
-    "-ss", String(startSeconds),
-    "-t", String(duration),
+    "-ss", String(inputStart),
+    "-t", String(inputDuration),
     "-i", sourcePath,
-    ...(raw ? [] : ["-vf", vf]),
+    ...(segmentFilter
+      ? ["-filter_complex", segmentFilter.graph, "-map", segmentFilter.videoLabel,
+          ...(segmentFilter.audioLabel ? ["-map", segmentFilter.audioLabel] : [])]
+      : raw ? [] : ["-vf", vf]),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "23",
@@ -185,6 +203,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let hookStyle: HookStyle = "IMPACT";
   let raw = false;
   let upscale = false;
+  let requestedSegments: unknown;
   try {
     const body = await req.json();
     clipId = String(body.clip_id ?? "");
@@ -193,6 +212,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     url = String(body.url ?? "").trim();
     start = Number(body.start_seconds);
     end = Number(body.end_seconds);
+    requestedSegments = body.segments;
     title = String(body.title ?? "klyp clip");
 
     if ((EXPORT_FORMATS as readonly string[]).includes(body.aspect_ratio)) {
@@ -232,6 +252,17 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   if (end - start > 180) {
     return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
+  }
+  let segments: EditSegment[];
+  try {
+    segments = requestedSegments === undefined
+      ? [{ start: 0, end: end - start }]
+      : parseSegments(requestedSegments, end - start);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Invalid clip sections." },
+      { status: 400 }
+    );
   }
 
   // Require a signed-in session, verified via Bearer token (not cookies —
@@ -350,7 +381,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
-        const assContent = generateAss(words, start * 1000, end * 1000, style, res);
+        const editedWords = retimeWords(words, start, segments);
+        const assContent = generateAss(editedWords, 0, timelineDuration(segments) * 1000, style, res);
         await writeFile(assPath, assContent, "utf-8");
       }
       if (hook) {
@@ -363,6 +395,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         sourcePath,
         start - offsetSeconds,
         end - offsetSeconds,
+        segments,
         isPro,
         format,
         assPath,
@@ -398,3 +431,4 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});
   }
 }
+

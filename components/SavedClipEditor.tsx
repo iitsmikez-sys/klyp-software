@@ -16,6 +16,10 @@ import ProGateModal from "./ProGateModal";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import {
+  deleteSegment, parseSegments, retimeWords, segmentIndexAtSource, sourceTimeAt, splitSegment,
+  timelineDuration, timelineTimeAt, type EditSegment,
+} from "@/lib/edit-segments";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -74,15 +78,108 @@ export default function SavedClipEditor({
   const [exportError, setExportError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [previewDuration, setPreviewDuration] = useState(
     Math.max(0, clip.end_seconds - clip.start_seconds)
   );
+  const sourceDuration = Math.max(0, clip.end_seconds - clip.start_seconds);
+  const [segments, setSegments] = useState<EditSegment[]>([
+    { start: 0, end: sourceDuration },
+  ]);
+  const [selectedSegment, setSelectedSegment] = useState(0);
+  const [undoStack, setUndoStack] = useState<Array<{
+    segments: EditSegment[]; selected: number; time: number;
+  }>>([]);
+  const editedDuration = timelineDuration(segments);
+  const editedTime = timelineTimeAt(segments, currentTime);
+  const editedCaptionCues = useMemo(() => {
+    if (!Array.isArray(clip.words)) return [];
+    const words = retimeWords(clip.words, clip.start_seconds, segments);
+    const cues: { t: number; text: string }[] = [];
+    for (let i = 0; i < words.length; i += 8) {
+      const group = words.slice(i, i + 8);
+      cues.push({ t: group[0].start / 1000, text: group.map((word) => word.text).join(" ") });
+    }
+    return cues;
+  }, [clip, segments]);
 
   const seekTo = (seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(0, Math.min(seconds, video.duration || previewDuration));
+    const target = Math.max(0, Math.min(seconds, video.duration || previewDuration));
+    const kept = segmentIndexAtSource(segments, target);
+    video.currentTime = kept >= 0
+      ? target
+      : segments.find((segment) => segment.start > target)?.start ?? segments[segments.length - 1].end;
     setCurrentTime(video.currentTime);
+  };
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!video.paused) {
+      video.pause();
+    } else {
+      if (video.currentTime >= segments[segments.length - 1].end - 0.05) {
+        video.currentTime = segments[0].start;
+      }
+      video.play().catch(() => setPlaying(false));
+    }
+  };
+
+  const onPreviewTimeUpdate = (video: HTMLVideoElement) => {
+    const time = video.currentTime;
+    const index = segmentIndexAtSource(segments, time);
+    if (index < 0 || time >= segments[index].end - 0.04) {
+      const next = index < 0
+        ? segments.findIndex((segment) => segment.start > time)
+        : index + 1;
+      if (next >= 0 && next < segments.length) {
+        video.currentTime = segments[next].start;
+        setCurrentTime(segments[next].start);
+        setSelectedSegment(next);
+      } else {
+        video.pause();
+        video.currentTime = segments[segments.length - 1].end;
+        setCurrentTime(segments[segments.length - 1].end);
+      }
+      return;
+    }
+    setCurrentTime(time);
+    setSelectedSegment(index);
+  };
+
+  const applySegments = (next: EditSegment[], selected: number) => {
+    if (next === segments) return;
+    setUndoStack((history) => [...history.slice(-29), { segments, selected: selectedSegment, time: currentTime }]);
+    setSegments(next);
+    setSelectedSegment(selected);
+    const video = videoRef.current;
+    const target = next[selected]?.start ?? next[0].start;
+    if (video) video.currentTime = target;
+    setCurrentTime(target);
+  };
+
+  const splitAtPlayhead = () => {
+    const index = segmentIndexAtSource(segments, currentTime);
+    if (index < 0) return;
+    applySegments(splitSegment(segments, index, currentTime), index + 1);
+  };
+
+  const removeSelected = () => {
+    const next = deleteSegment(segments, selectedSegment);
+    applySegments(next, Math.min(selectedSegment, next.length - 1));
+  };
+
+  const undoEdit = () => {
+    const previous = undoStack[undoStack.length - 1];
+    if (!previous) return;
+    setUndoStack((history) => history.slice(0, -1));
+    setSegments(previous.segments);
+    setSelectedSegment(previous.selected);
+    if (videoRef.current) videoRef.current.currentTime = previous.time;
+    setCurrentTime(previous.time);
   };
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -97,11 +194,13 @@ export default function SavedClipEditor({
         const saved = JSON.parse(raw) as {
           hook?: string | null; hookStyle?: HookStyle;
           captionStyle?: CaptionStyle; format?: ExportFormat;
+          segments?: unknown;
         };
         if (typeof saved.hook === "string" || saved.hook === null) setSelectedHook(saved.hook);
         if (saved.hookStyle && HOOK_STYLES.includes(saved.hookStyle)) setHookStyle(saved.hookStyle);
         if (saved.captionStyle && CAPTION_STYLES.includes(saved.captionStyle)) setCaptionStyle(saved.captionStyle);
         if (saved.format && EXPORT_FORMATS.includes(saved.format)) setFormat(saved.format);
+        if (saved.segments) setSegments(parseSegments(saved.segments, sourceDuration));
       }
     } catch { /* A malformed old draft should not prevent editing. */ }
     setDraftReady(true);
@@ -111,10 +210,10 @@ export default function SavedClipEditor({
     if (!draftReady) return;
     try {
       localStorage.setItem(`klyp-editor-${clip.id}`, JSON.stringify({
-        hook: selectedHook, hookStyle, captionStyle, format,
+        hook: selectedHook, hookStyle, captionStyle, format, segments,
       }));
     } catch { /* Storage can be unavailable; editing and export still work. */ }
-  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format]);
+  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format, segments]);
 
   // Live hook overlay on the preview — mirrors the export burn and reacts
   // instantly to hook/style changes (the loop redraws every frame, playing or not).
@@ -132,14 +231,34 @@ export default function SavedClipEditor({
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (selectedHook) {
-        drawHookPreview(ctx, video.currentTime, selectedHook, hookStyle, canvas.width, canvas.height);
+        drawHookPreview(ctx, timelineTimeAt(segments, video.currentTime), selectedHook, hookStyle, canvas.width, canvas.height);
       }
       rafRef.current = requestAnimationFrame(draw);
     };
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [previewUrl, selectedHook, hookStyle]);
+  }, [previewUrl, selectedHook, hookStyle, segments]);
+
+  // The native timeupdate event fires only a few times per second. Check cut
+  // boundaries each animation frame so playback does not reveal a deleted beat.
+  useEffect(() => {
+    if (!previewUrl) return;
+    const video = videoRef.current;
+    if (!video) return;
+    let frame = 0;
+    const followCuts = () => {
+      if (!video.paused) {
+        const index = segmentIndexAtSource(segments, video.currentTime);
+        if (index < 0 || video.currentTime >= segments[index].end - 0.03) {
+          onPreviewTimeUpdate(video);
+        }
+      }
+      frame = requestAnimationFrame(followCuts);
+    };
+    frame = requestAnimationFrame(followCuts);
+    return () => cancelAnimationFrame(frame);
+  }, [previewUrl, segments]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch the cut preview on expand (source video is cached server-side per URL).
   // First view of a VOD legitimately takes minutes (full source download), so
@@ -209,9 +328,11 @@ export default function SavedClipEditor({
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
+          clip_id: clip.id,
           url: clip.url,
           start_seconds: clip.start_seconds,
           end_seconds: clip.end_seconds,
+          segments,
           title: clip.title,
           style: hasWords ? captionStyle : undefined,
           words: hasWords ? clip.words : undefined,
@@ -285,7 +406,13 @@ export default function SavedClipEditor({
         {transcriptCues.length > 0 ? (
           <div className="max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border">
             {transcriptCues.map((cue, i) => (
-              <button key={i} type="button" onClick={() => seekTo(cue.t)} className="w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2">
+              <button
+                key={i}
+                type="button"
+                onClick={() => seekTo(cue.t)}
+                disabled={segmentIndexAtSource(segments, cue.t) < 0}
+                className="w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2 disabled:opacity-35 disabled:line-through disabled:cursor-not-allowed"
+              >
                 <span className="flex-shrink-0 text-[10px] font-mono text-accent mt-0.5">
                   {fmtClipTime(cue.t)}
                 </span>
@@ -333,19 +460,31 @@ export default function SavedClipEditor({
             <video
               ref={videoRef}
               src={previewUrl}
-              className="w-full h-full object-contain"
-              controls
+              className="w-full h-full object-contain cursor-pointer"
               playsInline
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onLoadedMetadata={(e) => setPreviewDuration(e.currentTarget.duration || previewDuration)}
+              onClick={togglePlayback}
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              muted={muted}
+              onTimeUpdate={(e) => onPreviewTimeUpdate(e.currentTarget)}
+              onLoadedMetadata={(e) => {
+                setPreviewDuration(e.currentTarget.duration || previewDuration);
+                e.currentTarget.currentTime = segments[0].start;
+              }}
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           </>
         )}
         </div>
-        <p className="mt-2 text-center text-xs text-foreground-muted font-mono">
-          {fmtClipTime(currentTime)} / {fmtClipTime(previewDuration)}
-        </p>
+        <div className="mt-2 flex items-center justify-center gap-4 text-xs text-foreground-muted">
+          <button type="button" onClick={togglePlayback} disabled={!previewUrl} className="rounded-md border border-border px-3 py-1 text-foreground hover:border-accent/50 disabled:opacity-40">
+            {playing ? "Pause" : "Play"}
+          </button>
+          <span className="font-mono">{fmtClipTime(editedTime)} / {fmtClipTime(editedDuration)}</span>
+          <button type="button" onClick={() => setMuted((value) => !value)} disabled={!previewUrl} className="rounded-md border border-border px-2 py-1 text-foreground hover:border-accent/50 disabled:opacity-40" aria-label={muted ? "Unmute preview" : "Mute preview"}>
+            {muted ? "Unmute" : "Mute"}
+          </button>
+        </div>
       <p className="text-[10px] text-subtle text-center mt-1">
         Hook shown live — captions are burned in on export.
       </p>
@@ -357,6 +496,14 @@ export default function SavedClipEditor({
         <h3 className="text-sm font-semibold text-foreground">Clip settings</h3>
         <span className="text-[10px] text-subtle">Saved on this device</span>
       </div>
+      {workspace && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-foreground-muted">
+          <p className="font-semibold text-foreground">Section {selectedSegment + 1} of {segments.length}</p>
+          <p className="mt-1 font-mono">
+            {fmtClipTime(segments[selectedSegment]?.start ?? 0)}–{fmtClipTime(segments[selectedSegment]?.end ?? 0)} in the original moment
+          </p>
+        </div>
+      )}
 
       {/* Hook options */}
       <div>
@@ -536,34 +683,83 @@ export default function SavedClipEditor({
           <div className="flex items-center justify-between gap-3 mb-3">
             <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
             <span className="font-mono text-xs text-foreground-muted">
-              {fmtClipTime(currentTime)} / {fmtClipTime(previewDuration)}
+              {fmtClipTime(editedTime)} / {fmtClipTime(editedDuration)}
             </span>
+          </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={splitAtPlayhead}
+              disabled={!previewUrl || exporting || splitSegment(segments, segmentIndexAtSource(segments, currentTime), currentTime) === segments}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40"
+            >
+              ✂ Split at playhead
+            </button>
+            <button
+              type="button"
+              onClick={removeSelected}
+              disabled={segments.length <= 1 || exporting}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:border-red-400/50 disabled:opacity-40"
+            >
+              Delete selected
+            </button>
+            <button
+              type="button"
+              onClick={undoEdit}
+              disabled={undoStack.length === 0 || exporting}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40"
+            >
+              Undo
+            </button>
+            <span className="text-[11px] text-foreground-muted">Select a section on the video track to remove it.</span>
           </div>
           <input
             type="range"
             min={0}
-            max={Math.max(previewDuration, 0.1)}
+            max={Math.max(editedDuration, 0.1)}
             step={0.1}
-            value={Math.min(currentTime, previewDuration)}
-            onChange={(e) => seekTo(Number(e.target.value))}
+            value={Math.min(editedTime, editedDuration)}
+            onChange={(e) => seekTo(sourceTimeAt(segments, Number(e.target.value)))}
             aria-label="Seek clip timeline"
             className="w-full accent-accent"
             disabled={!previewUrl}
           />
           <div className="mt-2 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-3">
             <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Video</span>
-            <div className="h-8 flex-1 rounded bg-accent/20 border border-accent/40" />
+            <div className="flex min-w-0 flex-1 gap-1">
+              {segments.map((segment, index) => (
+                <button
+                  key={`${segment.start}-${segment.end}`}
+                  type="button"
+                  onClick={() => { setSelectedSegment(index); seekTo(segment.start); }}
+                  style={{ flex: `${segment.end - segment.start} 1 0%` }}
+                  aria-label={`Select section ${index + 1}, ${fmtClipTime(segment.end - segment.start)}`}
+                  aria-pressed={selectedSegment === index}
+                  className={`h-10 min-w-8 truncate rounded px-2 text-left text-[11px] font-semibold transition-colors ${
+                    selectedSegment === index
+                      ? "bg-accent/25 border-2 border-accent text-foreground"
+                      : "bg-accent/10 border border-accent/30 text-foreground-muted hover:border-accent/70"
+                  }`}
+                >
+                  Section {index + 1} · {fmtClipTime(segment.end - segment.start)}
+                </button>
+              ))}
+            </div>
           </div>
-          {transcriptCues.length > 0 && (
+          {editedCaptionCues.length > 0 && (
             <div className="mt-1 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2">
               <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Captions</span>
-              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto scrollbar-thin">
-                {transcriptCues.map((cue, i) => (
+              <div className="relative h-8 min-w-0 flex-1 overflow-hidden">
+                {editedCaptionCues.map((cue, i) => (
                   <button
                     key={i}
                     type="button"
-                    onClick={() => seekTo(cue.t)}
-                    className="min-w-24 max-w-48 flex-1 truncate rounded bg-blue-500/20 border border-blue-400/30 px-2 py-1.5 text-left text-[10px] text-blue-100 hover:border-blue-300"
+                    onClick={() => seekTo(sourceTimeAt(segments, cue.t))}
+                    style={{
+                      left: `${(cue.t / editedDuration) * 100}%`,
+                      width: `${Math.min(24, Math.max(5, 2 / editedDuration * 100))}%`,
+                    }}
+                    className="absolute top-0 h-8 truncate rounded bg-blue-500/20 border border-blue-400/30 px-2 text-left text-[10px] text-blue-100 hover:border-blue-300"
                     title={`${fmtClipTime(cue.t)} ${cue.text}`}
                   >
                     {cue.text}
@@ -579,4 +775,5 @@ export default function SavedClipEditor({
     </div>
   );
 }
+
 
