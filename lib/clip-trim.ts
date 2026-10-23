@@ -13,6 +13,13 @@ export function clipSeekRange(
   return { start: selectedStart - sourceOffset, end: selectedEnd - sourceOffset };
 }
 
+/** The archive worker encodes from the whole second before the saved clip. */
+export function archivedClipTiming(savedStart: number): { sourceStart: number; previewLead: number } {
+  if (!Number.isFinite(savedStart) || savedStart < 0) throw new RangeError("Invalid saved clip start.");
+  const sourceStart = Math.floor(savedStart);
+  return { sourceStart, previewLead: savedStart - sourceStart };
+}
+
 /** Keep each trim handle inside the original cut, with at least 0.1s between them. */
 export function updateClipTrim(
   originalStart: number,
