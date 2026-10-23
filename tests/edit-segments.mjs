@@ -12,6 +12,7 @@ import {
   segmentIndexAtSource,
   sourceTimeAt,
   splitSegment,
+  trimSegment,
   timelineDuration,
   timelineTimeAt,
 } from "../lib/edit-segments.ts";
@@ -41,16 +42,18 @@ test("FFmpeg exports only the kept sections with continuous audio", () => {
       "testsrc2=size=160x90:rate=10:duration=12", "-f", "lavfi", "-i",
       "sine=frequency=440:duration=12", "-shortest", "-c:v", "libx264",
       "-c:a", "aac", source]);
-    const { graph, videoLabel, audioLabel } = buildSegmentFilter(
-      [{ start: 0, end: 2 }, { start: 4, end: 6 }], "scale=160:90"
-    );
+    const trimmed = trimSegment([{ start: 0, end: 6 }], 0, "start", 1, 6);
+    const firstCut = splitSegment(trimmed, 0, 2);
+    const secondCut = splitSegment(firstCut, 1, 4);
+    const kept = deleteSegment(secondCut, 1);
+    const { graph, videoLabel, audioLabel } = buildSegmentFilter(kept, "scale=160:90");
     execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-ss", "5", "-t", "6", "-i", source,
       "-filter_complex", graph, "-map", videoLabel, "-map", audioLabel,
       "-c:v", "libx264", "-c:a", "aac", output]);
     const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries",
       "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", output],
     { encoding: "utf8" }).trim());
-    assert.ok(duration > 3.9 && duration < 4.2, `expected 4 seconds, got ${duration}`);
+    assert.ok(duration > 2.9 && duration < 3.2, `expected 3 seconds, got ${duration}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -99,5 +102,29 @@ test("caption words after a deleted section move to the new output time", () => 
     { text: "before", start: 1000, end: 1500 },
     { text: "after", start: 17000, end: 17500 },
   ]);
+});
+
+test("trim, split, delete and undo preserve a valid export timeline", () => {
+  const original = [{ start: 0, end: 60 }];
+  const trimmed = trimSegment(original, 0, "start", 10, 60);
+  const split = splitSegment(trimmed, 0, 30);
+  const cut = deleteSegment(split, 0);
+  const final = trimSegment(cut, 0, "end", 48, 60);
+  assert.deepEqual(final, [{ start: 30, end: 48 }]);
+  assert.deepEqual(parseSegments(final, 60), final);
+  assert.equal(timelineDuration(final), 18);
+  assert.equal(sourceTimeAt(final, 0), 30);
+  assert.deepEqual(split, [{ start: 10, end: 30 }, { start: 30, end: 60 }]);
+  assert.deepEqual(retimeWords([
+    { text: "removed", start: 120000, end: 120500 },
+    { text: "kept", start: 132000, end: 132500 },
+    { text: "trimmed", start: 151000, end: 151500 },
+  ], 100, final), [{ text: "kept", start: 2000, end: 2500 }]);
+});
+
+test("trim selected section cannot overlap its neighbors", () => {
+  const sections = [{ start: 0, end: 10 }, { start: 20, end: 30 }, { start: 40, end: 50 }];
+  assert.deepEqual(trimSegment(sections, 1, "start", 5, 60)[1], { start: 10, end: 30 });
+  assert.deepEqual(trimSegment(sections, 1, "end", 55, 60)[1], { start: 20, end: 40 });
 });
 

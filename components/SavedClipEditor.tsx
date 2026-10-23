@@ -13,12 +13,13 @@ import { HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
+import ClipTrimControl from "./ClipTrimControl";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import {
   deleteSegment, parseSegments, retimeWords, segmentIndexAtSource, sourceTimeAt, splitSegment,
-  timelineDuration, timelineTimeAt, type EditSegment,
+  timelineDuration, timelineTimeAt, trimSegment, type EditSegment,
 } from "@/lib/edit-segments";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
@@ -91,6 +92,7 @@ export default function SavedClipEditor({
   const [undoStack, setUndoStack] = useState<Array<{
     segments: EditSegment[]; selected: number; time: number;
   }>>([]);
+  const lastTrimRef = useRef<{ section: number; at: number } | null>(null);
   const editedDuration = timelineDuration(segments);
   const editedTime = timelineTimeAt(segments, currentTime);
   const editedCaptionCues = useMemo(() => {
@@ -150,9 +152,15 @@ export default function SavedClipEditor({
     setSelectedSegment(index);
   };
 
-  const applySegments = (next: EditSegment[], selected: number) => {
+  const applySegments = (next: EditSegment[], selected: number, trim = false) => {
     if (next === segments) return;
-    setUndoStack((history) => [...history.slice(-29), { segments, selected: selectedSegment, time: currentTime }]);
+    const now = Date.now();
+    const sameTrim = trim && lastTrimRef.current?.section === selected &&
+      now - lastTrimRef.current.at < 800;
+    if (!sameTrim) {
+      setUndoStack((history) => [...history.slice(-29), { segments, selected: selectedSegment, time: currentTime }]);
+    }
+    lastTrimRef.current = trim ? { section: selected, at: now } : null;
     setSegments(next);
     setSelectedSegment(selected);
     const video = videoRef.current;
@@ -172,9 +180,18 @@ export default function SavedClipEditor({
     applySegments(next, Math.min(selectedSegment, next.length - 1));
   };
 
+  const trimSelected = (start: number, end: number) => {
+    const selected = segments[selectedSegment];
+    if (!selected) return;
+    const handle = start !== selected.start ? "start" : "end";
+    const proposed = handle === "start" ? start : end;
+    applySegments(trimSegment(segments, selectedSegment, handle, proposed, sourceDuration), selectedSegment, true);
+  };
+
   const undoEdit = () => {
     const previous = undoStack[undoStack.length - 1];
     if (!previous) return;
+    lastTrimRef.current = null;
     setUndoStack((history) => history.slice(0, -1));
     setSegments(previous.segments);
     setSelectedSegment(previous.selected);
@@ -746,6 +763,21 @@ export default function SavedClipEditor({
               ))}
             </div>
           </div>
+          {segments[selectedSegment] && (
+            <div className="mt-3 rounded-lg border border-border bg-surface-2 p-3">
+              <p className="mb-2 text-xs font-semibold text-foreground">Trim section {selectedSegment + 1}</p>
+              <ClipTrimControl
+                originalStart={selectedSegment === 0 ? 0 : segments[selectedSegment - 1].end}
+                originalEnd={selectedSegment === segments.length - 1 ? sourceDuration : segments[selectedSegment + 1].start}
+                start={segments[selectedSegment].start}
+                end={segments[selectedSegment].end}
+                playhead={currentTime}
+                disabled={!isPro || exporting}
+                onChange={trimSelected}
+              />
+              {!isPro && <p className="mt-2 text-[10px] text-subtle">Trim editing is available with Pro.</p>}
+            </div>
+          )}
           {editedCaptionCues.length > 0 && (
             <div className="mt-1 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2">
               <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Captions</span>

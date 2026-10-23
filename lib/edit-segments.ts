@@ -53,6 +53,24 @@ export function deleteSegment(segments: EditSegment[], index: number): EditSegme
   return segments.filter((_, i) => i !== index);
 }
 
+/** Trim one kept section without crossing the neighboring kept sections. */
+export function trimSegment(
+  segments: EditSegment[], index: number, handle: "start" | "end", proposed: number,
+  clipDuration: number,
+): EditSegment[] {
+  const segment = segments[index];
+  if (!segment || !Number.isFinite(clipDuration)) return segments;
+  const lower = index === 0 ? 0 : segments[index - 1].end;
+  const upper = index === segments.length - 1 ? clipDuration : segments[index + 1].start;
+  if (!Number.isFinite(proposed) || upper - lower < MIN_SEGMENT_SECONDS) return segments;
+  const round = (value: number) => Math.round(value * 100) / 100;
+  const next = handle === "start"
+    ? { start: round(Math.max(lower, Math.min(proposed, segment.end - MIN_SEGMENT_SECONDS))), end: segment.end }
+    : { start: segment.start, end: round(Math.min(upper, Math.max(proposed, segment.start + MIN_SEGMENT_SECONDS))) };
+  if (next.start === segment.start && next.end === segment.end) return segments;
+  return segments.map((item, itemIndex) => itemIndex === index ? next : item);
+}
+
 export function segmentIndexAtSource(segments: EditSegment[], sourceTime: number): number {
   return segments.findIndex((segment, index) =>
     sourceTime >= segment.start - EPSILON &&
