@@ -20,6 +20,7 @@ import { archivedClipTiming } from "@/lib/clip-trim";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import { loadClipThumbnail, peekClipThumbnail } from "@/lib/clip-thumbnails";
 import {
   deleteSegment, parseSegments, retimeWords, segmentIndexAtSource, splitSegment,
   timelineDuration, trimSegment, type EditSegment,
@@ -59,6 +60,10 @@ export default function SavedClipEditor({
   const [elapsed, setElapsed] = useState(0);
   const [retryToken, setRetryToken] = useState(0);
   const [transcriptOnly, setTranscriptOnly] = useState(false);
+  const [leftTab, setLeftTab] = useState<"transcript" | "scene" | "media">("transcript");
+  const [transcriptSearch, setTranscriptSearch] = useState("");
+  const [timelinePoster, setTimelinePoster] = useState<string | null>(() => peekClipThumbnail(clip));
+  const [sourcePeaks, setSourcePeaks] = useState<number[]>([]);
   const [proGateOpen, setProGateOpen] = useState(false);
   const { tier } = useSparks();
   const isPro = tier === "pro";
@@ -114,6 +119,9 @@ export default function SavedClipEditor({
   const [undoStack, setUndoStack] = useState<Array<{
     segments: EditSegment[]; media: EditorMedia[]; selected: number; time: number;
   }>>([]);
+  const [redoStack, setRedoStack] = useState<Array<{
+    segments: EditSegment[]; media: EditorMedia[]; selected: number; time: number;
+  }>>([]);
   const lastTrimRef = useRef<{ section: number; at: number } | null>(null);
   const mediaVideoRef = useRef<HTMLVideoElement>(null);
   const timelineItems = useMemo(() => buildEditorTimeline(segments, media), [segments, media]);
@@ -133,14 +141,6 @@ export default function SavedClipEditor({
   }, [captionWords, clip.start_seconds, hasWords, segments, media]);
   const liveCaptionCues = useMemo(() => buildCaptionCues(outputCaptionWords, 0, editedDuration * 1000,
     captionStyle === "KLYP" ? 1 : 4), [outputCaptionWords, editedDuration, captionStyle]);
-  const editedCaptionCues = useMemo(() => {
-    const cues: { t: number; text: string }[] = [];
-    for (let i = 0; i < outputCaptionWords.length; i += 8) {
-      const group = outputCaptionWords.slice(i, i + 8);
-      cues.push({ t: group[0].start / 1000, text: group.map((word) => word.text).join(" ") });
-    }
-    return cues;
-  }, [outputCaptionWords]);
 
   const seekOutput = (seconds: number, autoPlay = false) => {
     const target = Math.max(0, Math.min(seconds, editedDuration));
@@ -225,6 +225,7 @@ export default function SavedClipEditor({
 
   const applySegments = (next: EditSegment[], selected: number, trim = false, nextMedia = media) => {
     if (next === segments) return;
+    setRedoStack([]);
     const now = Date.now();
     const sameTrim = trim && lastTrimRef.current?.section === selected &&
       now - lastTrimRef.current.at < 800;
@@ -264,6 +265,7 @@ export default function SavedClipEditor({
 
   const applyMedia = (next: EditorMedia[]) => {
     if (next === media) return;
+    setRedoStack([]);
     setUndoStack((history) => [...history.slice(-29), { segments, media, selected: selectedSegment, time: currentTime }]);
     setMedia(next);
     const firstImported = next.findIndex((item) => item.after === -1);
@@ -287,6 +289,7 @@ export default function SavedClipEditor({
     const previous = undoStack[undoStack.length - 1];
     if (!previous) return;
     lastTrimRef.current = null;
+    setRedoStack((history) => [...history.slice(-29), { segments, media, selected: selectedSegment, time: currentTime }]);
     setUndoStack((history) => history.slice(0, -1));
     setSegments(previous.segments);
     setMedia(previous.media);
@@ -299,9 +302,58 @@ export default function SavedClipEditor({
     setCurrentTime(previous.time);
   };
 
+  const redoEdit = () => {
+    const next = redoStack[redoStack.length - 1];
+    if (!next) return;
+    lastTrimRef.current = null;
+    setUndoStack((history) => [...history.slice(-29), { segments, media, selected: selectedSegment, time: currentTime }]);
+    setRedoStack((history) => history.slice(0, -1));
+    setSegments(next.segments);
+    setMedia(next.media);
+    setActiveMediaIndex(null);
+    setSelectedMediaIndex(null);
+    setPlaying(false);
+    setSelectedSegment(next.selected);
+    activeSourceIndexRef.current = next.selected;
+    if (videoRef.current) videoRef.current.currentTime = next.time + previewLeadSeconds;
+    setCurrentTime(next.time);
+  };
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    let live = true;
+    loadClipThumbnail(clip).then((url) => { if (live) setTimelinePoster(url); }).catch(() => {});
+    return () => { live = false; };
+  }, [clip.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!previewUrl || !workspace) return;
+    let live = true;
+    let context: AudioContext | null = null;
+    (async () => {
+      try {
+        const bytes = await (await fetch(previewUrl)).arrayBuffer();
+        context = new AudioContext();
+        const audio = await context.decodeAudioData(bytes);
+        const channel = audio.getChannelData(0);
+        const peaks = Array.from({ length: 240 }, (_, index) => {
+          const from = Math.floor(index / 240 * channel.length);
+          const to = Math.floor((index + 1) / 240 * channel.length);
+          let peak = 0;
+          for (let sample = from; sample < to; sample += Math.max(1, Math.floor((to - from) / 80))) {
+            peak = Math.max(peak, Math.abs(channel[sample]));
+          }
+          return peak;
+        });
+        if (live) setSourcePeaks(peaks);
+      } catch { if (live) setSourcePeaks([]); }
+      finally { void context?.close().catch(() => {}); }
+    })();
+    return () => { live = false; };
+  }, [previewUrl, workspace]);
 
   const uploadMedia = async (file: File) => {
     setMediaError(null);
@@ -603,19 +655,42 @@ export default function SavedClipEditor({
   };
 
   return (
-    <div className={workspace ? "pt-4" : "mt-4 pt-4 border-t border-border"} onClick={(e) => e.stopPropagation()}>
+    <div className={workspace ? "xl:h-full xl:flex xl:flex-col bg-[#080f13]" : "mt-4 pt-4 border-t border-border"} onClick={(e) => e.stopPropagation()}>
+      {workspace && (
+        <div className="h-14 shrink-0 flex items-center gap-3 border-b border-[#24323a] bg-[#0b151b] px-4 pr-14">
+          <span className="font-syne text-xl font-black tracking-tight text-white"><span className="text-accent">K</span>LYP</span>
+          <span className="hidden sm:block h-6 w-px bg-[#2b3941]" />
+          <span className="min-w-0 truncate text-sm font-semibold text-foreground" title={clip.title}>{clip.title}</span>
+          <span className="hidden md:block shrink-0 text-[11px] text-foreground-muted">☁ Saved on this device</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden sm:inline rounded-md border border-border px-2 py-1 text-[11px] text-foreground-muted">{format}</span>
+            <button type="button" onClick={exportClip} disabled={exporting}
+              className="rounded-lg bg-accent px-4 py-2 text-xs font-bold text-background hover:bg-accent-dim disabled:opacity-50">
+              {exporting ? "Exporting…" : "↑ Export clip"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className={workspace
-        ? "grid grid-cols-1 lg:grid-cols-[minmax(230px,1fr)_minmax(360px,2fr)_minmax(260px,1fr)] gap-4 items-start"
+        ? "grid grid-cols-1 xl:grid-cols-[minmax(280px,27%)_minmax(360px,1fr)_minmax(310px,27%)] xl:flex-1 xl:min-h-0 items-stretch border-b border-[#24323a]"
         : "grid grid-cols-1 lg:grid-cols-2 gap-6 items-start"}>
 
       {/* ── Scene analysis (left): description + transcript with timestamps ── */}
       <div className={workspace
-        ? "order-2 lg:order-1 min-w-0 rounded-xl border border-border bg-background p-4 space-y-3"
+        ? "order-2 xl:order-1 min-w-0 min-h-0 xl:overflow-y-auto border-r border-[#24323a] bg-[#0b151b] p-4 space-y-3"
         : "space-y-3"}>
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
-            Transcript / Scene Analysis
-          </p>
+        {workspace && (
+          <div className="flex gap-4 border-b border-[#263943] pb-2">
+            {(["transcript", "scene", "media"] as const).map((tab) => (
+              <button key={tab} type="button" onClick={() => setLeftTab(tab)}
+                className={`pb-1 text-xs font-semibold capitalize ${leftTab === tab ? "border-b-2 border-accent text-white" : "text-foreground-muted hover:text-white"}`}>
+                {tab === "scene" ? "Scene analysis" : tab}
+              </button>
+            ))}
+          </div>
+        )}
+        {!workspace && <div className="flex items-center justify-between">
+          <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">Transcript / Scene Analysis</p>
           <button
             type="button"
             onClick={() => setTranscriptOnly((v) => !v)}
@@ -627,9 +702,15 @@ export default function SavedClipEditor({
           >
             Transcript only
           </button>
-        </div>
+        </div>}
 
-        {!transcriptOnly && (
+        {workspace && leftTab === "transcript" && (
+          <input type="search" value={transcriptSearch} onChange={(event) => setTranscriptSearch(event.target.value)}
+            placeholder="Search transcript…" aria-label="Search transcript"
+            className="w-full rounded-lg border border-[#263943] bg-[#0b1117] px-3 py-2 text-xs text-foreground placeholder:text-subtle focus:border-accent focus:outline-none" />
+        )}
+
+        {((workspace && leftTab === "scene") || (!workspace && !transcriptOnly)) && (
           <div className="px-3.5 py-3 rounded-lg bg-surface-2 border border-border space-y-1.5">
             <p className="text-[10px] font-bold font-syne tracking-wide text-accent">{clip.clip_type}</p>
             {clip.reason && <p className="text-xs text-foreground-muted leading-relaxed">{clip.reason}</p>}
@@ -637,9 +718,9 @@ export default function SavedClipEditor({
           </div>
         )}
 
-        {transcriptCues.length > 0 ? (
+        {(!workspace || leftTab === "transcript") && (transcriptCues.length > 0 ? (
           <div className="max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border">
-            {transcriptCues.map((cue, i) => (
+            {transcriptCues.filter((cue) => cue.text.toLowerCase().includes(transcriptSearch.toLowerCase())).map((cue, i) => (
               <button
                 key={i}
                 type="button"
@@ -658,13 +739,42 @@ export default function SavedClipEditor({
           <p className="text-[10px] text-subtle">
             No transcript saved for this clip — it was analyzed before word timestamps were stored.
           </p>
+        ))}
+
+        {workspace && leftTab === "media" && (
+          <div className="space-y-3">
+            <p className="text-xs text-foreground-muted">Add your own photo or video to the timeline.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {([{"label":"Add photo","accept":"image/jpeg,image/png,image/webp,image/heic,image/heif"},
+                {"label":"Add video","accept":"video/mp4,video/quicktime,video/webm"}]).map(({ label, accept }) => (
+                <label key={label} className="cursor-pointer rounded-lg border border-[#30424c] bg-[#101c23] px-3 py-3 text-center text-xs font-semibold text-foreground hover:border-accent/60">
+                  + {label}
+                  <input type="file" accept={accept} className="sr-only" disabled={uploadingMedia || exporting}
+                    onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadMedia(file); }} />
+                </label>
+              ))}
+            </div>
+            {uploadingMedia && <p className="text-xs text-accent">Importing media…</p>}
+            {mediaError && <p role="alert" className="text-xs text-red-400">{mediaError}</p>}
+            {media.map((item, index) => (
+              <button type="button" key={item.id} onClick={() => { const entry = timelineItems.find((part) => part.mediaIndex === index); if (entry) seekOutput(entry.start); }}
+                className="flex w-full items-center gap-2 rounded-lg border border-[#30424c] bg-[#101c23] p-2 text-left text-xs text-foreground hover:border-accent/60">
+                {item.kind === "image" && item.url ? <img src={item.url} alt="" className="h-10 w-10 rounded object-cover" /> : <span className="flex h-10 w-10 items-center justify-center rounded bg-violet-500/20">▶</span>}
+                <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                <span className="font-mono text-[10px] text-foreground-muted">{item.duration.toFixed(1)}s</span>
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
       {/* ── Vertical preview (centre) ── */}
-      <div className="order-1 lg:order-2 min-w-0 rounded-xl border border-border bg-background p-3">
-        <p className="mb-3 text-sm font-semibold text-foreground">Preview</p>
-        <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: "9/16", maxHeight: workspace ? "min(58dvh, 660px)" : 380 }}>
+      <div className={workspace
+        ? "order-1 xl:order-2 min-w-0 min-h-0 bg-[#060d12] px-3 py-2 flex flex-col justify-center"
+        : "order-1 lg:order-2 min-w-0 rounded-xl border border-border bg-background p-3"}>
+        {!workspace && <p className="mb-3 text-sm font-semibold text-foreground">Preview</p>}
+        <div className="relative bg-black rounded-lg overflow-hidden mx-auto"
+          style={{ aspectRatio: "9/16", height: workspace ? "min(56dvh, 590px)" : undefined, maxHeight: workspace ? undefined : 380 }}>
         {loadingPreview && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground-muted">
             <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
@@ -781,10 +891,12 @@ export default function SavedClipEditor({
       </div>
 
       {/* ── Editing controls (right) ── */}
-      <div className="order-3 min-w-0 space-y-4 rounded-xl border border-border bg-background p-4">
+      <div className={workspace
+        ? "order-3 min-w-0 min-h-0 space-y-5 xl:overflow-y-auto border-l border-[#24323a] bg-[#0b151b] p-4 pb-8"
+        : "order-3 min-w-0 space-y-4 rounded-xl border border-border bg-background p-4"}>
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">Clip settings</h3>
-        <span className="text-[10px] text-subtle">Saved on this device</span>
+        <h3 className="text-sm font-semibold text-foreground">{workspace ? "Edit" : "Clip settings"}</h3>
+        {!workspace && <span className="text-[10px] text-subtle">Saved on this device</span>}
       </div>
       {workspace && (
         <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-foreground-muted">
@@ -803,6 +915,12 @@ export default function SavedClipEditor({
             — shown on screen for the first 3s
           </span>
         </p>
+        {workspace && <input
+          type="text" value={selectedHook ?? ""} maxLength={80} disabled={exporting}
+          onChange={(event) => setSelectedHook(event.target.value ? event.target.value.slice(0, 80) : null)}
+          placeholder="Type a hook or choose an AI suggestion"
+          className="mb-3 w-full rounded-lg border border-[#30424c] bg-[#0a1117] px-3 py-2 text-xs text-foreground placeholder:text-subtle focus:border-accent focus:outline-none" />}
+        {workspace && <p className="mb-2 text-[10px] font-semibold text-foreground-muted">✧ AI suggestions</p>}
         {hooks.length > 0 ? (
           <div className="flex flex-col gap-1.5">
             {hooks.map((hookText) => {
@@ -829,7 +947,7 @@ export default function SavedClipEditor({
           </p>
         )}
         {/* Editable hook text — picking an option above fills this in; tweak freely. */}
-        <input
+        {!workspace && <input
           type="text"
           value={selectedHook ?? ""}
           onChange={(e) => setSelectedHook(e.target.value.length > 0 ? e.target.value.slice(0, 80) : null)}
@@ -837,10 +955,10 @@ export default function SavedClipEditor({
           maxLength={80}
           disabled={exporting}
           className="mt-1.5 w-full px-3 py-1.5 rounded-lg border border-border bg-surface-2 text-xs text-foreground placeholder:text-subtle focus:outline-none focus:border-accent/50 disabled:opacity-50"
-        />
-        <p className="text-[10px] text-subtle mt-1">
+        />}
+        {!workspace && <p className="text-[10px] text-subtle mt-1">
           Burned on screen in ALL CAPS for the first 3s — clear the field to export without a hook.
-        </p>
+        </p>}
       </div>
 
       {/* Hook text style */}
@@ -849,20 +967,21 @@ export default function SavedClipEditor({
           <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">
             Hook Text Style
           </p>
-          <div className="flex flex-wrap gap-1.5">
+          <div className={workspace ? "grid grid-cols-5 gap-1.5" : "flex flex-wrap gap-1.5"}>
             {HOOK_STYLES.map((s) => (
               <button
                 key={s}
                 onClick={() => setHookStyle(s)}
                 disabled={exporting}
                 title={HOOK_STYLE_LABELS[s]}
-                className={`px-2.5 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
+                className={`${workspace ? "min-w-0 rounded-lg px-1 py-2 text-center" : "px-2.5 py-1.5 rounded-md"} border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   hookStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
                     : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
                 }`}
               >
-                {s}
+                {workspace && <span className={`block text-lg leading-none mb-1 ${s === "YELLOW" ? "text-yellow-300" : s === "NEON" ? "text-accent" : "text-white"}`}>Aa</span>}
+                <span className={workspace ? "text-[9px] capitalize tracking-normal" : ""}>{workspace ? s.toLowerCase() : s}</span>
               </button>
             ))}
           </div>
@@ -876,19 +995,20 @@ export default function SavedClipEditor({
           Caption Style
         </p>
         {hasWords ? (
-          <div className="flex gap-2">
+          <div className={workspace ? "grid grid-cols-3 gap-2" : "flex gap-2"}>
             {CAPTION_STYLES.map((s) => (
               <button
                 key={s}
                 onClick={() => setCaptionStyle(s)}
                 disabled={exporting}
-                className={`flex-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
+                className={`flex-1 ${workspace ? "rounded-lg py-2.5" : "py-1.5 rounded-md"} border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   captionStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
                     : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
                 }`}
               >
-                {s === "KLYP" ? "⚡ KLYP" : s}
+                {workspace && <span className="block text-xl leading-none mb-1">Aa</span>}
+                <span className={workspace ? "text-[10px] capitalize tracking-normal" : ""}>{s === "KLYP" ? workspace ? "Klyp" : "⚡ KLYP" : workspace ? s.toLowerCase() : s}</span>
               </button>
             ))}
           </div>
@@ -903,12 +1023,12 @@ export default function SavedClipEditor({
         <div className="space-y-3">
           <div>
             <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">Caption color</p>
-            <div className="flex flex-wrap gap-1.5">
+            <div className={workspace ? "grid grid-cols-5 gap-1.5" : "flex flex-wrap gap-1.5"}>
               {CAPTION_COLORS.map((color) => (
                 <button key={color} type="button" onClick={() => setCaptionColor(color)} disabled={exporting}
-                  className={`rounded-md border px-2 py-1 text-[10px] font-bold ${captionColor === color ? "border-accent text-accent bg-accent-glow" : "border-border text-foreground-muted"}`}>
-                  {color !== "DEFAULT" && <span className="mr-1 inline-block h-2 w-2 rounded-full border border-black/30" style={{ background: CAPTION_HEX[color] }} />}
-                  {color === "DEFAULT" ? "Style default" : color[0] + color.slice(1).toLowerCase()}
+                  className={`rounded-lg border px-1 py-2 text-[9px] font-bold ${captionColor === color ? "border-accent text-accent bg-accent-glow" : "border-border text-foreground-muted"}`}>
+                  <span className="mx-auto mb-1 block h-5 w-5 rounded-full border border-black/30" style={{ background: color === "DEFAULT" ? "#677589" : CAPTION_HEX[color] }} />
+                  {color === "DEFAULT" ? "Default" : color[0] + color.slice(1).toLowerCase()}
                 </button>
               ))}
             </div>
@@ -980,7 +1100,7 @@ export default function SavedClipEditor({
       )}
 
       {/* Export */}
-      <button
+      {!workspace && <button
         onClick={exportClip}
         disabled={exporting}
         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
@@ -1000,14 +1120,14 @@ export default function SavedClipEditor({
             Export clip
           </>
         )}
-      </button>
+      </button>}
       </div>
       </div>
 
       {workspace && (
-        <div className="mt-4 rounded-xl border border-border bg-background p-4">
+        <div className="relative shrink-0 bg-[#091218] p-3 xl:h-[34dvh] xl:min-h-[270px] xl:max-h-[370px] xl:overflow-y-auto">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">Timeline</h3>
             <span className="font-mono text-xs text-foreground-muted">
               {fmtClipTime(editedTime)} / {fmtClipTime(editedDuration)}
             </span>
@@ -1032,12 +1152,18 @@ export default function SavedClipEditor({
             <button
               type="button"
               onClick={undoEdit}
+              title="Undo the last timeline change"
               disabled={undoStack.length === 0 || exporting}
               className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40"
             >
               Undo
             </button>
-            <span className="text-[11px] text-foreground-muted">Select a section on the video track to remove it.</span>
+            <button type="button" onClick={redoEdit} disabled={redoStack.length === 0 || exporting}
+              title="Redo the last timeline change"
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:border-accent/50 disabled:opacity-40">
+              Redo
+            </button>
+            <span className="text-[11px] text-foreground-muted">Select a section to trim, split, or remove it.</span>
           </div>
           <div className="mb-3 rounded-lg border border-border bg-surface-2 p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1105,7 +1231,19 @@ export default function SavedClipEditor({
             className="w-full accent-accent"
             disabled={!previewUrl}
           />
-          <div className="mt-2 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-3">
+          <div className="relative ml-[88px] mr-3 mt-1 h-6 text-[10px] font-mono text-foreground-muted">
+            {Array.from({ length: Math.floor(editedDuration / (editedDuration <= 30 ? 5 : editedDuration <= 90 ? 10 : 20)) + 1 }, (_, index) => {
+              const seconds = index * (editedDuration <= 30 ? 5 : editedDuration <= 90 ? 10 : 20);
+              return <span key={seconds} className="absolute top-0 border-l border-[#30424c] pl-1"
+                style={{ left: `${seconds / Math.max(editedDuration, 0.1) * 100}%` }}>{fmtClipTime(seconds)}</span>;
+            })}
+          </div>
+          <div className="relative">
+          <div className="pointer-events-none absolute inset-y-0 left-[88px] right-3 z-10">
+            <span className="absolute top-0 bottom-0 w-px bg-white/90 shadow-[0_0_8px_white]"
+              style={{ left: `${Math.min(100, editedTime / Math.max(editedDuration, 0.1) * 100)}%` }} />
+          </div>
+          <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-2">
             <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Video</span>
             <div className="flex min-w-0 flex-1 gap-1">
               {timelineItems.map((item, index) => (
@@ -1117,15 +1255,21 @@ export default function SavedClipEditor({
                   aria-label={item.kind === "source" ? `Select section ${item.sourceIndex! + 1}` : `Select imported ${item.kind}`}
                   aria-pressed={item.kind === "source" ? selectedMediaIndex === null && selectedSegment === item.sourceIndex
                     : selectedMediaIndex === item.mediaIndex}
-                  className={`h-10 min-w-8 truncate rounded px-2 text-left text-[11px] font-semibold transition-colors ${
+                  className={`relative h-12 min-w-8 overflow-hidden truncate rounded px-2 text-left text-[11px] font-semibold transition-colors ${
                     (item.kind === "source" ? selectedMediaIndex === null && selectedSegment === item.sourceIndex
                       : selectedMediaIndex === item.mediaIndex)
-                      ? "bg-accent/25 border-2 border-accent text-foreground"
-                      : item.kind === "source" ? "bg-accent/10 border border-accent/30 text-foreground-muted hover:border-accent/70"
-                      : "bg-violet-500/20 border border-violet-400/40 text-violet-100 hover:border-violet-300"
+                      ? "bg-sky-600/40 border-2 border-accent text-white"
+                      : item.kind === "source" ? "bg-sky-600/30 border border-sky-400/50 text-sky-50 hover:border-sky-300"
+                      : "bg-violet-500/30 border border-violet-400/60 text-violet-100 hover:border-violet-300"
                   }`}
                 >
-                  {item.kind === "source" ? `Section ${item.sourceIndex! + 1}` : item.kind === "image" ? "Image" : "Video"} · {fmtClipTime(item.end - item.start)}
+                  {(item.kind === "source" ? timelinePoster : item.kind === "image" ? media[item.mediaIndex!]?.url : null) &&
+                    <img src={item.kind === "source" ? timelinePoster! : media[item.mediaIndex!].url}
+                      alt="" className="absolute inset-y-0 left-0 h-full w-12 object-cover opacity-75" />}
+                  <span className="relative z-[1] block pl-10 drop-shadow-[0_1px_2px_black]">
+                    {item.kind === "source" ? `Section ${item.sourceIndex! + 1}` : item.kind === "image" ? "Imported photo" : "Imported video"}
+                    <span className="block text-[10px] font-normal">{fmtClipTime(item.end - item.start)}</span>
+                  </span>
                 </button>
               ))}
             </div>
@@ -1145,21 +1289,21 @@ export default function SavedClipEditor({
               {!isPro && <p className="mt-2 text-[10px] text-subtle">Trim editing is available with Pro.</p>}
             </div>
           )}
-          {editedCaptionCues.length > 0 && (
-            <div className="mt-1 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2">
+          {liveCaptionCues.length > 0 && (
+            <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-2">
               <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Captions</span>
               <div className="relative h-8 min-w-0 flex-1 overflow-hidden">
-                {editedCaptionCues.map((cue, i) => (
+                {liveCaptionCues.map((cue, i) => (
                   <button
                     key={i}
                     type="button"
-                    onClick={() => seekOutput(cue.t)}
+                    onClick={() => seekOutput(cue.startMs / 1000)}
                     style={{
-                      left: `${(cue.t / editedDuration) * 100}%`,
-                      width: `${Math.min(24, Math.max(5, 2 / editedDuration * 100))}%`,
+                      left: `${(cue.startMs / Math.max(editedDuration * 1000, 1)) * 100}%`,
+                      width: `${Math.max(1, (cue.endMs - cue.startMs) / Math.max(editedDuration * 1000, 1) * 100)}%`,
                     }}
-                    className="absolute top-0 h-8 truncate rounded bg-blue-500/20 border border-blue-400/30 px-2 text-left text-[10px] text-blue-100 hover:border-blue-300"
-                    title={`${fmtClipTime(cue.t)} ${cue.text}`}
+                    className="absolute top-0 h-8 truncate rounded bg-emerald-500/25 border border-emerald-400/40 px-2 text-left text-[10px] text-emerald-100 hover:border-emerald-300"
+                    title={`${fmtClipTime(cue.startMs / 1000)} ${cue.text}`}
                   >
                     {cue.text}
                   </button>
@@ -1167,6 +1311,39 @@ export default function SavedClipEditor({
               </div>
             </div>
           )}
+          {sourcePeaks.length > 0 && (
+            <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-1.5">
+              <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Audio</span>
+              <div className="flex h-7 min-w-0 flex-1 gap-1">
+                {timelineItems.map((item, index) => (
+                  <div key={`${item.kind}-${index}`} style={{ flex: `${item.end - item.start} 1 0%` }}
+                    className="flex min-w-0 items-center overflow-hidden rounded bg-emerald-500/10">
+                    {item.kind === "source" && Array.from({ length: Math.max(4, Math.ceil((item.end - item.start) / Math.max(editedDuration, 1) * 100)) }, (_, bar) => {
+                      const fraction = bar / Math.max(1, Math.ceil((item.end - item.start) / Math.max(editedDuration, 1) * 100) - 1);
+                      const sourceTime = item.sourceStart! + fraction * (item.sourceEnd! - item.sourceStart!);
+                      const sample = sourcePeaks[Math.min(sourcePeaks.length - 1, Math.max(0,
+                        Math.floor((sourceTime + previewLeadSeconds) / Math.max(previewDuration, 0.1) * sourcePeaks.length)))] ?? 0;
+                      return <span key={bar} className="min-w-px flex-1 rounded-full bg-emerald-400/75"
+                        style={{ height: `${Math.max(8, Math.min(100, sample * 150))}%` }} />;
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {selectedHook && (
+            <div className="mt-1 flex items-center gap-3 rounded-md bg-[#101d25] px-3 py-1.5">
+              <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Hook</span>
+              <div className="relative h-7 min-w-0 flex-1">
+                <button type="button" onClick={() => seekOutput(0)} title="Opening hook: first 3 seconds"
+                  style={{ width: `${Math.min(100, 3 / Math.max(editedDuration, 0.1) * 100)}%` }}
+                  className="h-full min-w-16 truncate rounded border border-violet-400/50 bg-violet-500/40 px-2 text-left text-[10px] font-semibold text-violet-100">
+                  ✧ {selectedHook}
+                </button>
+              </div>
+            </div>
+          )}
+          </div>
         </div>
       )}
 
