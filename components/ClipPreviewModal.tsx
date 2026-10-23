@@ -100,12 +100,11 @@ export default function ClipPreviewModal({
    */
   const beginClose = useCallback(() => {
     if (closeTimer.current) return; // already closing — ignore repeat Escape/clicks
-    const video = videoRef.current;
-    if (video) {
+    dialogRef.current?.querySelectorAll("video").forEach((video) => {
       video.pause();
       video.removeAttribute("src");
       video.load();
-    }
+    });
     setClosing(true);
     closeTimer.current = setTimeout(onClose, reducedMotion ? 0 : CLOSE_MS);
   }, [onClose, reducedMotion]);
@@ -212,6 +211,11 @@ export default function ClipPreviewModal({
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, PREVIEW_TIMEOUT_MS);
     const settle = () => { clearInterval(ticker); clearTimeout(timeout); clearTimeout(spinnerTimer); };
 
+    if (detailsOpen) {
+      settle();
+      return () => { controller.abort(); };
+    }
+
     processingFetch("/api/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -254,7 +258,7 @@ export default function ClipPreviewModal({
       setPreviewUrl(null);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [clip.id, retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clip.id, retryToken, detailsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onBackdrop = useCallback(
     (e: React.MouseEvent) => { if (e.target === e.currentTarget) beginClose(); },
@@ -283,7 +287,7 @@ export default function ClipPreviewModal({
   return (
     <div
       onMouseDown={onBackdrop}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 font-geist ${
+      className={`fixed inset-0 z-50 flex items-center justify-center ${detailsOpen ? "p-0" : "p-4"} font-geist ${
         reducedMotion ? "" : "backdrop-blur-sm"
       }`}
       style={{
@@ -296,12 +300,14 @@ export default function ClipPreviewModal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`Preview: ${clip.title}`}
+        aria-label={`${detailsOpen ? "Editor" : "Preview"}: ${clip.title}`}
         style={panelStyle}
-        className="w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
+        className={detailsOpen
+          ? "w-full h-[100dvh] overflow-y-auto scrollbar-thin bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
+          : "w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"}
       >
         {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
+        <div className={`flex items-start justify-between gap-4 px-6 pt-6 pb-4 ${detailsOpen ? "border-b border-border" : ""}`}>
           <div className="min-w-0">
             {/* Wraps rather than truncates — on a phone the tail of a title is
                 often the point of it ("…Then THIS Happened"). */}
@@ -335,7 +341,7 @@ export default function ClipPreviewModal({
         </div>
 
         {/* ── Player ── object-contain keeps the source aspect ratio intact ── */}
-        <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
+        {!detailsOpen && <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
           <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
             {/* The clip's own frame, under the video and crossfaded out once
                 the first video frame has decoded. */}
@@ -390,7 +396,7 @@ export default function ClipPreviewModal({
               />
             )}
           </div>
-        </div>
+        </div>}
 
         {/* ── Actions ── */}
         {!detailsOpen && <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
@@ -463,7 +469,8 @@ export default function ClipPreviewModal({
         )}
 
         {/* ── Editor: scene analysis, transcript and export controls ── */}
-        <div className="px-6 pb-6 pt-3">
+        <div className={detailsOpen ? "px-4 pb-4" : "px-6 pb-6 pt-3"}>
+          {!detailsOpen && (
           <button
             onClick={() => setDetailsOpen((v) => !v)}
             aria-expanded={detailsOpen}
@@ -478,13 +485,13 @@ export default function ClipPreviewModal({
             </svg>
             {detailsOpen ? "Editor" : "Open editor"}
           </button>
+          )}
           {detailsOpen && (
-            /* The editor renders its own 9:16 player for hook/caption placement;
-               the dialog already has one, so it's suppressed here. */
-            <SavedClipEditor clip={clip} hidePreview />
+            <SavedClipEditor clip={clip} workspace />
           )}
         </div>
       </div>
     </div>
   );
 }
+

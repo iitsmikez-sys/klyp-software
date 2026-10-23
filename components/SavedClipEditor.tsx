@@ -37,9 +37,8 @@ function fmtClipTime(seconds: number) {
 
 export default function SavedClipEditor({
   clip,
-  /** The preview dialog renders its own player, so it suppresses this one. */
-  hidePreview = false,
-}: { clip: SavedClip; hidePreview?: boolean }) {
+  workspace = false,
+}: { clip: SavedClip; workspace?: boolean }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,10 +72,49 @@ export default function SavedClipEditor({
   const [format, setFormat] = useState<ExportFormat>("9:16");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [previewDuration, setPreviewDuration] = useState(
+    Math.max(0, clip.end_seconds - clip.start_seconds)
+  );
+
+  const seekTo = (seconds: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Math.max(0, Math.min(seconds, video.duration || previewDuration));
+    setCurrentTime(video.currentTime);
+  };
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+
+  // Keep the user's hook and export choices when they close and reopen the editor.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`klyp-editor-${clip.id}`);
+      if (raw) {
+        const saved = JSON.parse(raw) as {
+          hook?: string | null; hookStyle?: HookStyle;
+          captionStyle?: CaptionStyle; format?: ExportFormat;
+        };
+        if (typeof saved.hook === "string" || saved.hook === null) setSelectedHook(saved.hook);
+        if (saved.hookStyle && HOOK_STYLES.includes(saved.hookStyle)) setHookStyle(saved.hookStyle);
+        if (saved.captionStyle && CAPTION_STYLES.includes(saved.captionStyle)) setCaptionStyle(saved.captionStyle);
+        if (saved.format && EXPORT_FORMATS.includes(saved.format)) setFormat(saved.format);
+      }
+    } catch { /* A malformed old draft should not prevent editing. */ }
+    setDraftReady(true);
+  }, [clip.id]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      localStorage.setItem(`klyp-editor-${clip.id}`, JSON.stringify({
+        hook: selectedHook, hookStyle, captionStyle, format,
+      }));
+    } catch { /* Storage can be unavailable; editing and export still work. */ }
+  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, format]);
 
   // Live hook overlay on the preview — mirrors the export burn and reacts
   // instantly to hook/style changes (the loop redraws every frame, playing or not).
@@ -124,6 +162,7 @@ export default function SavedClipEditor({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        clip_id: clip.id,
         url: clip.url,
         start_seconds: clip.start_seconds,
         end_seconds: clip.end_seconds,
@@ -209,14 +248,18 @@ export default function SavedClipEditor({
   };
 
   return (
-    <div className="mt-4 pt-4 border-t border-border" onClick={(e) => e.stopPropagation()}>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+    <div className={workspace ? "pt-4" : "mt-4 pt-4 border-t border-border"} onClick={(e) => e.stopPropagation()}>
+      <div className={workspace
+        ? "grid grid-cols-1 lg:grid-cols-[minmax(230px,1fr)_minmax(360px,2fr)_minmax(260px,1fr)] gap-4 items-start"
+        : "grid grid-cols-1 lg:grid-cols-2 gap-6 items-start"}>
 
       {/* ── Scene analysis (left): description + transcript with timestamps ── */}
-      <div className="space-y-3">
+      <div className={workspace
+        ? "order-2 lg:order-1 min-w-0 rounded-xl border border-border bg-background p-4 space-y-3"
+        : "space-y-3"}>
         <div className="flex items-center justify-between">
           <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
-            Scene Analysis
+            Transcript / Scene Analysis
           </p>
           <button
             type="button"
@@ -242,12 +285,12 @@ export default function SavedClipEditor({
         {transcriptCues.length > 0 ? (
           <div className="max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border">
             {transcriptCues.map((cue, i) => (
-              <div key={i} className="flex items-start gap-3 px-3.5 py-2">
+              <button key={i} type="button" onClick={() => seekTo(cue.t)} className="w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2">
                 <span className="flex-shrink-0 text-[10px] font-mono text-accent mt-0.5">
                   {fmtClipTime(cue.t)}
                 </span>
                 <p className="text-xs text-foreground-muted leading-relaxed">{cue.text}</p>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
@@ -257,12 +300,10 @@ export default function SavedClipEditor({
         )}
       </div>
 
-      {/* ── Editing controls (right) ── */}
-      <div className="space-y-4">
-      {!hidePreview && (
-      <>
-      {/* Preview player */}
-      <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: "9/16", maxHeight: 380 }}>
+      {/* ── Vertical preview (centre) ── */}
+      <div className="order-1 lg:order-2 min-w-0 rounded-xl border border-border bg-background p-3">
+        <p className="mb-3 text-sm font-semibold text-foreground">Preview</p>
+        <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: "9/16", maxHeight: workspace ? "min(58dvh, 660px)" : 380 }}>
         {loadingPreview && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground-muted">
             <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
@@ -289,16 +330,33 @@ export default function SavedClipEditor({
         )}
         {previewUrl && (
           <>
-            <video ref={videoRef} src={previewUrl} className="w-full h-full object-contain" controls playsInline />
+            <video
+              ref={videoRef}
+              src={previewUrl}
+              className="w-full h-full object-contain"
+              controls
+              playsInline
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => setPreviewDuration(e.currentTarget.duration || previewDuration)}
+            />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           </>
         )}
-      </div>
-      <p className="text-[10px] text-subtle text-center -mt-2">
+        </div>
+        <p className="mt-2 text-center text-xs text-foreground-muted font-mono">
+          {fmtClipTime(currentTime)} / {fmtClipTime(previewDuration)}
+        </p>
+      <p className="text-[10px] text-subtle text-center mt-1">
         Hook shown live — captions are burned in on export.
       </p>
-      </>
-      )}
+      </div>
+
+      {/* ── Editing controls (right) ── */}
+      <div className="order-3 min-w-0 space-y-4 rounded-xl border border-border bg-background p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">Clip settings</h3>
+        <span className="text-[10px] text-subtle">Saved on this device</span>
+      </div>
 
       {/* Hook options */}
       <div>
@@ -466,14 +524,59 @@ export default function SavedClipEditor({
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            Create clip
+            Export clip
           </>
         )}
       </button>
       </div>
       </div>
 
+      {workspace && (
+        <div className="mt-4 rounded-xl border border-border bg-background p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
+            <span className="font-mono text-xs text-foreground-muted">
+              {fmtClipTime(currentTime)} / {fmtClipTime(previewDuration)}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(previewDuration, 0.1)}
+            step={0.1}
+            value={Math.min(currentTime, previewDuration)}
+            onChange={(e) => seekTo(Number(e.target.value))}
+            aria-label="Seek clip timeline"
+            className="w-full accent-accent"
+            disabled={!previewUrl}
+          />
+          <div className="mt-2 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-3">
+            <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Video</span>
+            <div className="h-8 flex-1 rounded bg-accent/20 border border-accent/40" />
+          </div>
+          {transcriptCues.length > 0 && (
+            <div className="mt-1 flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2">
+              <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground-muted">Captions</span>
+              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto scrollbar-thin">
+                {transcriptCues.map((cue, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => seekTo(cue.t)}
+                    className="min-w-24 max-w-48 flex-1 truncate rounded bg-blue-500/20 border border-blue-400/30 px-2 py-1.5 text-left text-[10px] text-blue-100 hover:border-blue-300"
+                    title={`${fmtClipTime(cue.t)} ${cue.text}`}
+                  >
+                    {cue.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}
     </div>
   );
 }
+
