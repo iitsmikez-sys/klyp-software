@@ -14,7 +14,6 @@ import { drawHookPreview } from "@/lib/hook-preview";
 import { defaultClipEditDraft, toClipExportPayload, validateClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
-import ClipTrimControl from "./ClipTrimControl";
 import CaptionWordEditor from "./CaptionWordEditor";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
@@ -299,12 +298,6 @@ export default function SavedClipEditor({
 
       {/* ── Editing controls (right) ── */}
       <div className="space-y-4">
-      <ClipTrimControl
-        originalStart={clip.start_seconds} originalEnd={clip.end_seconds}
-        start={draft.start_seconds} end={draft.end_seconds}
-        disabled={!isPro || saving || exporting}
-        onChange={(start_seconds, end_seconds) => changeDraft({ start_seconds, end_seconds })}
-      />
       <label className="block text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
         Clip title
         <input type="text" value={draft.title} maxLength={120}
@@ -312,7 +305,7 @@ export default function SavedClipEditor({
           disabled={!isPro || saving || exporting}
           className="mt-1.5 w-full px-3 py-2 rounded-lg border border-border bg-surface-2 text-xs text-foreground focus:outline-none focus:border-accent/50 disabled:opacity-50" />
       </label>
-      {!isPro && <p className="text-[10px] text-subtle">Saving trim, title, and caption corrections is a Pro feature.</p>}
+      {!isPro && <p className="text-[10px] text-subtle">Saving edits is a Pro feature.</p>}
       {!hidePreview && (
       <>
       {/* Preview player */}
@@ -551,3 +544,4 @@ export default function SavedClipEditor({
     </div>
   );
 }
+
