@@ -3,7 +3,7 @@ import { z } from "zod";
 /** Word-level timestamp from AssemblyAI (milliseconds). */
 export type TimedWord = { text: string; start: number; end: number };
 
-export const CAPTION_STYLES = ["BOLD", "CLEAN", "KLYP", "PULSE", "SLIDE", "SPARK", "BOUNCE", "GLOW"] as const;
+export const CAPTION_STYLES = ["BOLD", "CLEAN", "KLYP", "PULSE", "SLIDE", "SPARK", "BOUNCE", "GLOW", "COMIC", "KEYWORD"] as const;
 export type CaptionStyle = (typeof CAPTION_STYLES)[number];
 
 /** Export aspect ratios: TikTok/Reels/Shorts, Instagram feed, YouTube/LinkedIn — plus Original (no crop). */

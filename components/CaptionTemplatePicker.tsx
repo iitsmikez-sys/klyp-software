@@ -11,6 +11,8 @@ const templateInfo: Record<CaptionStyle, { name: string; detail: string; sample:
   SPARK: { name: 'Spark', detail: 'Quick word pop', sample: 'CLUTCH' },
   BOUNCE: { name: 'Bounce', detail: 'Playful impact', sample: 'LET’S GO' },
   GLOW: { name: 'Glow', detail: 'Soft luminous look', sample: 'THIS IS IT' },
+  COMIC: { name: 'Comic Pop', detail: 'Yellow impact', sample: 'SPECIFIC ANIME' },
+  KEYWORD: { name: 'Keyword Pop', detail: 'Green word focus', sample: 'BEEN SO FORTUNATE' },
 };
 
 export default function CaptionTemplatePicker({ value, onChange }: {
@@ -23,7 +25,7 @@ export default function CaptionTemplatePicker({ value, onChange }: {
       {CAPTION_STYLES.map(style => {
         const info = templateInfo[style];
         return <button key={style} type="button" className="caption-template-card" data-style={style.toLowerCase()} aria-label={`${info.name} caption template`} aria-pressed={value === style} onClick={() => onChange(style)}>
-          <span className="caption-template-sample"><b>{info.sample}</b></span>
+          <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : info.sample}</b></span>
           <span className="caption-template-meta"><strong>{info.name}</strong><small>{info.detail}</small></span>
         </button>;
       })}

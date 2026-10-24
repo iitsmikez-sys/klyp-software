@@ -132,7 +132,6 @@ export default function SavedClipEditor({
   }, [clip.start_seconds, draft.words]);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [exportSuccess, setExportSuccess] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -250,7 +249,6 @@ export default function SavedClipEditor({
     if (editorLayout.exportBlocked) { setExportError("Save your account layout before exporting this preview."); return; }
     setExporting(true);
     setExportError(null);
-    setExportSuccess(false);
     // Timeout so a hung export fails loudly instead of spinning forever. The
     // server keeps working after an abort, so a retry usually hits a warm cache.
     const controller = new AbortController();
@@ -281,8 +279,7 @@ export default function SavedClipEditor({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-      setExportSuccess(true);
+      URL.revokeObjectURL(objectUrl);
     } catch (err) {
       setExportError(
         controller.signal.aborted
@@ -483,13 +480,13 @@ export default function SavedClipEditor({
           Caption Style
         </p>
         {hasWords ? (
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2" aria-label="Caption styles">
             {CAPTION_STYLES.map((s) => (
               <button
                 key={s}
                 onClick={() => changeDraft({ caption_style: s })}
                 disabled={exporting || saving}
-                className={`flex-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
+                className={`min-w-0 px-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   captionStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
                     : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
@@ -586,7 +583,6 @@ export default function SavedClipEditor({
       )}
 
       {/* Export */}
-      {exportSuccess && !exportError && <p role="status" className="mb-2 text-xs text-accent">Export ready. Check your downloads for the MP4.</p>}
       <button
         onClick={exportClip}
         disabled={exporting || editorLayout.exportBlocked}

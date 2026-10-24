@@ -7,6 +7,10 @@ const progress = (elapsedMs: number, durationMs: number) =>
 
 /** Values shared by live canvas preview and the ASS export keyframes. */
 export function captionMotion(style: CaptionStyle, elapsedMs: number): CaptionMotion {
+  if (style === "COMIC") return {
+    scale: elapsedMs < 100 ? 0.72 + 0.36 * progress(elapsedMs, 100) : 1.08 - 0.08 * progress(elapsedMs - 100, 200),
+    yOffset: 0, alpha: progress(elapsedMs, 55),
+  };
   if (style === "BOUNCE") return {
     scale: elapsedMs < 110 ? 0.58 + 0.52 * progress(elapsedMs, 110) : 1.1 - 0.1 * progress(elapsedMs - 110, 140),
     yOffset: 0, alpha: progress(elapsedMs, 65),
@@ -33,6 +37,7 @@ export function captionMotion(style: CaptionStyle, elapsedMs: number): CaptionMo
 export function captionAssMotion(
   style: CaptionStyle, width: number, height: number, position: CaptionPosition,
 ): string {
+  if (style === "COMIC") return "{\\fscx72\\fscy72\\t(0,100,\\fscx108\\fscy108)\\t(100,300,\\fscx100\\fscy100)\\fad(55,0)}";
   if (style === "PULSE") return "{\\fscx72\\fscy72\\t(0,180,\\fscx100\\fscy100)\\fad(80,0)}";
   if (style === "BOUNCE") return "{\\fscx58\\fscy58\\t(0,110,\\fscx110\\fscy110)\\t(110,250,\\fscx100\\fscy100)\\fad(65,0)}";
   if (style === "GLOW") return "{\\fscx95\\fscy95\\t(0,220,\\fscx100\\fscy100)\\fad(180,0)}";

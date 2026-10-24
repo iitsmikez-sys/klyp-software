@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { planClipComposition, previewDimensions, type VerticalLayoutV1 } from "@/lib/vertical-layout";
-import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, type HookStyle } from "@/lib/captions";
+import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, keywordAtTime, type HookStyle } from "@/lib/captions";
+import { paintCaptionLine } from "@/lib/caption-preview";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { captionAppearance, editorOverlayAtTime } from "@/lib/editor-captions";
 import { captionMotion } from "@/lib/caption-template-motion";
@@ -66,19 +67,22 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const style = editor.draft.caption_style;
               const caption = layoutTimedCaption(overlay.caption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe, editor.draft.caption_font ?? 'sans');
               const motion = captionMotion(style, outputTime * 1000 - overlay.caption.start_ms);
-              ctx.font = `${caption.bold ? "bold" : "normal"} ${caption.fontSize}px ${caption.fontFamily}`;
+              ctx.font = `${caption.italic ? "italic " : ""}${caption.bold ? "bold" : "normal"} ${caption.fontSize}px ${caption.fontFamily}`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.lineWidth = caption.outline * 2;
               ctx.strokeStyle = "black";
-              ctx.fillStyle = appearance.color;
+              ctx.fillStyle = style === "COMIC" ? "#FFDF00" : style === "KEYWORD" ? "#FFFFFF" : appearance.color;
+              const keyword = keywordAtTime(outputTime * 1000 - overlay.caption.start_ms,
+                overlay.caption.end_ms - overlay.caption.start_ms, overlay.caption.text.trim().split(/\s+/).length);
+              let wordOffset = 0;
               for (const line of caption.lines) {
                 ctx.save();
                 ctx.globalAlpha *= motion.alpha;
                 ctx.translate(line.x, line.y + motion.yOffset * canvas.height / 1920);
                 ctx.scale(motion.scale, motion.scale);
-                ctx.strokeText(line.text, 0, 0);
-                ctx.fillText(line.text, 0, 0);
+                paintCaptionLine(ctx, line.text, 0, 0, safe.w - 20, style, keyword, wordOffset);
+                wordOffset += line.text.split(/\s+/).filter(Boolean).length;
                 ctx.restore();
               }
             }
@@ -91,18 +95,21 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const active = cues.find((cue) => clipTime * 1000 >= cue.startMs && clipTime * 1000 < cue.endMs);
               if (active) {
                 const safeBottom = plan.mode === "composed" ? plan.textSafe.y + plan.textSafe.h : plan.dest.y + plan.dest.h;
-                ctx.font = `${text.captionStyle === "CLEAN" ? "normal 29" : "bold 41"}px Arial`;
+                ctx.font = `${text.captionStyle === "COMIC" ? "italic " : ""}${text.captionStyle === "CLEAN" ? "normal 29" : "bold 41"}px Arial`;
                 ctx.textAlign = "center";
                 ctx.lineWidth = 5;
                 ctx.strokeStyle = "black";
-                ctx.fillStyle = text.captionStyle === "KLYP" ? "#00e5a0" : "white";
+                ctx.fillStyle = text.captionStyle === "COMIC" ? "#FFDF00" : text.captionStyle === "KLYP" ? "#00e5a0" : "white";
                 const y = safeBottom - 40;
                 const caption = text.captionStyle === "KLYP" ? active.text.toUpperCase() : active.text;
                 const lines = wrapCaptionText(caption, text.captionStyle);
+                const keyword = keywordAtTime(clipTime * 1000 - active.startMs, active.endMs - active.startMs,
+                  caption.trim().split(/\s+/).length);
+                let wordOffset = 0;
                 lines.forEach((line, index) => {
                   const lineY = y - (lines.length - index - 1) * 48;
-                  ctx.strokeText(line, canvas.width / 2, lineY);
-                  ctx.fillText(line, canvas.width / 2, lineY);
+                  paintCaptionLine(ctx, line, canvas.width / 2, lineY, canvas.width - 20, text.captionStyle, keyword, wordOffset);
+                  wordOffset += line.split(/\s+/).filter(Boolean).length;
                 });
               }
             }

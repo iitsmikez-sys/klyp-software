@@ -229,6 +229,8 @@ export default function ClipPreview({
     SPARK: "Green words flash in one at a time",
     BOUNCE: "Bold captions spring into place",
     GLOW: "Soft luminous captions fade in",
+    COMIC: "Yellow comic captions pop onto the screen",
+    KEYWORD: "One word turns green as each phrase plays",
   };
 
   return (
@@ -343,14 +345,14 @@ export default function ClipPreview({
             <p className="text-[11px] font-medium text-foreground-muted uppercase tracking-wider mb-2">
               Caption Style
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Caption styles">
               {CAPTION_STYLES.map((s) => {
                 const active = style === s;
                 return (
                   <button
                     key={s}
                     onClick={() => setStyle(s)}
-                    className={`flex-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors ${
+                    className={`shrink-0 min-w-[70px] px-2 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors ${
                       active
                         ? "bg-accent-glow border-accent/50 text-accent"
                         : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
