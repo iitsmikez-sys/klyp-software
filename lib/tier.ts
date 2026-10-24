@@ -18,4 +18,5 @@ export type Profile = {
   sparks_reset_at: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  vertical_layout?: import("./vertical-layout").VerticalLayoutV1 | null;
 };

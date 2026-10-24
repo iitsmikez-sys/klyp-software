@@ -41,3 +41,7 @@ next-env.d.ts
 /logs/
 
 .vercel
+
+# Local editor verification fixtures and evidence
+/.next-verification/
+/.superpowers/

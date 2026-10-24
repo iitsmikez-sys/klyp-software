@@ -1,3 +1,4 @@
+import { NavigationGuardProvider } from "@/components/NavigationGuardProvider";
 import type { Metadata } from "next";
 import { Syne, DM_Sans } from "next/font/google";
 import localFont from "next/font/local";
@@ -39,7 +40,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${syne.variable} ${dmSans.variable} ${geist.variable}`}>
       <body className="bg-background text-foreground font-sans antialiased">
-        {children}
+        <NavigationGuardProvider>{children}</NavigationGuardProvider>
       </body>
     </html>
   );

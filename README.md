@@ -39,6 +39,8 @@ Copy `.env.example` to `.env.local` and fill in:
 
 ### 4. Run
 
+For saved-clip photo/video import, first follow [Editor media setup](docs/editor-media-setup.md), including manual migration 017 and the processing-service configuration.
+
 ```bash
 npm run dev
 ```
