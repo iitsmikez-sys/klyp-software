@@ -14,6 +14,7 @@ export type EditorTimelineProps = {
 export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],selection,onSelect,onSeek,onTrim}:EditorTimelineProps) {
  const [zoom,setZoom]=useState(1); const track=useRef<HTMLDivElement>(null),viewport=useRef<HTMLDivElement>(null);
  const [availableWidth,setAvailableWidth]=useState(800);
+ const [activeTrim,setActiveTrim]=useState<{edge:'start'|'end';start:number;end:number}|null>(null);
  useEffect(()=>{const node=viewport.current;if(!node)return;const observer=new ResizeObserver(()=>setAvailableWidth(node.clientWidth));observer.observe(node);return()=>observer.disconnect();},[]);
  const cancelTrim=useRef<(() => void) | null>(null);
  useEffect(()=>()=>cancelTrim.current?.(),[]);
@@ -31,10 +32,12 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
  const trim=(event:React.PointerEvent<HTMLButtonElement>,segment:SourceSegment,edge:'start'|'end')=>{
   event.stopPropagation();cancelTrim.current?.();const element=event.currentTarget;element.setPointerCapture(event.pointerId);
   const initialX=event.clientX; const index=segments.findIndex(s=>s.id===segment.id); const lower=index?segments[index-1].end_seconds:sourceStart; const upper=segments[index+1]?.start_seconds ?? sourceEnd;
-  const move=(e:PointerEvent)=>{const delta=(e.clientX-initialX)/scale;onTrim(segment.id,edge==='start'?Math.min(segment.end_seconds-.1,Math.max(lower,segment.start_seconds+delta)):segment.start_seconds,edge==='end'?Math.max(segment.start_seconds+.1,Math.min(upper,segment.end_seconds+delta)):segment.end_seconds);};
-  const cleanup=()=>{element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);cancelTrim.current=null;};
-  const finish=(e:PointerEvent)=>{cleanup();move(e);};
+  const move=(e:PointerEvent)=>{const delta=(e.clientX-initialX)/scale;const start=edge==='start'?Math.min(segment.end_seconds-.1,Math.max(lower,segment.start_seconds+delta)):segment.start_seconds;const end=edge==='end'?Math.max(segment.start_seconds+.1,Math.min(upper,segment.end_seconds+delta)):segment.end_seconds;setActiveTrim({edge,start,end});onTrim(segment.id,start,end);};
+  const cleanup=()=>{element.removeEventListener('pointermove',move);element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);cancelTrim.current=null;setActiveTrim(null);};
+  const finish=(e:PointerEvent)=>{move(e);cleanup();};
   cancelTrim.current=cleanup;
+  setActiveTrim({edge,start:segment.start_seconds,end:segment.end_seconds});
+  element.addEventListener('pointermove',move);
   element.addEventListener('pointercancel',cleanup,{once:true});element.addEventListener('lostpointercapture',cleanup,{once:true});
   element.addEventListener('pointerup',finish,{once:true});
  };
@@ -44,6 +47,7 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
   onTrim(s.id,edge==='start'?Math.max(lower,Math.min(s.end_seconds-.1,s.start_seconds+delta)):s.start_seconds,edge==='end'?Math.min(upper,Math.max(s.start_seconds+.1,s.end_seconds+delta)):s.end_seconds);
  };
  return <section aria-label="Clip timeline" className="editor-timeline">
+  <div className="editor-timeline-feedback" role="status">{activeTrim ? `Trimming ${activeTrim.edge}: ${activeTrim.start.toFixed(1)}s to ${activeTrim.end.toFixed(1)}s · ${(activeTrim.end-activeTrim.start).toFixed(1)}s selected` : `Playhead ${outputTime.toFixed(1)}s · ${duration.toFixed(1)}s clip. Drag the mint handles to trim; arrow keys adjust by 0.1s.`}</div>
   <div className="editor-timeline-heading"><span>Timeline <small>{duration.toFixed(1)}s</small></span>
    {coveredSegments.length>0&&<details className="editor-source-controls"><summary>Edit underlying source</summary><div role="group" aria-label="Underlying source clips">
     {coveredSegments.map(({segment:s,index})=><fieldset key={s.id}><legend>Source clip {index+1} · {(s.end_seconds-s.start_seconds).toFixed(1)}s</legend>

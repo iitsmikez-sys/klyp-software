@@ -188,7 +188,12 @@
 .editor-lane { position:relative; height:46px; background:#0c1720; border-bottom:1px solid #172934 }
 .editor-video-block { display:flex; overflow:hidden; border:1px solid #597ced; border-radius:5px; background:#1649b7 }
 .editor-video-block[data-selected=true] { border-color:var(--editor-mint); box-shadow:inset 0 0 0 1px var(--editor-mint) }
-.clip-editor .editor-trim-handle { flex-shrink:0; width:10px; min-height:0; background:#2857be; cursor:ew-resize; touch-action:none }
+.clip-editor .editor-trim-handle { flex-shrink:0; width:18px; min-height:44px; background:#43d8a1; cursor:ew-resize; touch-action:none; position:relative; z-index:3; border:1px solid #b5ffe4 }
+.clip-editor .editor-trim-handle::after { content:""; position:absolute; left:7px; top:12px; bottom:12px; border-left:2px solid #063426 }
+.clip-editor .editor-trim-handle:hover,.clip-editor .editor-trim-handle:focus-visible { background:#80f5c9; outline:2px solid white; outline-offset:1px }
+.editor-timeline-feedback { min-height:26px; padding:5px 0; color:#b7e9d6; font-size:11px; font-variant-numeric:tabular-nums }
+.editor-preview-state { padding:16px; color:#c5d3db; font-size:13px; line-height:1.5 }
+.editor-preview-state button { display:block; margin-top:12px; border:1px solid var(--editor-mint); color:var(--editor-mint); border-radius:6px; padding:8px 12px; font-weight:600 }
 .editor-video-frames { position:relative; flex:1; overflow:hidden; background:#184dc5; text-align:left }
 .editor-video-frames img { position:absolute; top:0; height:100%; object-fit:cover; opacity:.72 }
 .editor-video-frames span { position:relative; z-index:1; display:inline-block; padding:5px 10px; background:#1643a9e8; font-size:11px; white-space:nowrap; border-radius:3px; margin-left:4px }

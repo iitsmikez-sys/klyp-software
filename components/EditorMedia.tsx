@@ -58,6 +58,6 @@ export default function EditorMedia({ clip, segments, outputTime, playing, onTim
  useEffect(()=>{const video=ref.current;if(!video || !media)return;if(playing)video.play().catch(()=>callbacks.current.onPlayingChange(false));else video.pause();},[playing,media]);
  return <div className="relative bg-black rounded-lg" aria-label="Source preview">
   {media && <video ref={ref} src={media.url} playsInline preload="auto" className="w-full max-h-[60vh]" onLoadedData={()=>setDecoded(true)} onError={()=>{setError('Preview cannot be decoded. Retry to load footage.');callbacks.current.onPlayingChange(false);callbacks.current.onVideo?.(null);}} />}
-  {error ? <div role="alert" className="p-4">{error} <button type="button" onClick={()=>setAttempt(x=>x+1)}>Retry preview</button></div> : !decoded && <p role="status" className="p-4">{media?'Decoding preview…':'Loading preview…'}</p>}
+  {error ? <div role="alert" className="editor-preview-state">{error} <button type="button" onClick={()=>setAttempt(x=>x+1)}>Retry preview</button></div> : !decoded && <p role="status" className="editor-preview-state">{media?'Preparing video for playback…':'Downloading source footage and building preview. Long VODs may take a few minutes…'}</p>}
  </div>;
 }
