@@ -247,7 +247,7 @@
  .editor-workspace { min-height:0; overflow:visible; grid-template-columns:68px minmax(240px,1fr) minmax(300px,1fr); grid-template-rows:520px auto }
  .editor-inspector { grid-column:2/4; max-height:460px; border-top:1px solid var(--editor-border); padding-bottom:20px }
  .editor-inspector fieldset { display:grid; grid-template-columns:1fr 1fr; column-gap:24px }
- .editor-tools span { display:none }
+ .editor-tools span { display:block; flex-basis:100%; order:5; margin:2px 0 0; font-size:10px; line-height:1.4 }
  .editor-header>span { font-size:11px }
 }
 @media(max-width:640px) {
@@ -276,7 +276,7 @@
  .editor-inspector { max-height:none; border-left:0; padding:0 18px 18px; overflow:visible }
  .editor-inspector fieldset { display:block }
  .editor-tabs { position:static }
- .editor-tools { gap:2px; padding:4px 8px; position:sticky; bottom:0; z-index:4; box-shadow:0 -6px 20px #0003 }
+ .editor-tools { gap:2px; padding:4px 8px; position:sticky; bottom:0; z-index:4; flex-wrap:wrap; box-shadow:0 -6px 20px #0003 }
  .editor-tools button { flex:1; gap:6px; font-size:12px; padding:0 5px }
  .editor-tools .editor-icon { width:17px }
  .editor-timeline { padding:0 12px 4px }
