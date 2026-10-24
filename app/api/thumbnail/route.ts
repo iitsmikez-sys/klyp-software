@@ -48,7 +48,7 @@ const VOD_URL_PATTERN =
  */
 function thumbCacheKey(url: string, start: number, end: number): string {
   const source = createHash("sha1").update(url).digest("hex").slice(0, 16);
-  return `thumb-${THUMB_VERSION}-${source}-${Math.floor(start)}-${Math.ceil(end)}`;
+  return `thumb-${THUMB_VERSION}-${source}-${start}-${end}`;
 }
 
 /** Midpoint of the clip — inside the range by construction, and past whatever

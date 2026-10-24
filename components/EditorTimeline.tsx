@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import workspaceStyles from "./EditorWorkspace.module.css";
 import type { EditorTimelineItem, MediaInsert } from "@/lib/editor-media";
 
 type Cue = { startMs: number; endMs: number; text: string };
@@ -67,8 +68,8 @@ export default function EditorTimeline(props: Props) {
     onTrimSource(action.index, action.edge, delta);
   };
 
-  return <section aria-label="Video timeline" className="shrink-0 border-t border-[#24404a] bg-[#071218] xl:h-[28dvh] xl:min-h-[240px] xl:max-h-[340px] overflow-x-auto overflow-y-auto">
-    <div className="min-w-[1020px] px-0 pb-3">
+  return <section aria-label="Video timeline" className={`${workspaceStyles.timeline} shrink-0 border-t border-[#24404a] bg-[#071218] overflow-x-auto overflow-y-auto`}>
+    <div className="min-w-[760px] px-0 pb-3">
       <div className="sticky top-0 z-30 flex h-9 items-center justify-between border-b border-[#25414a] bg-[#091820] px-3">
         <div className="flex items-center gap-1 text-xs text-[#e2edf0]">
           <button type="button" onClick={onSplit} disabled={!canSplit || exporting} className="rounded px-2 py-1 hover:bg-white/10 disabled:opacity-35">✂ <span className="ml-1">Split</span></button>

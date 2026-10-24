@@ -21,6 +21,8 @@
  * and stays visible on the card — when the dialog is closed mid-export.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CaptionStyle } from "@/lib/clips";
+import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import SavedClipEditor from "./SavedClipEditor";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
@@ -51,6 +53,14 @@ interface Props {
   onDownloadClip: () => void;
   /** Opened from a card's editor action with the controls already expanded. */
   initialDetailsOpen?: boolean;
+  draftId?: string;
+  initialCaptionStyle?: CaptionStyle;
+  onSettingsChange?: (settings: EditorExportSettings) => void;
+  onKeepClip?: () => void;
+  savingClip?: boolean;
+  saveError?: string | null;
+  initialSettings?: EditorExportSettings;
+  onExportStateChange?: (working: boolean, error?: string) => void;
 }
 
 function fmtElapsed(seconds: number) {
@@ -65,6 +75,7 @@ export default function ClipPreviewModal({
   onCreateClip,
   onDownloadClip,
   initialDetailsOpen = false,
+  draftId, initialCaptionStyle, onSettingsChange, onKeepClip, savingClip, saveError, initialSettings, onExportStateChange,
 }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
@@ -489,7 +500,7 @@ export default function ClipPreviewModal({
           </button>
           )}
           {detailsOpen && (
-            <SavedClipEditor clip={clip} workspace />
+            <SavedClipEditor key={clip.id || draftId} clip={clip} workspace draftId={draftId} initialCaptionStyle={initialCaptionStyle} onSettingsChange={onSettingsChange} onKeepClip={onKeepClip} savingClip={savingClip} saveError={saveError} initialSettings={initialSettings} onExportStateChange={onExportStateChange} />
           )}
         </div>
       </div>
