@@ -20,6 +20,8 @@ const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   PULSE: "Yellow captions pulse in with each phrase",
   SLIDE: "White captions slide into view",
   SPARK: "Green words flash in one at a time",
+  BOUNCE: "Bold captions spring into place",
+  GLOW: "Soft luminous captions fade in",
 };
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {

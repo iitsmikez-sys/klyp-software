@@ -1,6 +1,71 @@
 import type { TimedWord } from "./clips";
 import type { EditSegment } from "./edit-segments";
 import { buildEditorTimeline, type MediaInsert } from "./editor-media.ts";
+import { outputDuration, outputSpansForSourceCue, validateSegments, type SourceSegment } from "./editor-timeline.ts";
+
+export type CleanupCandidate = { kind: "filler" | "pause"; start_seconds: number; end_seconds: number; label: string };
+const FILLERS = new Set(["um", "uh", "erm", "hmm"]);
+
+/** Suggestions stay in source time so later edits cannot move them onto other words. */
+export function suggestTranscriptCleanup(
+  words: TimedWord[], clipStartSeconds: number, segments: SourceSegment[],
+  peaks: number[] | null, previewDuration: number,
+): CleanupCandidate[] {
+  if (!Number.isFinite(clipStartSeconds) || !segments.length || !Array.isArray(words)) return [];
+  const sorted = [...words].filter(word => Number.isFinite(word.start) && Number.isFinite(word.end) && word.end > word.start).sort((a, b) => a.start - b.start);
+  const output: CleanupCandidate[] = [];
+  for (let i = 0; i < sorted.length && output.length < 12; i++) {
+    const word = sorted[i];
+    const label = word.text.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, "");
+    const start = word.start / 1000, end = word.end / 1000;
+    const segment = start >= clipStartSeconds ? segments.find(item => start - item.start_seconds >= 0.12 && item.end_seconds - end >= 0.12) : undefined;
+    if (segment && FILLERS.has(label) && end - start >= 0.1 && end - start <= 0.8 &&
+        (i === 0 || sorted[i - 1].end <= word.start) && (i === sorted.length - 1 || word.end <= sorted[i + 1].start)) {
+      output.push({ kind: "filler", start_seconds: start, end_seconds: end, label: word.text });
+    }
+    if (i + 1 >= sorted.length || !peaks || peaks.length < 8 || !Number.isFinite(previewDuration) || previewDuration <= 0) continue;
+    const gapStart = Math.round((end + 0.12) * 100) / 100;
+    const gapEnd = Math.round((sorted[i + 1].start / 1000 - 0.12) * 100) / 100;
+    if (gapEnd - gapStart < 0.8 || !segments.some(item => gapStart >= item.start_seconds && gapEnd <= item.end_seconds)) continue;
+    const spans = outputSpansForSourceCue(segments, { start_ms: gapStart * 1000, end_ms: gapEnd * 1000 });
+    if (spans.length !== 1 || spans[0].end_ms - spans[0].start_ms < 800) continue;
+    const first = Math.max(0, Math.floor(spans[0].start_ms / 1000 / previewDuration * peaks.length));
+    const last = Math.min(peaks.length, Math.ceil(spans[0].end_ms / 1000 / previewDuration * peaks.length));
+    const samples = peaks.slice(first, last);
+    if (samples.length >= 2 && samples.every(value => Number.isFinite(value) && value <= 0.025)) {
+      output.push({ kind: "pause", start_seconds: gapStart, end_seconds: gapEnd, label: "Quiet pause" });
+    }
+  }
+  return output;
+}
+
+/** Apply reviewed, nonoverlapping source cuts as one undoable edit. */
+export function applyTranscriptCleanup(segments: SourceSegment[], candidates: CleanupCandidate[]): SourceSegment[] {
+  if (!candidates.length) return segments;
+  const cuts = [...candidates].sort((a, b) => a.start_seconds - b.start_seconds);
+  if (cuts.some((cut, i) => !Number.isFinite(cut.start_seconds) || !Number.isFinite(cut.end_seconds) || cut.end_seconds - cut.start_seconds < 0.1 || (i > 0 && cut.start_seconds < cuts[i - 1].end_seconds))) return segments;
+  const next: SourceSegment[] = [];
+  const used = new Set(segments.map(item => item.id));
+  for (const segment of segments) {
+    let cursor = segment.start_seconds;
+    let suffix = 0;
+    const nextId = () => {
+      if (suffix++ === 0) return segment.id;
+      let candidate: string;
+      do { candidate = `${segment.id.slice(0, 98)}-clean-${suffix++}`; } while (used.has(candidate));
+      used.add(candidate);
+      return candidate;
+    };
+    for (const cut of cuts) {
+      if (cut.start_seconds < segment.start_seconds || cut.end_seconds > segment.end_seconds) continue;
+      if (cut.start_seconds - cursor >= 0.1) next.push({ id: nextId(), start_seconds: cursor, end_seconds: cut.start_seconds });
+      cursor = cut.end_seconds;
+    }
+    if (segment.end_seconds - cursor >= 0.1) next.push({ id: nextId(), start_seconds: cursor, end_seconds: segment.end_seconds });
+  }
+  if (!next.length || next.length > 64 || outputDuration(next) < 0.1) return segments;
+  try { return validateSegments(next); } catch { return segments; }
+}
 
 export type SourceRange = { start: number; end: number };
 const MIN_SECTION = 0.1;

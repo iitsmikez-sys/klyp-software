@@ -421,7 +421,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       if (editorDraft) {
         editorDir = await mkdtemp(path.join(tmpdir(), "klyp-editor-"));
         const editedPath = path.join(editorDir, "kept.mp4");
-        const rendered = await renderKeptSegments(sourcePath, offsetSeconds, editorDraft.segments, editedPath);
+        const rendered = await renderKeptSegments(sourcePath, offsetSeconds, editorDraft.segments, editedPath, raw ? "off" : editorDraft.audio_polish ?? "off");
         sourcePath = editedPath;
         editedDuration = rendered.duration;
       }
@@ -457,7 +457,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         assPath = path.join(assDir!, "captions.ass");
         const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.dest;
         const cues = resolveEditorCues(editorDraft, ownedEditorClip);
-        await writeFile(assPath, generateTimedCueAss(cues, style, captionAppearance(editorDraft), res, safe), "utf-8");
+        await writeFile(assPath, generateTimedCueAss(cues, style, captionAppearance(editorDraft), res, safe, editorDraft.caption_font ?? "sans"), "utf-8");
       } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
         const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.h
