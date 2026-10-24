@@ -49,7 +49,7 @@
 .editor-cleanup-list { display:grid; gap:5px; max-height:144px; overflow:auto; margin:0 0 10px }
 .editor-cleanup-list label { display:flex; align-items:center; gap:9px; padding:7px 8px; border:1px solid #34494a; border-radius:7px; background:#111f25; cursor:pointer }
 .editor-cleanup-list label:has(input:checked) { border-color:var(--editor-mint); background:#193c33 }
-.editor-cleanup-list input { accent-color:var(--editor-mint); width:15px; height:15px; flex:none }
+.clip-editor .editor-cleanup-list input[type=checkbox] { appearance:auto; accent-color:var(--editor-mint); width:15px; height:15px; min-height:0; padding:0; flex:none }
 .editor-cleanup-list label span { display:flex; flex-direction:column; gap:1px; min-width:0 }
 .editor-cleanup-list b { color:#e5f8f0; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .editor-cleanup-list small { color:#a1bdb3; font-size:10px }
@@ -79,7 +79,7 @@
 .editor-frame-region { padding-top:9px; border-top:1px solid #354b4d }
 .editor-frame-region-title { display:flex; justify-content:space-between; align-items:center; color:#d9ece5; font-size:11px }
 .editor-frame-region-title label { display:flex; align-items:center; gap:5px; font-size:10px; color:#bcd2c8 }
-.editor-frame-region-title input { accent-color:var(--editor-mint) }
+.clip-editor .editor-frame-region-title input[type=checkbox] { appearance:auto; accent-color:var(--editor-mint); width:15px; height:15px; min-height:0; padding:0 }
 .editor-frame-range-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px }
 .editor-frame-range-grid label { display:grid; gap:3px; color:#9db6ae; font-size:10px }
 .editor-frame-range-grid input { width:100%; accent-color:var(--editor-mint) }
