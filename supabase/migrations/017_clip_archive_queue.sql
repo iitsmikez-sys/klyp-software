@@ -62,7 +62,8 @@ begin
     lease_until = now() + interval '90 minutes', updated_at = now()
     where j.clip_id = v_clip_id;
   update public.clips set archive_status = 'processing' where id = v_clip_id;
-  return query select c.id, c.user_id, c.url, c.start_seconds, c.end_seconds, j.attempts
+  return query select c.id, c.user_id, c.url,
+    c.start_seconds::double precision, c.end_seconds::double precision, j.attempts
     from public.clips c join public.clip_archive_jobs j on j.clip_id = c.id
     where c.id = v_clip_id;
 end $$;

@@ -3,8 +3,9 @@ import { mkdtemp, readFile, rm, stat } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { resolveBin, run } from "@/lib/bin";
+import { FFMPEG_THREADS, resolveBin, run } from "@/lib/bin";
 import { resolveSourceSegment } from "@/lib/video-cache";
+import { archiveScaleFilter } from "@/lib/archive-video";
 import { CLIP_BUCKET } from "@/lib/clip-archive";
 import { runQueued } from "@/lib/job-queue";
 
@@ -27,8 +28,9 @@ async function makeAssets(job: ArchiveJob, dir: string) {
   const poster = path.join(dir, "poster.jpg");
   const encode = async (output: string, height: number, crf: number, bitrate?: string) => run(resolveBin("ffmpeg"), [
     "-ss", String(start), "-t", String(duration), "-i", source,
-    "-vf", `scale=-2:${height}:force_original_aspect_ratio=decrease`,
+    "-vf", archiveScaleFilter(height),
     "-c:v", "libx264", "-preset", "veryfast",
+    "-threads", String(FFMPEG_THREADS),
     ...(bitrate ? ["-b:v", bitrate, "-maxrate", bitrate, "-bufsize", "3000k"] : ["-crf", String(crf)]),
     "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", "-y", output,
   ], { stallTimeoutMs: 30_000, maxRunMs: 10 * 60_000 });

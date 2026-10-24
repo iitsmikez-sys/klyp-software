@@ -13,7 +13,7 @@ async function database() {
     create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
     create table public.clips (id uuid primary key default gen_random_uuid(),
       user_id uuid not null, url text not null, title text not null,
-      start_seconds double precision not null, end_seconds double precision not null,
+      start_seconds numeric not null, end_seconds numeric not null,
       master_path text, proxy_path text, poster_path text,
       archive_status text not null default 'none', archive_error text,
       archived_at timestamptz, archive_bytes bigint,

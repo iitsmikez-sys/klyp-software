@@ -6,7 +6,7 @@ The frontend runs on Vercel. The processing service runs the same Next.js app on
 
 ## Database first
 
-Apply the numbered SQL migrations in `supabase/migrations/` in order. For this release, apply `016_auto_vod_jobs.sql`, `017_clip_archive_queue.sql`, `018_editor_drafts.sql`, and `019_clip_feedback.sql` **before** deploying either service. Migration 017 creates the private `clip-media` storage bucket and queues saved clips that have not been archived. Migration 018 adds versioned editor drafts; 019 adds private creator feedback. These migrations do not delete existing clips.
+Apply the numbered SQL migrations in `supabase/migrations/` in order **before** deploying either service. Verify the earlier `006_transcripts.sql` migration is present, then apply `016_auto_vod_jobs.sql` through `021_archive_numeric_timestamps.sql`. Migration 017 creates the private `clip-media` storage bucket and queues saved clips that have not been archived. Migration 018 adds versioned editor drafts; 019 adds private creator feedback; 020 supplies the transcript owner default; and 021 matches the numeric clip timestamps in the existing production schema. These migrations do not delete existing clips. If migrations are applied through the SQL Editor, reconcile the migration history before subsequently using the Supabase CLI.
 
 The processing service needs `SUPABASE_SERVICE_ROLE_KEY` for claimed jobs and private media uploads. Keep this key server-side. The frontend needs the normal public Supabase URL and anon key. Both deployments must use the same Supabase project.
 

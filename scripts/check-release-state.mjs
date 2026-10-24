@@ -6,6 +6,12 @@ const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) throw new Error("Supabase server credentials are required.");
 const admin = createClient(url, key, { auth: { persistSession: false } });
 const checks = [
+  ["transcripts", "transcripts", "id"],
+  ["Stripe event ledger", "stripe_events", "id"],
+  ["analysis history", "analysis_clip_history", "id"],
+  ["Sparks ledger", "spark_transactions", "id"],
+  ["pending VOD checks", "pending_vod_checks", "id"],
+  ["notifications", "notifications", "id"],
   ["auto VOD queue", "auto_vod_jobs", "id"],
   ["archive retry state", "clip_archive_jobs", "retry_at"],
   ["editor drafts", "clip_editor_drafts", "revision"],

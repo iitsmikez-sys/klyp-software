@@ -15,10 +15,10 @@ async function get(path) {
   if (!response.ok) throw new Error(`Twitch ${path}: HTTP ${response.status}`);
   return response.json();
 }
-for (const category of ["Minecraft", "Just Chatting"]) {
+for (const category of ["Minecraft", "Just Chatting", "IRL"]) {
   const games = await get(`games?name=${encodeURIComponent(category)}`);
   const gameId = games.data?.[0]?.id;
-  if (!gameId) throw new Error(`Missing Twitch category: ${category}`);
+  if (!gameId) { console.log(JSON.stringify({ category, candidates: [] })); continue; }
   const videos = await get(`videos?game_id=${gameId}&type=archive&language=en&sort=views&period=week&first=100`);
   const rows = videos.data.map((video) => ({
     id: video.id, title: video.title, duration: video.duration,
@@ -26,6 +26,6 @@ for (const category of ["Minecraft", "Just Chatting"]) {
   }));
   const seconds = (duration) => [...duration.matchAll(/(\d+)([hms])/g)]
     .reduce((sum, [, amount, unit]) => sum + Number(amount) * ({ h: 3600, m: 60, s: 1 })[unit], 0);
-  const moderate = rows.filter((row) => seconds(row.duration) >= 1200 && seconds(row.duration) <= 5400);
-  console.log(JSON.stringify({ category, candidates: moderate.slice(0, 5) }, null, 2));
+  const moderate = rows.filter((row) => seconds(row.duration) >= 600 && seconds(row.duration) <= 5400);
+  console.log(JSON.stringify({ category, candidates: moderate.slice(0, 10) }, null, 2));
 }
