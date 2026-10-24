@@ -746,7 +746,7 @@ export default function LegacySavedClipEditor({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (err) {
       failure = controller.signal.aborted
         ? "Export timed out after 10 minutes. Try again in a bit."

@@ -610,7 +610,7 @@ export default function AnalyzePanel() {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   };
 
   const clipFilename = (clip: ClipWithWords, index: number, raw = false) => {
