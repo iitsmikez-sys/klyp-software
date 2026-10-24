@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { userFacingAnalysisError } from "../lib/analyze-errors.ts";
+import * as analyzeErrors from "../lib/analyze-errors.ts";
+
+const { userFacingAnalysisError } = analyzeErrors;
 
 const botError = "yt-dlp exited with code 1: ERROR: [youtube] yOkSedn_cfc: Sign in to confirm you're not a bot";
 
@@ -20,4 +22,10 @@ test("recognizes the curly apostrophe in the live YouTube error", () => {
 test("preserves unrelated download and analysis errors", () => {
   assert.equal(userFacingAnalysisError("download", "https://www.twitch.tv/videos/123", botError), botError);
   assert.equal(userFacingAnalysisError("analyze", "https://youtu.be/yOkSedn_cfc", botError), botError);
+});
+
+test("recognizes the user-facing YouTube block so the page can offer file upload", () => {
+  const message = `${userFacingAnalysisError("download", "https://youtu.be/yOkSedn_cfc", botError)} (failed at: download)`;
+  assert.equal(analyzeErrors.isYouTubeBotBlockError?.(message) ?? false, true);
+  assert.equal(analyzeErrors.isYouTubeBotBlockError?.("Could not transcribe audio") ?? false, false);
 });

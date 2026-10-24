@@ -20,6 +20,7 @@ function load(file) {
 }
 load('components/ClipTimelineEditor.tsx');
 load('components/SavedClipEditorEntry.tsx');
+load('components/ResultsClipPreviewModal.tsx');
 const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\','/');load(zodFile);sources.zod='Object.assign(exports,require(' + JSON.stringify('@/'+zodFile) + '));';
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
@@ -28,7 +29,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.route('http://localhost:3139/**',route=>route.fulfill({contentType:'text/html',body:'<div id="root"></div>'}));await page.goto('http://localhost:3139/');
  await page.addScriptTag({path:require.resolve('react').replace(/index\.js$/,'umd/react.development.js')});
  await page.addScriptTag({path:require.resolve('react-dom').replace(/index\.js$/,'umd/react-dom.development.js')});
- await page.addStyleTag({path:cssPath});await page.addStyleTag({path:'components/clip-timeline-editor.css'});
+ await page.addStyleTag({path:cssPath});await page.addStyleTag({path:'components/clip-timeline-editor.css'});await page.addStyleTag({path:'components/EditorWorkspace.module.css'});
  await page.evaluate(async sources=>{
   const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;const ctx=canvas.getContext('2d');ctx.fillStyle='#00cc00';ctx.fillRect(0,0,160,90);
   const stream=canvas.captureStream(15),chunks=[],recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});
@@ -51,8 +52,8 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
   };
   const modules={react:React,'react/jsx-runtime':{Fragment:React.Fragment,jsx:(t,p,k)=>React.createElement(t,{...p,key:k}),jsxs:(t,p,k)=>React.createElement(t,{...p,key:k})},'next/navigation':{useRouter:()=>({push:()=>{}})},'components/SparksProvider':{useSparks:()=>({tier:pro?'pro':'free'})},'components/NavigationGuardProvider':{useUnsavedNavigationGuard:()=>{}},'components/ProGateModal':{default:()=>React.createElement('div',null,'Upgrade to Pro')},'lib/processing-api':{processingFetch:(...args)=>fetch(...args)},'lib/supabase/client':{createClient:()=>({storage:{from:bucket=>({uploadToSignedUrl:async(path,token,file,options)=>{if(bucket!=='editor-media'||token!=='signed'||options.contentType!==file.type)throw Error('Incorrect storage contract');window.uploadPhase='uploading';await new Promise(r=>window.releaseUpload=r);const a=assets.find(a=>a.storage_path===path);a.url=URL.createObjectURL(file);return {error:null};}})}})}};
   const normalize=p=>{const out=[];for(const part of p.split('/')){if(part==='..')out.pop();else if(part!=='.')out.push(part);}return out.join('/').replace(/\.tsx?$/,'');};
-  const requireModule=(key)=>{if(modules[key])return modules[key];if(!sources[key])throw Error('Missing module '+key);const exports={};const module={exports};modules[key]=exports;new Function('require','exports','module',sources[key])(name=>name.endsWith('.css')?{}:requireModule(name.startsWith('@/')?normalize(name.slice(2)):name.startsWith('.')?normalize(key.split('/').slice(0,-1).join('/')+'/'+name):name),exports,module);modules[key]=module.exports;return module.exports;};
-  window.Entry=requireModule('components/SavedClipEditorEntry').default;window.Editor=requireModule('components/ClipTimelineEditor').default;window.root=ReactDOM.createRoot(document.getElementById('root'));window.renderEditor=()=>root.render(React.createElement(Editor,{key:window.mountKey||0,clip:{...clip,edit_draft:saved}}));renderEditor();
+  const requireModule=(key)=>{if(modules[key])return modules[key];if(!sources[key])throw Error('Missing module '+key);const exports={};const module={exports};modules[key]=exports;new Function('require','exports','module',sources[key])(name=>name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>key})}:requireModule(name.startsWith('@/')?normalize(name.slice(2)):name.startsWith('.')?normalize(key.split('/').slice(0,-1).join('/')+'/'+name):name),exports,module);modules[key]=module.exports;return module.exports;};
+  window.ResultsModal=requireModule('components/ResultsClipPreviewModal').default;window.Entry=requireModule('components/SavedClipEditorEntry').default;window.Editor=requireModule('components/ClipTimelineEditor').default;window.root=ReactDOM.createRoot(document.getElementById('root'));window.renderEditor=()=>root.render(React.createElement(Editor,{key:window.mountKey||0,clip:{...clip,edit_draft:saved}}));renderEditor();
  },sources);
  await page.waitForFunction(()=>document.querySelector('[aria-label="Source preview"] video')?.readyState>=2);
  if(process.env.EDITOR_CAPTURE){
@@ -200,6 +201,19 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.getByRole('button',{name:'Open new timeline',exact:true}).click();await page.getByRole('button',{name:'Return to saved device edits',exact:true}).waitFor();
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Return to saved device edits',exact:true}).click();await page.getByRole('button',{name:'Open new timeline',exact:true}).waitFor();
  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('klyp-editor-'+clip.id)).segments),[{start:1,end:2},{start:7,end:9}]);
- assert.deepEqual(errors,[]);console.log('PASS mounted editor: photo/video picker, upload/probe stages, delayed media-list race, insertion, real canvas pixels, archived-source preview request, save/reload, remove/undo, muted video synchronization, volume/mute, source failure/retry, signed URL refresh/retry, fit/focal controls, trimmed media offsets, real SAR 2:1 MP4 geometry, Pro gate, split/delete/undo, export pending state, transcript seek, ruler drag, zoom, full-coverage photo source touch selection/split/pointer trims, responsive 44px header/screenshot checks, Free and downgrade original exports, and legacy device-draft restore/export/switch persistence.');
+ await page.evaluate(()=>{
+  window.resultSettings=null;window.keptResults=0;window.resultExportStates=[];window.closedResults=false;window.resultClip={...clip,id:''};
+  window.resultsProps={clip:resultClip,initialDetailsOpen:true,draftId:'result-fixture',initialCaptionStyle:'CLEAN',initialSettings:{style:'CLEAN',hook:'RESULT HOOK',hook_style:'IMPACT',aspect_ratio:'Original',caption_color:'YELLOW',caption_position:'CENTER',segments:[{start:0,end:18}],media:[]},onClose:()=>window.closedResults=true,onCreateClip:()=>{},onDownloadClip:()=>{},onSettingsChange:settings=>window.resultSettings=settings,onKeepClip:()=>{window.keptResults++;window.resultClip={...resultClip,id:'kept-result'};root.render(React.createElement(ResultsModal,{...resultsProps,clip:resultClip}));},onExportStateChange:(working,error)=>window.resultExportStates.push({working,error})};
+  root.render(React.createElement(ResultsModal,resultsProps));
+ });
+ await page.getByRole('dialog').waitFor();await page.getByRole('button',{name:'Keep clip to add media',exact:true}).waitFor();
+ assert.equal(await page.getByRole('combobox',{name:'Export format',exact:true}).inputValue(),'Original');
+ await page.getByRole('button',{name:'Pink',exact:true}).click();await page.waitForFunction(()=>resultSettings?.caption_color==='PINK');
+ assert.equal(await page.evaluate(()=>resultSettings.hook),'RESULT HOOK');assert.equal(await page.evaluate(()=>resultSettings.caption_position),'CENTER');
+ await page.getByRole('button',{name:'Keep clip to add media',exact:true}).click();await page.getByRole('button',{name:'Keep clip to add media',exact:true}).waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>keptResults),1);
+ await page.getByRole('button',{name:'↑ Export',exact:true}).click();await page.waitForFunction(()=>resultExportStates.some(s=>s.working));
+ assert.equal(await page.evaluate(()=>exported.clip_id),'kept-result');assert.equal(await page.evaluate(()=>exported.caption_color),'PINK');
+ await page.getByRole('button',{name:'Close preview',exact:true}).click();await page.waitForFunction(()=>closedResults);await page.evaluate(()=>releaseExport());await page.waitForFunction(()=>resultExportStates.some(s=>!s.working));
+ assert.deepEqual(errors,[]);console.log('PASS mounted editor: photo/video picker, upload/probe stages, delayed media-list race, insertion, real canvas pixels, archived-source preview request, save/reload, remove/undo, muted video synchronization, volume/mute, source failure/retry, signed URL refresh/retry, fit/focal controls, trimmed media offsets, real SAR 2:1 MP4 geometry, Pro gate, split/delete/undo, export pending state, transcript seek, ruler drag, zoom, full-coverage photo source touch selection/split/pointer trims, responsive 44px header/screenshot checks, Free and downgrade original exports, and legacy device-draft restore/export/switch persistence, and new results customize/settings/keep/export callbacks.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

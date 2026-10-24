@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events';
  * The Windows taskkill subprocess is outside this test's classification boundary and
  * cannot complete reliably in the sandbox. Unix signal handling stays untouched. */
 export function testProcessRunner(): typeof import('../../lib/bin.ts') {
- const realRequire=createRequire(import.meta.url);
+ const realRequire=createRequire(new URL('../../lib/bin.ts', import.meta.url));
  const code=ts.transpileModule(readFileSync(new URL('../../lib/bin.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
  const context={exports:{} as typeof import('../../lib/bin.ts'),require:(name:string)=>name==='child_process'?{
   ...childProcess,spawn:(command:string,args:string[],options:childProcess.SpawnOptions)=>{

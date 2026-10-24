@@ -1,25 +1,29 @@
 "use client";
 
-import { useState, useEffect, useRef, FormEvent } from "react";
-import type { ClipType, AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, canUseExportFormat, resolveExportFormat } from "@/lib/clips";
+import { useState, useEffect, useRef, useMemo, useCallback, FormEvent } from "react";
+import type { AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
+import { CAPTION_STYLES, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, resolveExportFormat } from "@/lib/clips";
 import {
   MIN_ANALYZE_COST,
   CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
   MAX_CLIP_COUNT,
-  clipCharge,
   type ClipCount,
 } from "@/lib/sparks";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
-import ClipPreview from "./ClipPreview";
-import ClipThumbnail from "./ClipThumbnail";
+import ClipPreviewModal from "./ResultsClipPreviewModal";
+import FoundClipCard from "./FoundClipCard";
+import type { SavedClip } from "@/lib/clip-ui";
+import type { EditorExportSettings } from "@/lib/editor-export-settings";
+import { resultsChargeMessage } from "@/lib/results-summary";
+import resultsStyles from "./ClipResults.module.css";
 import ProGateModal from "./ProGateModal";
 import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
@@ -29,21 +33,6 @@ const EXPORT_TIMEOUT_MS = 10 * 60_000;
 
 /** Backoff before retrying the initial /api/analyze connection after a network-level failure. */
 const ANALYZE_RETRY_DELAYS_MS = [1000, 2000];
-
-const TYPE_STYLES: Record<ClipType, string> = {
-  CLUTCH: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  FUNNY: "bg-sky-500/15 text-sky-400 border-sky-500/30",
-  RAGE: "bg-red-500/15 text-red-400 border-red-500/30",
-  EPIC: "bg-violet-500/15 text-violet-400 border-violet-500/30",
-  FAIL: "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  BIG_BRAIN: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  EMOTIONAL: "bg-rose-500/15 text-rose-400 border-rose-500/30",
-  SUS: "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30",
-  // IRL-only types
-  STORY_TIME: "bg-teal-500/15 text-teal-400 border-teal-500/30",
-  AWKWARD: "bg-lime-500/15 text-lime-400 border-lime-500/30",
-  PUBLIC_INTERACTION: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
-};
 
 /** Pipeline steps shown in the full-screen progress overlay. */
 const PIPELINE_STEPS: { key: AnalyzeStage | "done"; label: string }[] = [
@@ -113,8 +102,14 @@ export default function AnalyzePanel() {
   const [downloading, setDownloading] = useState<number | null>(null);
   /** Rendered exports, kept so a finished clip offers Download instead of re-rendering. */
   const [exported, setExported] = useState<Record<number, { url: string; filename: string }>>({});
-  /** Which cards have their Customize section open. */
-  const [customizeOpen, setCustomizeOpen] = useState<Record<number, boolean>>({});
+  /** Result drafts exist locally until the user explicitly keeps a clip. */
+  const [runId, setRunId] = useState("");
+  const [savedIds, setSavedIds] = useState<Record<number, string>>({});
+  const [saving, setSaving] = useState<number | "all" | null>(null);
+  const savingRef = useRef(false);
+  const exportLock = useRef(false);
+  const submittedEstimate = useRef<number | null>(null);
+  const [editorSettings, setEditorSettings] = useState<Partial<Record<number, EditorExportSettings>>>({});
   /** Expandable Sparks cost breakdown. */
   const [costOpen, setCostOpen] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -145,12 +140,24 @@ export default function AnalyzePanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { balance, tier, sync } = useSparks();
   const isPro = tier === "pro";
-  const busy = downloading !== null || zipProgress !== null;
+  const busy = downloading !== null || zipProgress !== null || saving !== null;
   const outOfSparks = balance !== null && balance < MIN_ANALYZE_COST;
   // Full estimate = VOD length cost (probed) + clip count cost.
   const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
+
+  const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
+    id: savedIds[index] ?? "", url: analyzedUrl, title: clip.title, clip_type: clip.type,
+    viral_score: clip.viral_score, caption: clip.caption, reason: clip.reason,
+    start_seconds: clip.start_seconds, end_seconds: clip.end_seconds,
+    hooks: clip.hooks, words: clip.words, created_at: new Date(0).toISOString(),
+  })), [clips, savedIds, analyzedUrl]);
+  const draftId = (index: number) => `result-${runId}-${index}`;
+  const updateEditorSettings = useCallback((settings: EditorExportSettings) => {
+    if (previewIndex === null) return;
+    setEditorSettings((previous) => ({ ...previous, [previewIndex]: settings }));
+  }, [previewIndex]);
 
   // Content type persists across sessions — keyword is per-analysis, so it
   // intentionally does NOT persist (a stale keyword lingering onto an
@@ -311,7 +318,7 @@ export default function AnalyzePanel() {
   const saveClipsToSupabase = async (vodUrl: string, clipsToSave: ClipWithWords[]) => {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) throw new Error("Sign in to keep your clips.");
     const rows = clipsToSave.map((clip) => ({
       user_id: user.id,
       url: vodUrl,
@@ -331,13 +338,15 @@ export default function AnalyzePanel() {
       dim_comedy: clip.dimensions?.comedy ?? null,
       dim_storyline: clip.dimensions?.storyline ?? null,
     }));
-    const { error } = await supabase.from("clips").insert(rows);
-    if (error) {
-      // hooks/words columns may not exist yet (migration 003) — save without them.
-      await supabase.from("clips").insert(
-        rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)
-      );
+    let { data, error } = await supabase.from("clips").insert(rows).select("id");
+    if (error && ["PGRST204", "42703"].includes(error.code) && /hooks|words|dim_/.test(error.message)) {
+      const fallback = await supabase.from("clips").insert(rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)).select("id");
+      data = fallback.data;
+      error = fallback.error;
     }
+    if (error) throw new Error(error.message || "Could not save clips. Please try again.");
+    if (!data || data.length !== rows.length) throw new Error("Could not confirm saved clips. Refresh your library before retrying.");
+    return data.map((row) => row.id as string);
   };
 
   const handleEvent = (event: AnalyzeEvent) => {
@@ -369,24 +378,17 @@ export default function AnalyzePanel() {
         for (const e of Object.values(prev)) URL.revokeObjectURL(e.url);
         return {};
       });
-      setCustomizeOpen({});
+      setRunId(crypto.randomUUID());
+      setSavedIds({});
+      setEditorSettings({});
       setClipHooks(Object.fromEntries(event.clips.map((c, i) => [i, c.hooks?.[0] ?? null])));
       setClipFormats(Object.fromEntries(event.clips.map((_, i) => [i, "9:16" as ExportFormat])));
       // All clips start unsaved — the user decides what enters their library.
       setClipStatus(Object.fromEntries(event.clips.map((_, i) => [i, "unsaved" as const])));
-      // Fewer clips than requested = quality floor kicked in; explain the prorated charge.
-      if (event.clips.length === 0) {
-        setAnalysisNote(
-          event.sparksSpent === 0
-            ? "No new moments cleared the quality floor. You were not charged for this repeat run."
-            : "MIDAS didn't find any moments worth clipping in this VOD — no clip charge, only the base analysis cost applied. Try a different VOD, or a longer/more eventful one."
-        );
-      } else if (event.clips.length < event.requestedClips) {
-        const requested = event.requestedClips as ClipCount;
-        setAnalysisNote(
-          `Found ${event.clips.length} great moment${event.clips.length === 1 ? "" : "s"} out of ${requested} requested — only charged ${clipCharge(requested, event.clips.length)}⚡ for clips instead of ${CLIP_COUNT_COST[requested]}⚡.`
-        );
-      }
+      const charge = resultsChargeMessage(event.sparksSpent, submittedEstimate.current);
+      setAnalysisNote(event.clips.length === 0
+        ? `No new moments cleared the quality floor. ${charge} Try another VOD or adjust your topic.`
+        : charge);
       setAnalyzedUrl(sourceRef);
       // The server already deducted — mirror its authoritative balance.
       sync(event.sparksBalance);
@@ -415,6 +417,8 @@ export default function AnalyzePanel() {
   };
 
   const runAnalysis = async () => {
+    if (exportLock.current || savingRef.current) return;
+    submittedEstimate.current = totalEstimate;
     setLoading(true);
     setError(null);
     setClips(null);
@@ -576,6 +580,8 @@ export default function AnalyzePanel() {
               // Keep the burn identical to the preview overlay (black pill bar).
               hook_style: "IMPACT",
               aspect_ratio: resolveExportFormat(clipFormats[index] ?? "9:16", isPro),
+              ...editorSettings[index],
+              clip_id: savedIds[index],
             }
       ),
     });
@@ -612,31 +618,34 @@ export default function AnalyzePanel() {
     return (safe || `klyp_clip_${index + 1}`) + (raw ? "_raw" : "") + ".mp4";
   };
 
+  const keepIndices = async (indices: number[]) => {
+    if (!clips || savingRef.current || exportLock.current || indices.length === 0) return;
+    savingRef.current = true;
+    setSaving(indices.length === 1 ? indices[0] : "all");
+    setDownloadError(null);
+    try {
+      const ids = await saveClipsToSupabase(analyzedUrl, indices.map((index) => clips[index]));
+      setSavedIds((previous) => ({ ...previous, ...Object.fromEntries(indices.map((index, n) => [index, ids[n]])) }));
+      setClipStatus((previous) => ({ ...previous, ...Object.fromEntries(indices.map((index) => [index, "kept" as const])) }));
+      indices.forEach((index, n) => {
+        try {
+          const draft = localStorage.getItem(`klyp-editor-${draftId(index)}`);
+          if (draft) localStorage.setItem(`klyp-editor-${ids[n]}`, draft);
+        } catch { /* Local draft storage is optional. */ }
+      });
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Could not save clips. Try again.");
+    } finally { savingRef.current = false; setSaving(null); }
+  };
   const keepClip = (index: number) => {
-    if (!clips || clipStatus[index] !== "unsaved") return;
-    setClipStatus((prev) => ({ ...prev, [index]: "kept" }));
-    // Non-blocking — fails silently if not logged in (same as the old auto-save).
-    saveClipsToSupabase(analyzedUrl, [clips[index]]);
+    if (clipStatus[index] === "unsaved") void keepIndices([index]);
   };
-
-  const discardClip = (index: number) => {
-    setClipStatus((prev) => ({ ...prev, [index]: "discarded" }));
-  };
-
-  const keepAll = () => {
-    if (!clips) return;
-    const toKeep = clips.map((c, i) => ({ c, i })).filter(({ i }) => clipStatus[i] === "unsaved");
-    if (toKeep.length === 0) return;
-    setClipStatus((prev) => {
-      const next = { ...prev };
-      for (const { i } of toKeep) next[i] = "kept";
-      return next;
-    });
-    saveClipsToSupabase(analyzedUrl, toKeep.map(({ c }) => c));
-  };
+  const discardClip = (index: number) => setClipStatus((previous) => ({ ...previous, [index]: "discarded" }));
+  const keepAll = () => { if (clips) void keepIndices(clips.flatMap((_, index) => clipStatus[index] === "unsaved" ? [index] : [])); };
 
   const downloadClip = async (clip: ClipWithWords, index: number, styleOverride?: CaptionStyle, raw = false) => {
-    if (busy) return;
+    if (busy || exportLock.current) return;
+    exportLock.current = true;
     setDownloading(index);
     setDownloadError(null);
     setDownloadWarning(null);
@@ -649,17 +658,19 @@ export default function AnalyzePanel() {
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : "Download failed.");
     } finally {
+      exportLock.current = false;
       setDownloading(null);
     }
   };
 
   /** Render every clip sequentially (they share the cached source video) and zip them. */
   const downloadAllAsZip = async () => {
-    if (!clips || busy) return;
+    if (!clips || busy || exportLock.current) return;
     setDownloadError(null);
     setDownloadWarning(null);
     const total = clips.filter((_, i) => clipStatus[i] !== "discarded").length;
     if (total === 0) return;
+    exportLock.current = true;
     setZipProgress({ done: 0, total });
 
     try {
@@ -684,6 +695,7 @@ export default function AnalyzePanel() {
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : "ZIP download failed.");
     } finally {
+      exportLock.current = false;
       setZipProgress(null);
     }
   };
@@ -807,7 +819,7 @@ export default function AnalyzePanel() {
               />
               <button
                 type="submit"
-                disabled={loading || !url || outOfSparks || cantAfford}
+                disabled={busy || loading || !url || outOfSparks || cantAfford}
                 className="px-7 py-3 rounded-lg bg-accent text-background text-[15px] font-bold hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none whitespace-nowrap"
               >
                 {loading ? "Analyzing…" : "Find clips"}
@@ -906,7 +918,7 @@ export default function AnalyzePanel() {
 
               <button
                 type="submit"
-                disabled={loading || !uploadedFile || uploadPct !== null || outOfSparks || cantAfford}
+                disabled={busy || loading || !uploadedFile || uploadPct !== null || outOfSparks || cantAfford}
                 className="px-6 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none whitespace-nowrap sm:self-start"
               >
                 {loading ? "Analyzing…" : "Find clips"}
@@ -1082,24 +1094,29 @@ export default function AnalyzePanel() {
         )}
 
         {error && (
-          <div className="mt-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
-            {error}
+          <div className="mt-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400" role="alert">
+            <p>{error}</p>
+            {isYouTubeBotBlockError(error) && (
+              <button type="button" onClick={() => { switchMode("file"); setError(null); }}
+                className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-background hover:bg-accent-dim">
+                Upload a video file instead
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {/* Results */}
       {clips && (
-        <div className="mt-6">
+        <div className={`mt-6 ${resultsStyles.results}`}>
           {clips.length > 0 && (
             <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
               <div>
                 <h3 className="font-geist text-2xl font-bold text-white">
-                  Your clips are ready
+                  <span aria-hidden="true" className="mr-2 text-accent">✦</span>We found {clips.length} great {clips.length === 1 ? "moment" : "moments"}!
                 </h3>
                 <p className="text-[15px] text-foreground-muted mt-0.5">
-                  {clips.filter((_, i) => clipStatus[i] !== "discarded").length} moment
-                  {clips.filter((_, i) => clipStatus[i] !== "discarded").length === 1 ? "" : "s"} found in your VOD.
+                  Your stream highlights are ready to review.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1107,7 +1124,7 @@ export default function AnalyzePanel() {
                 onClick={keepAll}
                 disabled={busy || !clips.some((_, i) => clipStatus[i] === "unsaved")}
                 title="Save every remaining clip to Found Moments"
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-accent text-background text-[13px] font-bold hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-border text-foreground text-[13px] font-semibold hover:border-accent/50 transition-colors disabled:opacity-50"
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
@@ -1148,7 +1165,7 @@ export default function AnalyzePanel() {
           )}
 
           {downloadError && (
-            <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+            <div role="alert" className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
               {downloadError}
             </div>
           )}
@@ -1158,295 +1175,14 @@ export default function AnalyzePanel() {
               All clips discarded. Analyze another VOD to find more moments.
             </p>
           )}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : (
-              <div
-                key={i}
-                className="bg-surface border border-border rounded-xl p-5 hover:border-accent/30 transition-colors"
-              >
-                {/* Frame from this clip's own range; play opens the preview. */}
-                <div className="mb-3">
-                  <ClipThumbnail
-                    clip={{
-                      url: analyzedUrl,
-                      start_seconds: clip.start_seconds,
-                      end_seconds: clip.end_seconds,
-                      title: clip.title,
-                    }}
-                    onPlay={() => setPreviewIndex(i)}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <span
-                    className={`px-2.5 py-1 rounded-md border text-[11px] font-bold tracking-wide ${TYPE_STYLES[clip.type]}`}
-                  >
-                    {clip.type}
-                  </span>
-                  <div
-                    className="flex items-center gap-1.5"
-                    title="Klyp&apos;s estimated viral potential, not measured performance"
-                  >
-                    <span className="text-[13px] text-foreground-muted">AI score</span>
-                    <span
-                      className={`font-geist text-lg font-bold tabular-nums ${
-                        clip.viral_score >= 85 ? "text-accent" : "text-white"
-                      }`}
-                    >
-                      {Math.round(clip.viral_score)}
-                    </span>
-                  </div>
-                </div>
-
-                <h4 className="font-geist text-[17px] font-bold text-white leading-snug mb-2 line-clamp-2">
-                  {clip.title}
-                </h4>
-
-                <div className="flex items-center gap-2 text-sm text-foreground-muted mb-3">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
-                    <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                  </svg>
-                  <span className="font-mono">
-                    {fmtTime(clip.start_seconds)} &ndash; {fmtTime(clip.end_seconds)}
-                  </span>
-                </div>
-
-                {/* Everything optional lives behind Customize so the card reads
-                    at a glance. Selections persist: this only hides the controls,
-                    it does not reset clipHooks / clipFormats. */}
-                <button
-                  type="button"
-                  onClick={() => setCustomizeOpen((prev) => ({ ...prev, [i]: !prev[i] }))}
-                  aria-expanded={!!customizeOpen[i]}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border text-[13px] font-semibold text-foreground-muted hover:text-foreground hover:border-subtle transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
-                      <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
-                      <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
-                      <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" />
-                      <line x1="17" y1="16" x2="23" y2="16" />
-                    </svg>
-                    Customize
-                  </span>
-                  <svg
-                    width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                    className={`transition-transform ${customizeOpen[i] ? "rotate-180" : ""}`}
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-
-                {customizeOpen[i] && (
-                  <div className="mt-3 space-y-3">
-                    {/* Why this moment was picked, plus the social caption. */}
-                    <div className="px-3 py-2.5 rounded-lg bg-surface-2 border border-border space-y-1.5">
-                      <p className="text-[13px] text-foreground-muted leading-relaxed">{clip.reason}</p>
-                      {clip.caption && (
-                        <p className="text-[13px] text-foreground leading-relaxed">{clip.caption}</p>
-                      )}
-                    </div>
-                {/* Hook options — burned over the first 3s of the export */}
-                {clip.hooks && clip.hooks.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-border">
-                    <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted mb-2">
-                      Hook Options{" "}
-                      <span className="font-normal normal-case tracking-normal text-subtle">
-                        — shown on screen for the first 3s
-                      </span>
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {clip.hooks.map((hookText) => {
-                        const selected = clipHooks[i] === hookText;
-                        return (
-                          <button
-                            key={hookText}
-                            onClick={() =>
-                              setClipHooks((prev) => ({ ...prev, [i]: selected ? null : hookText }))
-                            }
-                            disabled={busy}
-                            className={`text-left px-3 py-1.5 rounded-lg border text-xs transition-colors disabled:opacity-50 ${
-                              selected
-                                ? "bg-accent-glow border-accent/50 text-accent font-semibold"
-                                : "bg-surface-2 border-border text-foreground-muted hover:border-subtle"
-                            }`}
-                          >
-                            {selected ? "✓ " : ""}{hookText}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Export format */}
-                <div className="mt-3 flex items-center gap-2">
-                  <p className="text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
-                    Format
-                  </p>
-                  <div className="flex rounded-lg border border-border overflow-hidden">
-                    {EXPORT_FORMATS.map((f) => {
-                      const locked = !canUseExportFormat(f, isPro);
-                      return (
-                        <button
-                          key={f}
-                          onClick={() =>
-                            locked ? setProGateOpen(true) : setClipFormats((prev) => ({ ...prev, [i]: f }))
-                          }
-                          disabled={busy}
-                          title={locked ? "Square and wide formats require Pro" : FORMAT_LABELS[f]}
-                          className={`px-2.5 py-1.5 text-[11px] font-bold font-syne transition-colors disabled:opacity-50 ${
-                            resolveExportFormat(clipFormats[i] ?? "9:16", isPro) === f
-                              ? "bg-accent-glow text-accent"
-                              : "bg-surface-2 text-foreground-muted hover:text-foreground"
-                          } ${locked ? "opacity-60" : ""}`}
-                        >
-                          {f}
-                          {locked && " 🔒"}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <span className="text-xs text-foreground-muted">
-                    {FORMAT_LABELS[resolveExportFormat(clipFormats[i] ?? "9:16", isPro)]}
-                  </span>
-                </div>
-
-                  </div>
-                )}
-
-                {/* Preview + Export buttons */}
-                <div className="mt-4 flex gap-2">
-                  <button
-                    onClick={() => setPreviewIndex(i)}
-                    disabled={busy}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-accent/40 text-accent text-sm font-bold hover:bg-accent-glow transition-colors disabled:opacity-50"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polygon points="5 3 19 12 5 21 5 3"/>
-                    </svg>
-                    Preview
-                  </button>
-
-                  <button
-                    onClick={() => downloadClip(clip, i)}
-                    disabled={busy}
-                    title={!isPro ? "Upgrade to Pro to remove the Klyp watermark" : undefined}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold font-syne transition-colors disabled:opacity-50 ${
-                      downloading === i
-                        ? "bg-surface-2 border border-accent/30 text-accent"
-                        : "bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm disabled:shadow-none"
-                    }`}
-                  >
-                    {downloading === i ? (
-                      <>
-                        <span className="w-3.5 h-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                        Exporting…
-                      </>
-                    ) : (
-                      <>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                          <polyline points="7 10 12 15 17 10"/>
-                          <line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
-                        Export
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Rendered file ready: hand it over again without re-rendering. */}
-                {exported[i] && downloading !== i && (
-                  <a
-                    href={exported[i].url}
-                    download={exported[i].filename}
-                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent text-background text-sm font-bold hover:bg-accent-dim shadow-accent-glow-sm transition-colors"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    Download
-                  </a>
-                )}
-
-                {/* Raw export — clean cut, no captions/hook/crop/watermark, for CapCut & co. */}
-                <button
-                  onClick={() =>
-                    isPro
-                      ? downloadClip(clip, i, undefined, true)
-                      : window.location.assign("/dashboard/upgrade")
-                  }
-                  disabled={busy}
-                  title={
-                    isPro
-                      ? "Clean cut of this moment — original framing, nothing burned in — for editing in CapCut, Premiere, etc."
-                      : "Upgrade to Pro to download raw clips and edit them yourself"
-                  }
-                  className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border bg-surface-2 text-xs font-semibold font-syne text-foreground-muted hover:text-foreground hover:border-subtle transition-colors disabled:opacity-50"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="6" cy="6" r="3"/>
-                    <circle cx="6" cy="18" r="3"/>
-                    <line x1="20" y1="4" x2="8.12" y2="15.88"/>
-                    <line x1="14.47" y1="14.48" x2="20" y2="20"/>
-                    <line x1="8.12" y1="8.12" x2="12" y2="12"/>
-                  </svg>
-                  Raw export — edit it yourself
-                  {!isPro && (
-                    <span className="px-1.5 py-0.5 rounded bg-accent-glow text-accent text-[9px] font-bold tracking-wide">
-                      PRO
-                    </span>
-                  )}
-                </button>
-
-                {/* Library decision — clips are only saved to My Clips when kept */}
-                {clipStatus[i] === "kept" ? (
-                  <div className="mt-2 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-accent-glow border border-accent/30 text-accent text-xs font-bold font-syne">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Saved to Found Moments
-                  </div>
-                ) : (
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      onClick={() => keepClip(i)}
-                      disabled={busy}
-                      title="Save this clip to Found Moments"
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      Keep
-                    </button>
-                    <button
-                      onClick={() => discardClip(i)}
-                      disabled={busy}
-                      title="Remove this clip — it won't be saved"
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-foreground-muted text-xs font-bold font-syne hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                      Discard
-                    </button>
-                  </div>
-                )}
-
-                {!isPro && (
-                  <p className="mt-1.5 text-[10px] text-subtle text-center">
-                    Free tier — animated watermark added.{" "}
-                    <a href="/dashboard/upgrade" className="text-accent hover:underline">Upgrade to Pro</a>
-                  </p>
-                )}
-              </div>
-            ))}
+          <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
+            {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <FoundClipCard
+              key={i} clip={editorClips[i]} kept={clipStatus[i] === "kept"} busy={busy}
+              saving={saving === i || saving === "all"} exporting={downloading === i} isPro={isPro}
+              onPreview={() => { if (!busy) setPreviewIndex(i); }} onCustomize={() => setPreviewIndex(i)}
+              onExport={() => void downloadClip(clip, i)}
+              onRawExport={() => isPro ? void downloadClip(clip, i, undefined, true) : setProGateOpen(true)}
+              onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} />)}
           </div>
         </div>
       )}
@@ -1493,19 +1229,20 @@ export default function AnalyzePanel() {
 
       {/* ── Preview modal ── */}
       {previewIndex !== null && clips && (
-        <ClipPreview
-          clip={clips[previewIndex]}
-          analyzedUrl={analyzedUrl}
-          initialStyle={clipStyles[previewIndex] ?? "BOLD"}
-          hook={clipHooks[previewIndex] ?? null}
-          hookStyle="IMPACT"
-          exporting={downloading === previewIndex}
-          onClose={() => setPreviewIndex(null)}
-          onExport={(style) => {
-            setClipStyles((prev) => ({ ...prev, [previewIndex]: style }));
-            setPreviewIndex(null);
-            downloadClip(clips[previewIndex], previewIndex, style);
+        <ClipPreviewModal
+          clip={editorClips[previewIndex]} initialDetailsOpen
+          draftId={savedIds[previewIndex] ?? draftId(previewIndex)} initialCaptionStyle={clipStyles[previewIndex] ?? "BOLD"}
+          onSettingsChange={updateEditorSettings} initialSettings={editorSettings[previewIndex]}
+          onExportStateChange={(working, error) => {
+            exportLock.current = working;
+            setDownloading(working ? previewIndex : null);
+            if (working) setDownloadError(null);
+            else if (error) setDownloadError(error);
           }}
+          onKeepClip={() => keepClip(previewIndex)} savingClip={saving !== null} saveError={downloadError}
+          onClose={() => setPreviewIndex(null)}
+          exportState={undefined} onCreateClip={() => void downloadClip(clips[previewIndex], previewIndex)}
+          onDownloadClip={() => void downloadClip(clips[previewIndex], previewIndex)}
         />
       )}
     </section>

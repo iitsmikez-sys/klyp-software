@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import os from "os";
 import path from "path";
+import { shouldRetryYouTubeOverIpv6 } from "./youtube-ipv6-fallback.ts";
 
 /**
  * Proof for the ffmpeg -9 kills on /api/preview (2026-08-08): the exact same
@@ -306,6 +307,24 @@ export function runCapture(bin: string, args: string[], opts: RunOptions = {}): 
   return spawnProcess(bin, args, opts);
 }
 
+/** Capture yt-dlp metadata, retrying a YouTube bot challenge over IPv6. */
+export async function runYtDlpCaptureWithIpv6Fallback(args: string[], opts: RunOptions = {}): Promise<string> {
+  const bin = resolveBin("yt-dlp");
+  try {
+    return await runCapture(bin, args, opts);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!shouldRetryYouTubeOverIpv6(args, message)) throw err;
+    console.error("[yt-dlp] metadata request failed:", message);
+    try {
+      return await runCapture(bin, ["--force-ipv6", ...args], opts);
+    } catch (ipv6Error) {
+      console.error("[yt-dlp] IPv6 metadata retry failed:", ipv6Error);
+      throw err;
+    }
+  }
+}
+
 /** Spawn a process and resolve on exit 0, reject with stderr tail otherwise. */
 export async function run(bin: string, args: string[], opts: RunOptions = {}): Promise<void> {
   await spawnProcess(bin, args, opts);
@@ -378,6 +397,7 @@ export async function runYtDlpWithRetry(
   delayMs = 3000
 ): Promise<void> {
   const bin = resolveBin("yt-dlp");
+  let triedIpv6 = false;
   for (let attempt = 0; ; attempt++) {
     try {
       await run(bin, args, opts);
@@ -388,6 +408,16 @@ export async function runYtDlpWithRetry(
       // replaces it, and without this line the real cause never reaches the
       // logs at all — which is exactly what made a Twitch 403 undiagnosable.
       console.error("[yt-dlp] attempt", attempt + 1, "failed:", message);
+      if (!triedIpv6 && shouldRetryYouTubeOverIpv6(args, message)) {
+        triedIpv6 = true;
+        try {
+          await run(bin, ["--force-ipv6", ...args], opts);
+          return;
+        } catch (ipv6Error) {
+          console.error("[yt-dlp] IPv6 retry failed:", ipv6Error);
+          // Keep the original bot challenge so the UI can offer file upload.
+        }
+      }
       // Check disk-full FIRST. A download that wedges because the drive is
       // full gets killed by stallTimeoutMs, which looks "transient" — and
       // was then reported as rate limiting, sending people chasing a

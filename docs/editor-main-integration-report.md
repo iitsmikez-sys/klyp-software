@@ -1,5 +1,48 @@
 # Editor integration verification
 
+## Update for main at 28f5c23 (PRs 22–24)
+
+Merged `origin/main` at `28f5c23` into the reviewed integration branch, whose
+previous head was `20c90f4`. The three conflicts were in `ClipPreviewModal`,
+`EditorTimeline`, and `SavedClipEditor`.
+
+Main's analysis-results customization supports unsaved clips and sequential
+inserts. It is retained in `ResultsClipPreviewModal`, with the latest main editor
+and responsive timeline applied to `LegacySavedClipEditor` and
+`LegacyEditorTimeline`. `AnalyzePanel` now opens that results modal. The reviewed
+saved-clip preview, V3 timeline, device-draft fallback, and Free/downgrade original
+export paths remain intact. Keeping the two entry points explicit avoids sending
+an unsaved result into the owned saved-clip draft API.
+
+Main's result cards, thumbnail retry/cache changes, results summaries, watermark
+preview, export state callbacks, and YouTube IPv6 fallback are included. The
+IPv6 helper import in `lib/bin.ts` uses a relative `.ts` path so the production
+module remains executable in the existing Node tests; the process-runner test
+loader now resolves relative imports from that production file's location.
+
+Verification after this update:
+
+- **243/243 Node tests pass**, using the full command below plus
+  `tests/clip-thumbnails.test.cjs`. This includes the new main results-summary,
+  thumbnail, watermark, YouTube retry/error tests and the existing editor/FFmpeg
+  coverage. An initial run exposed the new aliased IPv6 import as incompatible
+  with direct Node execution; the import and test loader fix resolved it.
+- **TypeScript passes** with `--noEmit --incremental false`.
+- **Mounted media, composition, and import suites pass**. The import suite now
+  also mounts the actual results modal, checks initial export settings and
+  subsequent caption changes, keeps an unsaved result, exports those settings,
+  and checks export status propagation after closing the modal. Its CSS-module
+  fixture loads main's responsive workspace styles.
+- Device-draft restore/export/switch persistence, Free/downgrade original export,
+  archived fractional preview, and preview/FFmpeg framing checks remain green.
+- The full Next results-page navigation test and production build are still
+  release gates in a permitted environment; the earlier localhost/network and
+  generated-type filesystem restrictions are recorded below. The mounted tests
+  exercise real production components with synthetic service boundaries.
+
+No push, PR merge, SQL application, deployment, Spark expenditure, or live
+service change was performed for this update.
+
 ## Merge strategy
 
 Integrated published editor stack `cf5861f` into current main `e974bea` on
