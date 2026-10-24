@@ -90,7 +90,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const cues = buildCaptionCues(text.words, text.vodStart * 1000, text.vodEnd * 1000, text.captionStyle === "KLYP" ? 1 : 4);
               const active = cues.find((cue) => clipTime * 1000 >= cue.startMs && clipTime * 1000 < cue.endMs);
               if (active) {
-                const safeBottom = plan.mode === "composed" ? plan.textSafe.h : plan.dest.y + plan.dest.h;
+                const safeBottom = plan.mode === "composed" ? plan.textSafe.y + plan.textSafe.h : plan.dest.y + plan.dest.h;
                 ctx.font = `${text.captionStyle === "CLEAN" ? "normal 29" : "bold 41"}px Arial`;
                 ctx.textAlign = "center";
                 ctx.lineWidth = 5;

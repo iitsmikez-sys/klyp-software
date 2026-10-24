@@ -460,7 +460,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         await writeFile(assPath, generateTimedCueAss(cues, style, captionAppearance(editorDraft), res, safe, editorDraft.caption_font ?? "sans"), "utf-8");
       } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
-        const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.h
+        const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.y - verticalPlan.textSafe.h
           : verticalPlan?.mode === "full_frame" ? res.h - verticalPlan.dest.y - verticalPlan.dest.h : 0;
         const assContent = generateAss(words, start * 1000, end * 1000, style, res, bottomInset, !!verticalPlan, parseCaptionOptions(requestBody));
         await writeFile(assPath, assContent, "utf-8");

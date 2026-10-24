@@ -63,9 +63,19 @@
 .editor-frame-heading h3 { color:#eafff7; font-size:13px }
 .editor-frame-heading p { margin:4px 0 12px; color:#a6bbb8; font-size:11px; line-height:1.45 }
 .editor-frame-heading>span { border:1px solid #4f8f7d; border-radius:6px; padding:3px 6px; color:#67e9bd; font-size:10px; font-weight:800 }
-.editor-frame-presets { display:grid; grid-template-columns:1fr 1fr; gap:6px }
-.clip-editor .editor-frame-presets button { padding:8px 4px; border:1px solid #43605b; border-radius:6px; background:#15282d; color:#d4eee5; font-size:10px; font-weight:700 }
-.clip-editor .editor-frame-presets button:last-child { grid-column:1/-1; border-color:#40b88c; background:#1b493c; color:#adffdc }
+.editor-layout-choices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px }
+.clip-editor .editor-layout-choices button { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; padding:9px; border:1px solid #37545a; border-radius:9px; background:#111f27; color:#e5f6f0; text-align:left; transition:border-color .16s,background .16s,box-shadow .16s }
+.clip-editor .editor-layout-choices button:hover { border-color:#81c5b0; background:#1a3038 }
+.clip-editor .editor-layout-choices button[aria-pressed=true] { border-color:var(--editor-mint); background:#16372f; box-shadow:inset 0 0 0 1px #4de4b4,0 0 18px #39dba621 }
+.editor-layout-choices strong { font-size:11px; line-height:1.2 }
+.editor-layout-choices small { color:#a7bcb7; font-size:10px; line-height:1.25 }
+.layout-icon { display:flex; flex-direction:column; gap:2px; width:24px; height:37px; padding:3px; margin-bottom:4px; border:1px solid #78bdab; border-radius:4px; background:#0b171c }
+.layout-icon i { display:block; flex:1; border-radius:2px; background:#3c9d87 }
+.layout-icon.fit i { margin:auto 0; height:10px; flex:none }
+.layout-icon.focus i { background:linear-gradient(#60e3b9,#2a836f) }
+.layout-icon.face-top i:first-child,.layout-icon.game-top i:last-child { flex:0 0 28%; background:#a185d3 }
+.editor-frame-presets { margin-top:9px }
+.clip-editor .editor-frame-presets button { width:100%; padding:9px; border:1px solid #40b88c; border-radius:7px; background:#1b493c; color:#adffdc; font-size:10px; font-weight:800 }
 .clip-editor .editor-frame-presets button:disabled { opacity:.45 }
 .editor-frame-message { margin:9px 0 0; color:#b3d9ca; font-size:11px; line-height:1.45 }
 .editor-frame-proposal { margin-top:12px; padding:9px; border:1px solid #56a889; border-radius:8px; background:#102922 }

@@ -44,6 +44,10 @@ export default function VerticalLayoutEditor({ sourceUrl, layout, onChange, onSa
 
   return <div className="space-y-3">
     <p className="text-xs text-foreground-muted">Pause at the payoff. Drag the colored boxes over gameplay, facecam and chat already in your VOD.</p>
+    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Stream panel order">
+      <button type="button" aria-pressed={!!current.facecam && current.arrangement === "facecam_top"} onClick={() => onChange({ ...current, facecam: current.facecam ?? { x: 0.02, y: 0.02, w: 0.26, h: 0.3 }, arrangement: "facecam_top" })} className="rounded-lg border border-border px-3 py-2 text-left text-xs aria-pressed:border-accent aria-pressed:bg-accent/10">Facecam top · gameplay below</button>
+      <button type="button" aria-pressed={!!current.facecam && current.arrangement !== "facecam_top"} onClick={() => onChange({ ...current, facecam: current.facecam ?? { x: 0.02, y: 0.02, w: 0.26, h: 0.3 }, arrangement: "gameplay_top" })} className="rounded-lg border border-border px-3 py-2 text-left text-xs aria-pressed:border-accent aria-pressed:bg-accent/10">Gameplay top · facecam below</button>
+    </div>
     {sourceUrl ? <div className="flex flex-col sm:flex-row gap-4 items-start">
       <div className="w-full sm:flex-1 min-w-0">
         <div ref={frameRef} className="relative w-full bg-black rounded-lg overflow-hidden" style={{ aspectRatio: video?.videoWidth && video?.videoHeight ? `${video.videoWidth}/${video.videoHeight}` : "16/9" }} onPointerMove={move} onPointerUp={() => { dragRef.current = null; }}>

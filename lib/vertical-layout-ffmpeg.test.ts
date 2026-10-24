@@ -47,6 +47,18 @@ test("FFmpeg renders gameplay, facecam and chat in their preview panels", (t) =>
   assert.ok(right[0] > 140 && right[1] > 140 && right[2] < 80, `chat ${right}`);
 });
 
+test("FFmpeg renders facecam above gameplay when the clip uses facecam-first", (t) => {
+  if (spawnSync("ffmpeg", ["-version"]).error) { t.skip("FFmpeg is unavailable"); return; }
+  const layout = { version: 1 as const, gameplay: { x: 0.3, y: 0, w: 0.7, h: 1 }, facecam: { x: 0, y: 0, w: 0.25, h: 1 }, arrangement: "facecam_top" as const };
+  const graph = buildVerticalFilterGraph(planVerticalLayout({ w: 320, h: 180 }, layout, { w: 90, h: 160 }), []);
+  const run = spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:r=1:d=1,drawbox=x=0:y=0:w=80:h=180:color=blue:t=fill", "-filter_complex", graph.filter, "-map", `[${graph.videoLabel}]`, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 2_000_000 });
+  assert.equal(run.status, 0, run.stderr?.toString());
+  const pixel = (x: number, y: number) => Array.from(run.stdout.subarray((y * 90 + x) * 3, (y * 90 + x) * 3 + 3));
+  const top = pixel(45, 20), bottom = pixel(45, 120);
+  assert.ok(top[2] > 100 && top[0] < 80, `facecam ${top}`);
+  assert.ok(bottom[0] > 150 && bottom[2] < 80, `gameplay ${bottom}`);
+});
+
 test("vertical export preserves an audio stream", (t) => {
   if (spawnSync("ffmpeg", ["-version"]).error) { t.skip("FFmpeg is unavailable"); return; }
   const dir = mkdtempSync(path.join(tmpdir(), "klyp-layout-test-"));
