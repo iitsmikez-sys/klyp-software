@@ -8,7 +8,7 @@ import { parseFrameSuggestion, readBoundedFrameBody, validateFrameSamples } from
 
 const code = ts.transpileModule(readFileSync(new URL('../app/api/clips/[id]/auto-frame/route.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
 const jpg = Buffer.from([0xff, 0xd8, 0xff, 0x00, 0xff, 0xd9]).toString('base64');
-async function request(options: { token?: boolean; tier?: string; owned?: boolean; frames?: unknown; ai?: unknown } = {}) {
+async function request(options: { token?: boolean; tier?: string; owned?: boolean; frames?: unknown; ai?: unknown; twice?: boolean } = {}) {
   let calls = 0;
   class NextResponse extends Response { static json(value: unknown, init?: ResponseInit) { return new NextResponse(JSON.stringify(value), init); } }
   const db: any = { select: () => db, eq: () => db, maybeSingle: async () => ({ data: options.owned === false ? null : { id: 'clip' }, error: null }) };
@@ -25,7 +25,8 @@ async function request(options: { token?: boolean; tier?: string; owned?: boolea
   vm.runInNewContext(code, { exports, require: (name: string) => { if (!(name in modules)) throw new Error(name); return modules[name]; }, process: { env: { DEPLOYMENT_TARGET: 'processing', ANTHROPIC_API_KEY: 'fixture' } }, globalThis: {}, Buffer, Response, Date, JSON, Map });
   const body = new Request('https://fixture.test', { method: 'POST', body: JSON.stringify({ frames: options.frames ?? [jpg] }) });
   const response: Response = await exports.POST(body, { params: Promise.resolve({ id: 'clip' }) });
-  return { response, calls };
+  const repeated: Response | null = options.twice ? await exports.POST(new Request('https://fixture.test', { method: 'POST', body: JSON.stringify({ frames: [jpg] }) }), { params: Promise.resolve({ id: 'clip' }) }) : null;
+  return { response, repeated, calls };
 }
 test('requires sign-in, Pro, and clip ownership before model call', async () => {
   for (const options of [{ token: false }, { tier: 'free' }, { tier: 'unconfirmed' }, { owned: false }]) {
@@ -47,4 +48,7 @@ test('returns a reviewable suggestion or null without changing a saved draft', a
   assert.equal((await success.response.json()).layout.gameplay.x, .3);
   const uncertain = await request({ ai: { confidence: .2, gameplay: { x: .3, y: 0, w: .35, h: 1 }, facecam: null } });
   assert.equal((await uncertain.response.json()).layout, null);
+  const limited = await request({ twice: true });
+  assert.equal(limited.repeated?.status, 429);
+  assert.equal(limited.calls, 1);
 });

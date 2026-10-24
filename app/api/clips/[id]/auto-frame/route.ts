@@ -38,7 +38,7 @@ async function handle(req: NextRequest, context: { params: Promise<{ id: string 
   let frames: Buffer[];
   try { frames = validateFrameSamples((await readBoundedFrameBody(req) as { frames?: unknown }).frames); }
   catch { return NextResponse.json({ error: 'Send up to three small JPEG frames.' }, { status: 400 }); }
-  const key = `${profile.id}:${id}`;
+  const key = profile.id;
   if (Date.now() - (requests.get(key) ?? 0) < 60_000) return NextResponse.json({ error: 'Wait a minute before asking for another suggestion.' }, { status: 429 });
   const release = acquireUserProcessingSlot(profile.id);
   if (!release) return NextResponse.json({ error: 'Too many clip requests are processing.' }, { status: 429 });
