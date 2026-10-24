@@ -35,3 +35,12 @@ export function captionAssMotion(
   }
   return "";
 }
+
+/** Motion for captions positioned inside an editor layout's safe area. */
+export function captionAssMotionAt(style: CaptionStyle, x: number, y: number, height: number): string {
+  if (style === "SLIDE") {
+    const rise = Math.round(55 * height / 1920);
+    return `{\\an5\\move(${x},${y + rise},${x},${y},0,220)\\fad(180,0)}`;
+  }
+  return `{\\an5\\pos(${x},${y})${captionAssMotion(style, 0, height, "CENTER").slice(1, -1)}}`;
+}

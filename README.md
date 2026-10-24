@@ -16,7 +16,8 @@ Klyp analyzes published Twitch and YouTube videos, suggests moments, and lets us
 - `lib/vod-poll.ts`: Twitch VOD discovery and durable processing jobs.
 - `lib/clip-archive-worker.ts`: saved-clip archival.
 - `app/api/clip/route.ts`, `app/api/preview/route.ts`, and `app/api/thumbnail/route.ts`: export and previews.
-- `components/SavedClipEditor.tsx`: saved-clip editing.
+- `components/ClipTimelineEditor.tsx` and `app/(editor)/dashboard/clips/[id]/edit/page.tsx`: full saved-clip timeline editing.
+- `components/SavedClipEditor.tsx` and `components/LegacySavedClipEditor.tsx`: quick edits and existing device drafts.
 - `supabase/migrations/`: database schema and service-role job functions.
 
 Run `npm run typecheck` and `npm test` for automated checks. `tests/homepage-demo.mjs` expects a running local server at `127.0.0.1:3000` with demo footage installed, so run it separately after starting the app.

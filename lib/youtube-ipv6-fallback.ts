@@ -4,4 +4,3 @@ export function shouldRetryYouTubeOverIpv6(args: string[], message: string): boo
     && args.some((arg) => /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i.test(arg))
     && /sign in to confirm you(?:['’]re| are) not a bot/i.test(message);
 }
-

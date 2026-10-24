@@ -13,4 +13,3 @@ test("does not switch network for unrelated failures or hosts", () => {
   assert.equal(shouldRetryYouTubeOverIpv6(["https://www.twitch.tv/videos/123"], blocked), false);
   assert.equal(shouldRetryYouTubeOverIpv6(["--force-ipv6", "https://youtu.be/yOkSedn_cfc"], blocked), false);
 });
-

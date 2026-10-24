@@ -118,7 +118,7 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState<PeriodKey>("all"); // default: All time
   const [showAllTypes, setShowAllTypes] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const { exports, createClip } = useClipExports();
+  const { exports, createClip, invalidateClip } = useClipExports();
 
   useEffect(() => {
     const supabase = createClient();
@@ -396,6 +396,11 @@ export default function AnalyticsPage() {
         <ClipPreviewModal
           key={previewClip.id}
           clip={previewClip}
+          onClipSaved={(draft) => {
+            invalidateClip(previewClip.id);
+            setAllClips((previous) => previous.map((item) =>
+              item.id === previewClip.id ? { ...item, edit_draft: draft } : item));
+          }}
           onClose={() => setPreviewId(null)}
           exportState={exports[previewClip.id]}
           onCreateClip={() => { createClip(previewClip); }}

@@ -13,7 +13,7 @@ import {
 } from "@/lib/sparks";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
-import ClipPreviewModal from "./ClipPreviewModal";
+import ClipPreviewModal from "./ResultsClipPreviewModal";
 import FoundClipCard from "./FoundClipCard";
 import type { SavedClip } from "@/lib/clip-ui";
 import type { EditorExportSettings } from "@/lib/editor-export-settings";
@@ -113,6 +113,7 @@ export default function AnalyzePanel() {
   /** Expandable Sparks cost breakdown. */
   const [costOpen, setCostOpen] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadWarning, setDownloadWarning] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimatedSparks, setEstimatedSparks] = useState<number | null>(null);
@@ -547,7 +548,7 @@ export default function AnalyzePanel() {
   };
 
   /** Render one clip via /api/clip and return the MP4 blob. */
-  const fetchClipBlob = async (clip: ClipWithWords, style: CaptionStyle, index: number, raw = false): Promise<Blob> => {
+  const fetchClipBlob = async (clip: ClipWithWords, style: CaptionStyle, index: number, raw = false): Promise<{ blob: Blob; warning: string | null }> => {
     // Timeout so a hung export fails loudly instead of spinning forever. The
     // server keeps working after an abort, so a retry usually hits a warm cache.
     const controller = new AbortController();
@@ -588,7 +589,7 @@ export default function AnalyzePanel() {
       const data = await res.json().catch(() => null);
       throw new Error(data?.error ?? `Clip generation failed (HTTP ${res.status}).`);
     }
-    return await res.blob();
+    return { blob: await res.blob(), warning: res.headers.get("X-Klyp-Layout-Warning") };
     } catch (err) {
       if (controller.signal.aborted) {
         throw new Error(
@@ -647,10 +648,12 @@ export default function AnalyzePanel() {
     exportLock.current = true;
     setDownloading(index);
     setDownloadError(null);
+    setDownloadWarning(null);
 
     const style = styleOverride ?? clipStyles[index] ?? "BOLD";
     try {
-      const blob = await fetchClipBlob(clip, style, index, raw);
+      const { blob, warning } = await fetchClipBlob(clip, style, index, raw);
+      if (warning) setDownloadWarning(warning);
       saveBlob(blob, clipFilename(clip, index, raw));
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : "Download failed.");
@@ -664,6 +667,7 @@ export default function AnalyzePanel() {
   const downloadAllAsZip = async () => {
     if (!clips || busy || exportLock.current) return;
     setDownloadError(null);
+    setDownloadWarning(null);
     const total = clips.filter((_, i) => clipStatus[i] !== "discarded").length;
     if (total === 0) return;
     exportLock.current = true;
@@ -677,7 +681,8 @@ export default function AnalyzePanel() {
       let done = 0;
       for (let i = 0; i < clips.length; i++) {
         if (clipStatus[i] === "discarded") continue;
-        const blob = await fetchClipBlob(clips[i], clipStyles[i] ?? "BOLD", i);
+        const { blob, warning } = await fetchClipBlob(clips[i], clipStyles[i] ?? "BOLD", i);
+        if (warning) setDownloadWarning(warning);
         let name = clipFilename(clips[i], i);
         if (usedNames.has(name)) name = `${i + 1}_${name}`;
         usedNames.add(name);
@@ -1164,6 +1169,7 @@ export default function AnalyzePanel() {
               {downloadError}
             </div>
           )}
+          {downloadWarning && <div role="status" className="mb-4 px-4 py-3 rounded-lg border border-amber-500/30 text-sm text-amber-300">{downloadWarning}</div>}
           {clips.length > 0 && clips.every((_, i) => clipStatus[i] === "discarded") && (
             <p className="text-sm text-foreground-muted text-center py-8">
               All clips discarded. Analyze another VOD to find more moments.

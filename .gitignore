@@ -47,3 +47,7 @@ next-env.d.ts
 /work/stage-two-*.png
 
 .vercel
+
+# Local editor verification fixtures and evidence
+/.next-verification/
+/.superpowers/

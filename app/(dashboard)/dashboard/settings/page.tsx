@@ -10,6 +10,8 @@ import { SparkIcon } from "@/components/SparksBalance";
 import UpgradeButton from "@/components/UpgradeButton";
 import { fmtDate } from "@/lib/clip-ui";
 import { uiSoundsEnabled, setUiSoundsEnabled } from "@/lib/ui-sound";
+import VerticalLayoutEditor from "@/components/VerticalLayoutEditor";
+import type { VerticalLayoutV1 } from "@/lib/vertical-layout";
 
 const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   BOLD: "Big high-impact captions — the TikTok classic",
@@ -43,6 +45,10 @@ export default function SettingsPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uiSounds, setUiSounds] = useState(false);
+  const [verticalLayout, setVerticalLayout] = useState<VerticalLayoutV1 | null>(null);
+  const [sampleUrl, setSampleUrl] = useState<string | null>(null);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutMessage, setLayoutMessage] = useState("");
 
   useEffect(() => {
     const supabase = createClient();
@@ -57,6 +63,10 @@ export default function SettingsPage() {
     });
 
     setUiSounds(uiSoundsEnabled());
+    fetch("/api/vertical-layout").then((response) => response.json()).then((data) => {
+      if (data.layout) setVerticalLayout(data.layout);
+      if (data.warning) setLayoutMessage(data.warning);
+    }).catch(() => setLayoutMessage("Could not load your vertical layout."));
     setHandle(localStorage.getItem("klyp-handle") ?? "");
     const storedStyle = localStorage.getItem("klyp-default-style");
     if (storedStyle && (CAPTION_STYLES as readonly string[]).includes(storedStyle)) {
@@ -93,6 +103,19 @@ export default function SettingsPage() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
+  };
+
+  const saveVerticalLayout = async (nextLayout: VerticalLayoutV1 | null = verticalLayout) => {
+    setLayoutSaving(true);
+    setLayoutMessage("");
+    try {
+      const response = await fetch("/api/vertical-layout", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout: nextLayout }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not save layout.");
+      setVerticalLayout(data.layout);
+      setLayoutMessage(data.layout ? "Vertical layout saved for future clips." : "Full-frame view restored for future clips.");
+    } catch (error) { setLayoutMessage(error instanceof Error ? error.message : "Could not save layout."); }
+    finally { setLayoutSaving(false); }
   };
 
   const allowance = SPARKS_ALLOWANCE[tier];
@@ -132,6 +155,19 @@ export default function SettingsPage() {
               {signingOut ? "Signing out…" : "Sign out"}
             </button>
           </div>
+        </Section>
+
+        <Section title="Vertical stream layout" desc="Show gameplay, facecam and chat from your stream in a 9:16 clip. This is available on every plan.">
+          <label className="block text-xs text-foreground-muted mb-3">Choose a sample recording from your device. It stays in your browser.
+            <input type="file" accept="video/*" className="block mt-2 text-xs" onChange={(event) => {
+              if (sampleUrl) URL.revokeObjectURL(sampleUrl);
+              const file = event.target.files?.[0];
+              setSampleUrl(file ? URL.createObjectURL(file) : null);
+            }} />
+          </label>
+          <VerticalLayoutEditor sourceUrl={sampleUrl} layout={verticalLayout} onChange={setVerticalLayout} onSave={() => saveVerticalLayout()} saving={layoutSaving} />
+          {verticalLayout && <button type="button" disabled={layoutSaving} onClick={() => saveVerticalLayout(null)} className="mt-3 text-xs text-foreground-muted underline disabled:opacity-50">Remove layout and show the full frame</button>}
+          {layoutMessage && <p role="status" className="text-xs text-foreground-muted mt-2">{layoutMessage}</p>}
         </Section>
 
         {/* Clip defaults */}

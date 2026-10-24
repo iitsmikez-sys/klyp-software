@@ -11,8 +11,12 @@ import { createClient } from "@/lib/supabase/client";
 
 export type ExportState =
   | { status: "working" }
-  | { status: "ready"; objectUrl: string; filename: string }
+  | { status: "ready"; objectUrl: string; filename: string; warning?: string | null }
   | { status: "error"; error: string };
+
+export function readyExportWarning(state: ExportState | undefined): string | null {
+  return state?.status === "ready" ? state.warning ?? null : null;
+}
 
 /** Filesystem-safe name derived from the clip title. */
 export function exportFilename(title: string, suffix = ""): string {
