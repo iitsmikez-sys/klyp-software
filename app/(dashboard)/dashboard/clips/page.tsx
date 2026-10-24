@@ -11,7 +11,7 @@ import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { processingFetch } from "@/lib/processing-api";
-import { downloadExport } from "@/lib/clip-export";
+import { downloadExport, readyExportWarning } from "@/lib/clip-export";
 import { useClipExports } from "@/components/useClipExports";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import {
@@ -25,6 +25,7 @@ import {
   footageGone,
   scoreBand,
 } from "@/lib/clip-ui";
+import { readClipEditDraft } from "@/lib/clip-edit-draft";
 
 type SortKey = "newest" | "score";
 
@@ -63,7 +64,7 @@ function ClipsPageContent() {
 
   const { tier, refresh } = useSparks();
   // Shared with the dashboard's Saved Clips so both behave identically.
-  const { exports, workingId, createClip } = useClipExports(refresh);
+  const { exports, workingId, createClip, createOrDownload, invalidateClip } = useClipExports(refresh);
   const isPro = tier === "pro";
 
   useEffect(() => {
@@ -139,8 +140,8 @@ function ClipsPageContent() {
       run: (clip) => { createClip(clip, true).then((err) => err && flash(err)); },
     },
     {
-      icon: "✂️", label: "Open editor", pro: false,
-      run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
+      icon: "✂️", label: "Edit Clip", pro: false,
+      run: (clip) => { window.location.href = `/dashboard/clips/${clip.id}/edit`; },
     },
     {
       icon: "🎤", label: "AI Hook", pro: true,
@@ -177,7 +178,7 @@ function ClipsPageContent() {
       const q = search.trim().toLowerCase();
       list = list.filter(
         (c) =>
-          c.title.toLowerCase().includes(q) ||
+          readClipEditDraft(c).draft.title.toLowerCase().includes(q) ||
           (c.caption ?? "").toLowerCase().includes(q)
       );
     }
@@ -391,7 +392,7 @@ function ClipsPageContent() {
                 </div>
               </div>
 
-              <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{clip.title}</h3>
+              <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{readClipEditDraft(clip).draft.title}</h3>
               {clip.caption && (
                 <p className="text-[15px] leading-relaxed text-foreground-muted mb-3 line-clamp-2">
                   {clip.caption}
@@ -401,7 +402,7 @@ function ClipsPageContent() {
               {/* Push the action row to the bottom so buttons line up across the grid. */}
               <div className="flex items-center justify-between gap-2 text-sm mb-3 mt-auto">
                 <span className="px-2 py-1 rounded bg-surface-2 border border-border text-foreground-muted font-mono whitespace-nowrap">
-                  {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)}
+                  {fmtTime(readClipEditDraft(clip).draft.start_seconds)} → {fmtTime(readClipEditDraft(clip).draft.end_seconds)}
                 </span>
                 <span className="text-foreground-muted whitespace-nowrap truncate">
                   {platformName(clip.url)} · {fmtDate(clip.created_at)}
@@ -417,18 +418,18 @@ function ClipsPageContent() {
               {/* Wraps on narrow cards: primary takes its own row, secondary
                   shares the next one with delete — no squashed labels. */}
               <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
-                {/* Open the existing editor with its controls expanded. The
-                    final create action stays inside the dialog. */}
+                <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => e.stopPropagation()} className="px-4 py-2.5 rounded-lg border border-accent/40 text-accent font-bold">Edit</Link>
+                {/* Clips are stored as VOD timestamps, not files — this renders
+                    the MP4 on demand via /api/clip, hence "Create clip". */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setPreviewId(clip.id);
-                    setPreviewDetails(true);
+                    createOrDownload(clip).then((err) => err && flash(err));
                   }}
-                  disabled={footageGone(clip)}
+                  disabled={workingId === clip.id || footageGone(clip)}
                   title={footageGone(clip)
                     ? "The source VOD was deleted before this clip was backed up, so there is no footage to render"
-                    : "Open the clip editor"}
+                    : "Render this clip from the source VOD and download it"}
                   className={`basis-full sm:basis-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold font-syne transition-colors disabled:opacity-60 disabled:shadow-none ${
                     // Neutral, not the accent: a bright primary button reads as
                     // something to press, and there is nothing to press here.
@@ -445,6 +446,20 @@ function ClipsPageContent() {
                       </svg>
                       Footage gone
                     </>
+                  ) : exports[clip.id]?.status === "working" ? (
+                    <>
+                      <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
+                      Creating…
+                    </>
+                  ) : exports[clip.id]?.status === "ready" ? (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Download clip
+                    </>
                   ) : (
                     <>
                       {/* scissors */}
@@ -454,7 +469,7 @@ function ClipsPageContent() {
                         <line x1="14.47" y1="14.48" x2="20" y2="20" />
                         <line x1="8.12" y1="8.12" x2="12" y2="12" />
                       </svg>
-                      Open editor
+                      Create clip
                     </>
                   )}
                 </button>
@@ -496,6 +511,9 @@ function ClipsPageContent() {
                   )}
                 </button>
               </div>
+              {readyExportWarning(exports[clip.id]) && (
+                <p role="status" className="text-xs text-amber-300 mt-2">{readyExportWarning(exports[clip.id])}</p>
+              )}
 
             </div>
           ))}
@@ -513,6 +531,11 @@ function ClipsPageContent() {
              previous clip must not fire into the next one. */
           key={previewClip.id}
           clip={previewClip}
+          onClipSaved={(draft) => {
+            invalidateClip(previewClip.id);
+            setClips((previous) => previous.map((item) =>
+              item.id === previewClip.id ? { ...item, edit_draft: draft } : item));
+          }}
           onClose={() => { setPreviewId(null); setPreviewDetails(false); }}
           initialDetailsOpen={previewDetails}
           exportState={exports[previewClip.id]}

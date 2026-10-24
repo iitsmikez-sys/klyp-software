@@ -20,10 +20,13 @@
  * Export state lives in the clips page, not here, so a render keeps running —
  * and stays visible on the card — when the dialog is closed mid-export.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { CaptionStyle } from "@/lib/clips";
-import type { EditorExportSettings } from "@/lib/editor-export-settings";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { previewSourceStart } from '@/lib/editor-preview';
 import SavedClipEditor from "./SavedClipEditor";
+import { defaultClipEditDraft, readClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
+import { clipPreviewPlayback, clipPreviewActionBlocked } from "@/lib/clip-preview-state";
+import { buildCaptionCues } from "@/lib/captions";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
@@ -51,16 +54,9 @@ interface Props {
   exportState: ExportState | undefined;
   onCreateClip: () => void;
   onDownloadClip: () => void;
-  /** Opened from a card's editor action with the controls already expanded. */
+  /** Opened from an editing action in the card's ⋯ menu, which lives in Details. */
   initialDetailsOpen?: boolean;
-  draftId?: string;
-  initialCaptionStyle?: CaptionStyle;
-  onSettingsChange?: (settings: EditorExportSettings) => void;
-  onKeepClip?: () => void;
-  savingClip?: boolean;
-  saveError?: string | null;
-  initialSettings?: EditorExportSettings;
-  onExportStateChange?: (working: boolean, error?: string) => void;
+  onClipSaved: (draft: ClipEditDraftV1 | null) => void;
 }
 
 function fmtElapsed(seconds: number) {
@@ -75,8 +71,9 @@ export default function ClipPreviewModal({
   onCreateClip,
   onDownloadClip,
   initialDetailsOpen = false,
-  draftId, initialCaptionStyle, onSettingsChange, onKeepClip, savingClip, saveError, initialSettings, onExportStateChange,
+  onClipSaved,
 }: Props) {
+  const [sourceStart, setSourceStart] = useState(clip.start_seconds);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [poster, setPoster] = useState<string | null>(() => peekClipThumbnail(clip));
@@ -85,6 +82,21 @@ export default function ClipPreviewModal({
   const [elapsed, setElapsed] = useState(0);
   const [retryToken, setRetryToken] = useState(0);
   const [detailsOpen, setDetailsOpen] = useState(initialDetailsOpen);
+  const initialEdit = useMemo(() => readClipEditDraft(clip), [clip.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [draft, setDraft] = useState(initialEdit.draft);
+  const [savedDraft, setSavedDraft] = useState(initialEdit.draft);
+  const [unsupportedDraft, setUnsupportedDraft] = useState(initialEdit.unsupportedVersion);
+  const [pendingLayout, setPendingLayout] = useState(false);
+  const [playerTime, setPlayerTime] = useState(0);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
+  const trimStart = draft.start_seconds - sourceStart;
+  const trimEnd = draft.end_seconds - sourceStart;
+  const captionCues = useMemo(() => draft.words?.length
+    ? buildCaptionCues(draft.words, draft.start_seconds * 1000, draft.end_seconds * 1000,
+      draft.caption_style === "KLYP" ? 1 : 4)
+    : [], [draft.words, draft.start_seconds, draft.end_seconds, draft.caption_style]);
+  const editedTimeMs = (playerTime - trimStart) * 1000;
+  const activeCaption = captionCues.find((cue) => editedTimeMs >= cue.startMs && editedTimeMs < cue.endMs);
 
   /** Drives the enter/exit transition: mounted → open → closing → unmounted. */
   const [entered, setEntered] = useState(false);
@@ -93,8 +105,22 @@ export default function ClipPreviewModal({
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const dirtyRef = useRef(dirty || pendingLayout);
+  dirtyRef.current = dirty || pendingLayout;
   const closeRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      const next = clipPreviewPlayback(video.currentTime, trimStart, trimEnd);
+      if (next.time !== video.currentTime) {
+        if (next.pause) video.pause();
+        video.currentTime = next.time;
+        setPlayerTime(next.time);
+      }
+    }
+  }, [trimStart, trimEnd]);
 
   /* ── Enter transition ── */
   useEffect(() => {
@@ -111,11 +137,13 @@ export default function ClipPreviewModal({
    */
   const beginClose = useCallback(() => {
     if (closeTimer.current) return; // already closing — ignore repeat Escape/clicks
-    dialogRef.current?.querySelectorAll("video").forEach((video) => {
+    if (dirtyRef.current && !window.confirm("You have unsaved clip edits. Close without saving?")) return;
+    const video = videoRef.current;
+    if (video) {
       video.pause();
       video.removeAttribute("src");
       video.load();
-    });
+    }
     setClosing(true);
     closeTimer.current = setTimeout(onClose, reducedMotion ? 0 : CLOSE_MS);
   }, [onClose, reducedMotion]);
@@ -222,11 +250,6 @@ export default function ClipPreviewModal({
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, PREVIEW_TIMEOUT_MS);
     const settle = () => { clearInterval(ticker); clearTimeout(timeout); clearTimeout(spinnerTimer); };
 
-    if (detailsOpen) {
-      settle();
-      return () => { controller.abort(); };
-    }
-
     processingFetch("/api/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -243,6 +266,7 @@ export default function ClipPreviewModal({
     })
       .then((res) => {
         if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d?.error ?? "Preview failed.")));
+        setSourceStart(previewSourceStart(clip.start_seconds, res.headers.get('X-Klyp-Source')));
         return res.blob();
       })
       .then((blob) => {
@@ -269,7 +293,7 @@ export default function ClipPreviewModal({
       setPreviewUrl(null);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [clip.id, retryToken, detailsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clip.id, retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onBackdrop = useCallback(
     (e: React.MouseEvent) => { if (e.target === e.currentTarget) beginClose(); },
@@ -280,6 +304,7 @@ export default function ClipPreviewModal({
   const isUpload = clip.url.startsWith("upload:");
   const exporting = exportState?.status === "working";
   const ready = exportState?.status === "ready";
+  const actionBlocked = clipPreviewActionBlocked(dirty || pendingLayout);
 
   /* Only opacity and transform animate; the backdrop's blur is static so it
      never triggers a per-frame filter repaint. */
@@ -298,7 +323,7 @@ export default function ClipPreviewModal({
   return (
     <div
       onMouseDown={onBackdrop}
-      className={`fixed inset-0 z-50 flex items-center justify-center ${detailsOpen ? "p-0" : "p-4"} font-geist ${
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 font-geist ${
         reducedMotion ? "" : "backdrop-blur-sm"
       }`}
       style={{
@@ -311,21 +336,17 @@ export default function ClipPreviewModal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`${detailsOpen ? "Editor" : "Preview"}: ${clip.title}`}
+        aria-label={`Preview: ${clip.title}`}
         style={panelStyle}
-        className={detailsOpen
-          ? "w-full h-[100dvh] overflow-y-auto xl:overflow-hidden xl:flex xl:flex-col bg-[#080f13] border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
-          : "w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"}
+        className="w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
       >
         {/* ── Header ── */}
-        <div className={detailsOpen
-          ? "absolute right-3 top-3 z-30"
-          : "flex items-start justify-between gap-4 px-6 pt-6 pb-4"}>
-          {!detailsOpen && <div className="min-w-0">
+        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
+          <div className="min-w-0">
             {/* Wraps rather than truncates — on a phone the tail of a title is
                 often the point of it ("…Then THIS Happened"). */}
             <h2 className="font-geist text-xl sm:text-2xl font-bold text-white leading-tight line-clamp-2">
-              {clip.title}
+              {draft.title}
             </h2>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-sm text-foreground-muted">
               <span className={`px-2 py-0.5 rounded border text-[11px] font-bold tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
@@ -337,10 +358,10 @@ export default function ClipPreviewModal({
               <span>{fmtDate(clip.created_at)}</span>
               <span className="text-subtle">•</span>
               <span className="font-mono text-[13px]">
-                {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)}
+                {fmtTime(draft.start_seconds)} → {fmtTime(draft.end_seconds)}
               </span>
             </div>
-          </div>}
+          </div>
           <button
             ref={closeRef}
             onClick={beginClose}
@@ -354,7 +375,7 @@ export default function ClipPreviewModal({
         </div>
 
         {/* ── Player ── object-contain keeps the source aspect ratio intact ── */}
-        {!detailsOpen && <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
+        <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
           <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
             {/* The clip's own frame, under the video and crossfaded out once
                 the first video frame has decoded. */}
@@ -400,7 +421,21 @@ export default function ClipPreviewModal({
                 controls
                 autoPlay
                 playsInline
-                onLoadedData={() => setVideoReady(true)}
+                onLoadedData={() => {
+                  setVideoReady(true);
+                  if (videoRef.current) videoRef.current.currentTime = trimStart;
+                }}
+                onTimeUpdate={(event) => {
+                  const video = event.currentTarget;
+                  const next = clipPreviewPlayback(video.currentTime, trimStart, trimEnd);
+                  if (next.pause) video.pause();
+                  if (next.time !== video.currentTime) video.currentTime = next.time;
+                  setPlayerTime(video.currentTime);
+                }}
+                onPlay={(event) => {
+                  const next = clipPreviewPlayback(event.currentTarget.currentTime, trimStart, trimEnd);
+                  if (next.time !== event.currentTarget.currentTime) event.currentTarget.currentTime = next.time;
+                }}
                 className="absolute inset-0 w-full h-full object-contain"
                 style={{
                   opacity: videoReady ? 1 : 0,
@@ -408,15 +443,26 @@ export default function ClipPreviewModal({
                 }}
               />
             )}
+            {videoReady && draft.hook && editedTimeMs >= 0 && editedTimeMs < 3000 && (
+              <div aria-hidden className="pointer-events-none absolute inset-x-8 top-5 text-center text-white text-xl sm:text-2xl font-black uppercase drop-shadow-[0_2px_3px_black]">
+                {draft.hook}
+              </div>
+            )}
+            {videoReady && activeCaption && (
+              <div aria-hidden className={`pointer-events-none absolute inset-x-6 bottom-8 text-center font-black uppercase drop-shadow-[0_2px_3px_black] text-lg sm:text-2xl ${draft.caption_style === "KLYP" ? "text-accent" : "text-white"}`}>
+                {activeCaption.text}
+              </div>
+            )}
           </div>
-        </div>}
+        </div>
 
         {/* ── Actions ── */}
-        {!detailsOpen && <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
+        <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
           {ready ? (
             <button
               onClick={onDownloadClip}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
+              disabled={actionBlocked}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors disabled:opacity-60"
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -428,7 +474,7 @@ export default function ClipPreviewModal({
           ) : (
             <button
               onClick={onCreateClip}
-              disabled={exporting}
+              disabled={draft.version !== 1 || exporting || actionBlocked}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors disabled:opacity-60 disabled:shadow-none"
             >
               {exporting ? (
@@ -457,7 +503,7 @@ export default function ClipPreviewModal({
             </span>
           ) : (
             <a
-              href={vodLinkAt(clip.url, clip.start_seconds)}
+              href={vodLinkAt(clip.url, draft.start_seconds)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-accent/40 text-accent text-base font-bold hover:bg-accent-glow focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
@@ -470,20 +516,23 @@ export default function ClipPreviewModal({
               Watch on {platform}
             </a>
           )}
-        </div>}
+        </div>
+        {dirty && <p className="mx-6 text-xs text-amber-300">Save your edits in Details to enable the main clip button, or export the current draft there.</p>}
 
         {exportState?.status === "error" && (
           <p className="mx-6 mt-1 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
             {exportState.error}{" "}
-            <button onClick={onCreateClip} className="underline font-semibold hover:text-red-300">
+            <button onClick={onCreateClip} disabled={draft.version !== 1 || actionBlocked || exporting} className="underline font-semibold hover:text-red-300 disabled:opacity-50">
               Try again
             </button>
           </p>
         )}
+        {exportState?.status === "ready" && exportState.warning && (
+          <p role="status" className="mx-6 mt-1 px-4 py-2.5 rounded-lg border border-amber-500/30 text-sm text-amber-300">{exportState.warning}</p>
+        )}
 
-        {/* ── Editor: scene analysis, transcript and export controls ── */}
-        <div className={detailsOpen ? "xl:flex-1 xl:min-h-0 xl:overflow-hidden" : "px-6 pb-6 pt-3"}>
-          {!detailsOpen && (
+        {/* ── Details: scene analysis, transcript and the full export controls ── */}
+        <div className="px-6 pb-6 pt-3">
           <button
             onClick={() => setDetailsOpen((v) => !v)}
             aria-expanded={detailsOpen}
@@ -496,15 +545,25 @@ export default function ClipPreviewModal({
             >
               <polyline points="6 9 12 15 18 9" />
             </svg>
-            {detailsOpen ? "Editor" : "Open editor"}
+            Details
           </button>
-          )}
+          <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => { if ((dirty || pendingLayout) && !window.confirm("Leave without saving your quick edits?")) e.preventDefault(); }} className="inline-block my-3 px-4 py-2 rounded-lg border border-accent/40 text-accent">Open timeline editor</Link>
           {detailsOpen && (
-            <SavedClipEditor key={clip.id || draftId} clip={clip} workspace draftId={draftId} initialCaptionStyle={initialCaptionStyle} onSettingsChange={onSettingsChange} onKeepClip={onKeepClip} savingClip={savingClip} saveError={saveError} initialSettings={initialSettings} onExportStateChange={onExportStateChange} />
+            /* The editor renders its own 9:16 player for hook/caption placement;
+               the dialog already has one, so it's suppressed here. */
+            <>
+              {unsupportedDraft && <p role="alert" className="mt-3 text-xs text-amber-300">This clip has a newer or invalid saved draft. Original edit values are shown; use Reset to remove the stored draft.</p>}
+              {draft.version !== 1 ? <p role="status" className="mt-3 text-sm text-amber-300">This clip has timeline edits. Open the full timeline editor to change or export this draft.</p> : <SavedClipEditor clip={clip} draft={draft} onDraftChange={setDraft}
+                onPersisted={(value) => {
+                  const persisted = value ?? defaultClipEditDraft(clip);
+                  setSavedDraft(persisted);
+                  setUnsupportedDraft(false);
+                  onClipSaved(value);
+                }} dirty={dirty} hidePreview sourcePreviewUrl={previewUrl} sourcePreviewStart={sourceStart} onLayoutPendingChange={setPendingLayout} />}
+            </>
           )}
         </div>
       </div>
     </div>
   );
 }
-

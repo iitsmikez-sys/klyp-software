@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import os from "os";
 import path from "path";
-import { shouldRetryYouTubeOverIpv6 } from "@/lib/youtube-ipv6-fallback";
+import { shouldRetryYouTubeOverIpv6 } from "./youtube-ipv6-fallback.ts";
 
 /**
  * Proof for the ffmpeg -9 kills on /api/preview (2026-08-08): the exact same
@@ -55,6 +55,29 @@ export type RunOptions = {
   /** Kill the process if it runs longer than this in total. */
   maxRunMs?: number;
 };
+
+/** Preserve actionable process failure identity while retaining existing Error messages. */
+export class ProcessRunError extends Error {
+  readonly kind: "spawn" | "timeout" | "signal" | "resource" | "exit";
+  readonly code?: string;
+  readonly exitCode?: number | null;
+  readonly signal?: NodeJS.Signals | null;
+  constructor(message: string, details: {
+    kind: ProcessRunError["kind"]; code?: string; exitCode?: number | null;
+    signal?: NodeJS.Signals | null; cause?: unknown;
+  }) {
+    super(message, { cause: details.cause });
+    this.name = "ProcessRunError";
+    this.kind = details.kind;
+    this.code = details.code;
+    this.exitCode = details.exitCode;
+    this.signal = details.signal;
+  }
+}
+
+export function isProcessInfrastructureError(error: unknown): boolean {
+  return error instanceof ProcessRunError && error.kind !== "exit";
+}
 
 /**
  * Kill a process AND its children. yt-dlp spawns ffmpeg, and killing only the
@@ -207,21 +230,22 @@ function spawnProcess(bin: string, args: string[], opts: RunOptions): Promise<st
       clearTimeout(graceTimer);
     };
 
-    const conclude = (code: number | null) => {
+    const conclude = (code: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;
       cleanup();
       if (killReason) {
-        reject(new Error(`${path.basename(bin)} ${killReason}. stderr: ${stderr.slice(-300)}`));
+        reject(new ProcessRunError(`${path.basename(bin)} ${killReason}. stderr: ${stderr.slice(-300)}`, { kind: "timeout", exitCode: code, signal }));
       } else if (code === 0) {
         resolve(stdout);
       } else {
         const tail = stderr.slice(-500);
-        reject(
-          isDiskSpaceError(tail)
-            ? new Error(`${path.basename(bin)} ${DISK_SPACE_ERROR_MESSAGE}`)
-            : new Error(`${path.basename(bin)} exited with code ${code}: ${tail}`)
-        );
+        const diskFull = isDiskSpaceError(tail);
+        const resourceFailure = diskFull || /cannot allocate memory|out of memory|resource temporarily unavailable|too many open files|pthread_create.*failed|cannot create thread/i.test(tail);
+        reject(new ProcessRunError(
+          diskFull ? `${path.basename(bin)} ${DISK_SPACE_ERROR_MESSAGE}` : `${path.basename(bin)} exited with code ${code}: ${tail}`,
+          { kind: signal || (code !== null && code < 0) ? "signal" : resourceFailure ? "resource" : "exit", exitCode: code, signal }
+        ));
       }
     };
 
@@ -258,23 +282,23 @@ function spawnProcess(bin: string, args: string[], opts: RunOptions): Promise<st
       resetStall();
     });
 
-    proc.on("error", (err: Error) => {
-      fail(
-        err.message.includes("ENOENT")
-          ? new Error(`${path.basename(bin)} is not installed or not on PATH.`)
-          : err
-      );
+    proc.on("error", (err: NodeJS.ErrnoException) => {
+      fail(new ProcessRunError(
+        err.code === "ENOENT" || err.message.includes("ENOENT")
+          ? `${path.basename(bin)} is not installed or not on PATH.` : err.message,
+        { kind: "spawn", code: err.code, cause: err }
+      ));
     });
 
     // 'close' waits for every inherited pipe to close, which an orphaned
     // grandchild can delay indefinitely. 'exit' fires as soon as the process
     // itself is gone, so use it as a backstop after a short flush grace.
-    proc.on("exit", (code: number | null) => {
+    proc.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
       clearTimeout(stallTimer);
       clearTimeout(maxTimer);
-      graceTimer = setTimeout(() => conclude(code), CLOSE_GRACE_MS);
+      graceTimer = setTimeout(() => conclude(code, signal), CLOSE_GRACE_MS);
     });
-    proc.on("close", (code: number | null) => conclude(code));
+    proc.on("close", (code: number | null, signal: NodeJS.Signals | null) => conclude(code, signal));
   });
 }
 
@@ -407,4 +431,3 @@ export async function runYtDlpWithRetry(
     }
   }
 }
-

@@ -10,8 +10,8 @@
  * sizes are authored against a 1920-tall frame and scaled by PlayResY so
  * captions look the same relative size in 1:1 and 16:9 exports.
  */
-import type { TimedWord, CaptionStyle } from "./clips";
 import type { CaptionOptions } from "./editor-captions";
+import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
 const DEFAULT_RES: PlayRes = { w: 1080, h: 1920 };
@@ -114,23 +114,17 @@ const STYLE_PARAMS: Record<
   KLYP: { fontSize: 82, color: "&H00A0E500", bold: 1, outline: 4, shadow: 0 },
 };
 
-function assColor(hex: string): string {
-  return `&H00${hex.slice(5, 7)}${hex.slice(3, 5)}${hex.slice(1, 3)}`;
-}
-
-const CAPTION_HEX = {
-  WHITE: "#FFFFFF", YELLOW: "#FFFF00", GREEN: "#00E5A0", PINK: "#FF5DAA",
-} as const;
-
-function styleBlock(style: CaptionStyle, res: PlayRes, options?: CaptionOptions): string {
+function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?: CaptionOptions): string {
   const p = STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
   const size = Math.round(p.fontSize * scale);
   const outline = Math.max(1, Math.round(p.outline * scale));
-  const position = options?.position ?? "BOTTOM";
-  const marginV = Math.round((position === "TOP" ? 400 : position === "CENTER" ? 0 : 80) * scale);
-  const alignment = position === "TOP" ? 8 : position === "CENTER" ? 5 : 2;
-  const color = options?.color && options.color !== "DEFAULT" ? assColor(CAPTION_HEX[options.color]) : p.color;
+  const position = options?.position ?? 'BOTTOM';
+  const marginV = position === 'CENTER' ? 0 : Math.round((position === 'TOP' ? 400 : 80) * scale + (position === 'BOTTOM' ? bottomInset : 0));
+  const alignment = position === 'TOP' ? 8 : position === 'CENTER' ? 5 : 2;
+  const colors = { WHITE: '#FFFFFF', YELLOW: '#FFFF00', GREEN: '#00E5A0', PINK: '#FF5DAA' };
+  const hex = options?.color && options.color !== 'DEFAULT' ? colors[options.color] : null;
+  const color = hex ? '&H00' + hex.slice(5,7) + hex.slice(3,5) + hex.slice(1,3) : p.color;
   return [
     "[V4+ Styles]",
     STYLES_FORMAT,
@@ -144,6 +138,19 @@ const EVENTS_HEADER =
 /** Strip characters that would open ASS override blocks or break lines. */
 function sanitizeAssText(text: string): string {
   return text.replace(/[{}\\]/g, "").replace(/\r?\n/g, " ").trim();
+}
+
+/** Fixed line breaks keep the browser preview and ASS export in the same safe area. */
+export function wrapCaptionText(text: string, style: CaptionStyle): string[] {
+  const limit = style === "CLEAN" ? 28 : 20;
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.trim().split(/\s+/)) {
+    if (line && `${line} ${word}`.length > limit) { lines.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 /**
@@ -169,15 +176,19 @@ export function generateAss(
   clipEndMs: number,
   style: CaptionStyle,
   res: PlayRes = DEFAULT_RES,
-  options?: CaptionOptions
+  bottomInsetOrOptions: number | CaptionOptions = 0,
+  composed = false,
+  captionOptions?: CaptionOptions
 ): string {
-  const sections = [assHeader(res), "", styleBlock(style, res, options), "", EVENTS_HEADER];
+  const bottomInset = typeof bottomInsetOrOptions === 'number' ? bottomInsetOrOptions : 0;
+  const options = typeof bottomInsetOrOptions === 'number' ? captionOptions : bottomInsetOrOptions;
+  const sections = [assHeader(res), "", styleBlock(style, res, bottomInset, options), "", EVENTS_HEADER];
 
   // KLYP shows one word at a time; other styles show small word groups.
   const cues = buildCaptionCues(words, clipStartMs, clipEndMs, style === "KLYP" ? 1 : CUE_MAX_WORDS);
   for (const cue of cues) {
     const text = sanitizeAssText(style === "KLYP" ? cue.text.toUpperCase() : cue.text);
-    sections.push(dialogue(cue.startMs, cue.endMs, text));
+    sections.push(dialogue(cue.startMs, cue.endMs, composed ? wrapCaptionText(text, style).join("\\N") : text));
   }
 
   return sections.join("\n");
@@ -248,4 +259,51 @@ export function generateHookAss(
  */
 export function toFfmpegPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "$1\\:");
+}
+
+export type CaptionAppearance = { color: string; assColor: string; anchorY: number; alignment: 8 | 5 | 2 };
+/** Shared normalized anchors use the caption-safe rectangle supplied by the layout. */
+export function captionAppearance(draft: { caption_color: "white" | "yellow" | "green" | "pink"; caption_position: "top" | "center" | "bottom" }): CaptionAppearance {
+ const color = { white: "#FFFFFF", yellow: "#FFFF00", green: "#00E5A0", pink: "#FF69B4" }[draft.caption_color];
+ return { color, assColor: `&H00${color.slice(5,7)}${color.slice(3,5)}${color.slice(1,3)}`,
+ anchorY: draft.caption_position === "top" ? 80/1920 : draft.caption_position === "center" ? 0.5 : 1-80/1920,
+ alignment: draft.caption_position === "top" ? 8 : draft.caption_position === "center" ? 5 : 2 };
+}
+
+/** Explicit edited-output cues bypass word grouping and absolute-VOD subtraction. */
+export function generateTimedCueAss(
+ cues: readonly { id?: string; start_ms: number; end_ms: number; text: string }[],
+ style: CaptionStyle,
+ appearance: CaptionAppearance,
+ res: PlayRes = DEFAULT_RES,
+ safeArea: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: res.w, h: res.h }
+): string {
+ const styles = styleBlock(style, res).replace(STYLE_PARAMS[style].color, appearance.assColor);
+ const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
+ for (const cue of normalizeTimedCues(cues)) {
+  const layout = layoutTimedCaption(cue.text, style, appearance, res, safeArea);
+  for (const line of layout.lines) {
+   sections.push(dialogue(cue.start_ms, cue.end_ms, `{\\an5\\pos(${line.x},${line.y})}${line.text}`));
+  }
+ }
+ return sections.join("\n");
+}
+
+/** V2 display policy: later cues replace earlier ones and never revive old text. */
+export function normalizeTimedCues<T extends { start_ms: number; end_ms: number; text: string }>(cues: readonly T[]): T[] {
+ const ordered = cues.map(cue => ({ ...cue, text: sanitizeAssText(cue.text) })).sort((a,b) => a.start_ms - b.start_ms);
+ return ordered.map((cue,index) => ({ ...cue, end_ms: Math.min(cue.end_ms, ordered[index+1]?.start_ms ?? Infinity) })).filter(cue => cue.end_ms > cue.start_ms && cue.text.length > 0);
+}
+
+/** Position each line explicitly so neither renderer chooses automatic line metrics. */
+export function layoutTimedCaption(text: string, style: CaptionStyle, appearance: CaptionAppearance, res: PlayRes = DEFAULT_RES, safeArea = { x: 0, y: 0, w: res.w, h: res.h }) {
+ const p = STYLE_PARAMS[style];
+ const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h);
+ const lineHeight = Math.round(fontSize * 1.2);
+ const normalized = sanitizeAssText(style === "KLYP" ? text.toUpperCase() : text);
+ const lines = wrapCaptionText(normalized, style);
+ const anchor = safeArea.y + safeArea.h * appearance.anchorY;
+ const firstY = appearance.alignment === 8 ? anchor + fontSize/2 : appearance.alignment === 5 ? anchor - (lines.length-1)*lineHeight/2 : anchor - fontSize/2 - (lines.length-1)*lineHeight;
+ return { fontSize, lineHeight, bold: p.bold === 1, outline: Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h)), shadow: p.shadow,
+ lines: lines.map((line,index) => ({ text: line, x: safeArea.x + safeArea.w/2, y: firstY + index*lineHeight })) };
 }

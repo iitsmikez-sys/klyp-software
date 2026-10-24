@@ -15,6 +15,8 @@ export interface SavedClip {
   /** Hook options / word timestamps — null on clips saved before migration 003. */
   hooks?: string[] | null;
   words?: TimedWord[] | null;
+  /** Saved editing choices; the analyzed clip fields remain unchanged. */
+  edit_draft?: unknown;
   /**
    * How this clip's own footage is held: "stored" once archived, "unavailable"
    * when the source VOD is gone and nothing was archived in time, "pending" or
