@@ -33,6 +33,7 @@ import {
   spikeWindows,
 } from "@/lib/twitch-chat";
 import { type ClipCount } from "@/lib/sparks";
+import { validateFinalistVisuals } from "@/lib/vision-validation";
 
 /* ── Stage 2: download audio with yt-dlp ── */
 export async function downloadAudio(url: string, dir: string): Promise<string> {
@@ -341,7 +342,8 @@ export async function findClips(
   contentType: ContentType = DEFAULT_CONTENT_TYPE,
   keyword?: string,
   keywordMatchSeconds: number[] = [],
-  priorWindows: { start_seconds: number; end_seconds: number }[] = []
+  priorWindows: { start_seconds: number; end_seconds: number }[] = [],
+  creatorPreferences = ""
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -370,6 +372,9 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
   const keywordSection = keyword?.trim() ? formatKeywordSection(keyword.trim(), keywordMatchSeconds) : "";
   const priorSection = priorWindows.length
     ? `\n\n## MOMENTS ALREADY DELIVERED TO THIS USER\n\nThese time ranges were already sold from this VOD. Find the next best genuinely different moments outside these ranges. Do not return a clip within 60 seconds of any listed start or overlapping a listed range. If no other moment clears the quality floor, return an empty clips array.\n${priorWindows.map((w) => `- ${Math.round(w.start_seconds)}s to ${Math.round(w.end_seconds)}s`).join("\n")}`
+    : "";
+  const preferenceSection = creatorPreferences
+    ? `\n\n## CREATOR FEEDBACK\n${creatorPreferences} Use this only as a tiebreaker between equally strong candidates. Never lower the quality floor or change factual scoring to match taste.`
     : "";
 
   const { data: response, response: rawResponse } = await client.messages.create({
@@ -476,7 +481,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
       {
         role: "user",
         content:
-      `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor.\n\n${transcriptText}${priorSection}` +
+      `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor.\n\n${transcriptText}${priorSection}${preferenceSection}` +
           (chatSpikes ? `\n\n${formatSpikesForPrompt(chatSpikes)}` : ""),
       },
     ],
@@ -624,6 +629,7 @@ export async function runAnalysisPipeline(opts: {
   keyword?: string;
   /** Previously delivered windows for this user and VOD. */
   priorWindows?: { start_seconds: number; end_seconds: number }[];
+  creatorPreferences?: string;
   chatSpikesPromise?: Promise<ChatSpike[] | null> | null;
   onProgress?: PipelineProgress;
 }): Promise<PipelineResult> {
@@ -709,11 +715,13 @@ export async function runAnalysisPipeline(opts: {
     console.log(`[analyze] keyword="${keyword}" matched ${keywordMatchSeconds.length} time(s) in transcript`);
   }
   const { clips, skipped } = await withMem("find-clips", () =>
-    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds, opts.priorWindows ?? [])
+    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds, opts.priorWindows ?? [], opts.creatorPreferences ?? "")
   );
+  const visuallyCheckedClips = await withMem("vision-check", () =>
+    validateFinalistVisuals(clips, uploadedPath ?? url, workDir, !!uploadedPath));
   progress("analyze", "done");
 
-  const clipsWithWords = clips.map((clip) => ({
+  const clipsWithWords = visuallyCheckedClips.map((clip) => ({
     ...clip,
     words: words.filter((w) => w.start >= clip.start_seconds * 1000 - 200 && w.start < clip.end_seconds * 1000),
   }));

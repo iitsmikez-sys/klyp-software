@@ -60,6 +60,7 @@ function ClipsPageContent() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [verdicts, setVerdicts] = useState<Record<string, "approved" | "rejected">>({});
 
 
   const { tier, refresh } = useSparks();
@@ -69,6 +70,10 @@ function ClipsPageContent() {
 
   useEffect(() => {
     const supabase = createClient();
+    supabase.from("clip_feedback").select("clip_id,verdict").then(({ data }) => {
+      setVerdicts(Object.fromEntries((data ?? []).filter((row) => row.verdict === "approved" || row.verdict === "rejected")
+        .map((row) => [row.clip_id, row.verdict as "approved" | "rejected"])));
+    });
     supabase
       .from("clips")
       .select("*")
@@ -90,6 +95,12 @@ function ClipsPageContent() {
   const flash = (msg: string) => {
     setNotice(msg);
     setTimeout(() => setNotice(null), 4000);
+  };
+
+  const rateClip = async (id: string, verdict: "approved" | "rejected") => {
+    const { error } = await createClient().rpc("record_clip_feedback", { p_clip_id: id, p_signal: verdict });
+    if (error) { flash("Could not save your feedback."); return; }
+    setVerdicts((previous) => ({ ...previous, [id]: verdict }));
   };
 
   /** Render + download a clip with sensible defaults (BOLD captions if saved). */
@@ -331,9 +342,14 @@ function ClipsPageContent() {
               </div>
 
               <div className="flex items-center justify-between gap-3 mb-2.5">
-                <span className={`px-2.5 py-1 rounded-md border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
-                  {clip.clip_type}
-                </span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`px-2.5 py-1 rounded-md border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
+                    {clip.clip_type}
+                  </span>
+                  {clip.archive_status === "stored" && <span className="text-[11px] text-accent" title="A copy is saved in Klyp">Footage saved</span>}
+                  {(clip.archive_status === "pending" || clip.archive_status === "processing") && <span className="text-[11px] text-foreground-muted">Saving footage…</span>}
+                  {clip.archive_status === "failed" && <span className="text-[11px] text-amber-400">Footage not backed up</span>}
+                </div>
                 <div className="flex items-center gap-2">
                   {/* The band, not the bare number, is the honest headline:
                       analysis never returns anything under 65, so a raw score
@@ -393,6 +409,15 @@ function ClipsPageContent() {
               </div>
 
               <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{readClipEditDraft(clip).draft.title}</h3>
+              <div className="flex items-center gap-2 mb-2 text-xs text-foreground-muted" onClick={(e) => e.stopPropagation()}>
+                <span>Useful moment?</span>
+                <button type="button" aria-label="Keep this kind of moment" aria-pressed={verdicts[clip.id] === "approved"}
+                  onClick={() => rateClip(clip.id, "approved")}
+                  className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "approved" ? "border-accent text-accent" : "border-border hover:text-accent"}`}>👍 Keep</button>
+                <button type="button" aria-label="Show fewer moments like this" aria-pressed={verdicts[clip.id] === "rejected"}
+                  onClick={() => rateClip(clip.id, "rejected")}
+                  className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "rejected" ? "border-amber-400 text-amber-400" : "border-border hover:text-amber-400"}`}>👎 Less like this</button>
+              </div>
               {clip.caption && (
                 <p className="text-[15px] leading-relaxed text-foreground-muted mb-3 line-clamp-2">
                   {clip.caption}

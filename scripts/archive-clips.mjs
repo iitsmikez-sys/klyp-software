@@ -162,7 +162,7 @@ async function upload(localPath, objectPath, contentType) {
 /* ── Load clips and work out what is recoverable ── */
 const { data: clips, error } = await admin
   .from("clips")
-  .select("id,user_id,url,title,start_seconds,end_seconds,created_at,archive_status")
+  .select("id,user_id,url,title,start_seconds,end_seconds,created_at,archive_status,master_path")
   .order("created_at", { ascending: false });
 if (error) { console.error("Could not load clips:", error.message); process.exit(1); }
 

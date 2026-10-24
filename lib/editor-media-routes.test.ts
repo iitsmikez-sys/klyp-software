@@ -45,8 +45,8 @@ test('list and preview bind asset requests to cookie owner and clip; preserve un
  assert.deepEqual(list.calls,[{name:'list',args:['user',clipId]}]);
  const preview=route('../app/api/clips/[id]/media/[assetId]/route.ts'); assert.equal((await preview.handlers.GET(body(),context)).status,200);
  assert.deepEqual(preview.calls,[{name:'preview',args:['user',clipId,assetId]}]);
- const unavailable=route('../app/api/clips/[id]/media/route.ts',{assetError:new EditorAssetError('Apply 017_editor_media.sql',503)});
- const response=await unavailable.handlers.GET(body(),context);assert.equal(response.status,503);assert.match((await response.json()).error,/017_editor_media/);
+ const unavailable=route('../app/api/clips/[id]/media/route.ts',{assetError:new EditorAssetError('Apply 023_editor_media.sql',503)});
+ const response=await unavailable.handlers.GET(body(),context);assert.equal(response.status,503);assert.match((await response.json()).error,/023_editor_media/);
 });
 test('finalization runs on processing only with Bearer auth and Pro, with CORS responses',async()=>{
  const file='../app/api/clips/[id]/media/[assetId]/finalize/route.ts';

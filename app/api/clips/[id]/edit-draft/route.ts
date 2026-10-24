@@ -8,13 +8,14 @@ import { assertOwnedDraftAssets, EditorAssetError } from "@/lib/editor-assets";
 
 export const runtime = "nodejs";
 
-type Context = { params: { id: string } };
+type Context = { params: Promise<{ id: string }> };
 
 async function updateDraft(req: NextRequest, { params }: Context, reset: boolean) {
+  const { id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sign in to edit clips." }, { status: 401 });
-  if (!/^[0-9a-f-]{36}$/i.test(params.id)) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
     return NextResponse.json({ error: "Clip not found." }, { status: 404 });
   }
 
@@ -28,7 +29,7 @@ async function updateDraft(req: NextRequest, { params }: Context, reset: boolean
     const admin = createAdminClient();
     const { data: clip, error: readError } = await admin.from("clips")
       .select("id,user_id,start_seconds,end_seconds,words")
-      .eq("id", params.id).eq("user_id", user.id).maybeSingle();
+      .eq("id", id).eq("user_id", user.id).maybeSingle();
     if (readError) throw readError;
     const profile = await getProfile();
     const denial = authorizeClipDraftWrite(
@@ -43,10 +44,10 @@ async function updateDraft(req: NextRequest, { params }: Context, reset: boolean
       (body as { draft?: unknown } | null)?.draft,
       clip!,
     );
-    if (draft) await assertOwnedDraftAssets(user.id, params.id, draft);
+    if (draft) await assertOwnedDraftAssets(user.id, id, draft);
     const { data, error: writeError } = await admin.from("clips")
       .update({ edit_draft: draft })
-      .eq("id", params.id).eq("user_id", user.id)
+      .eq("id", id).eq("user_id", user.id)
       .select("edit_draft").single();
     if (writeError) throw writeError;
     return NextResponse.json({ edit_draft: data.edit_draft });

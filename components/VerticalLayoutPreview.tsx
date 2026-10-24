@@ -5,6 +5,7 @@ import { planClipComposition, previewDimensions, type VerticalLayoutV1 } from "@
 import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { captionAppearance, editorOverlayAtTime } from "@/lib/editor-captions";
+import { captionMotion } from "@/lib/caption-template-motion";
 import type { ClipEditDraftV2, ClipEditDraftV3 } from "@/lib/clip-edit-draft";
 import type { SavedClip } from "@/lib/clip-ui";
 import type { CaptionStyle, TimedWord } from "@/lib/clips";
@@ -64,6 +65,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const safe = plan.mode === "composed" ? plan.textSafe : plan.dest;
               const style = editor.draft.caption_style;
               const caption = layoutTimedCaption(overlay.caption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe);
+              const motion = captionMotion(style, outputTime * 1000 - overlay.caption.start_ms);
               ctx.font = `${caption.bold ? "bold" : "normal"} ${caption.fontSize}px Arial`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
@@ -71,8 +73,13 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               ctx.strokeStyle = "black";
               ctx.fillStyle = appearance.color;
               for (const line of caption.lines) {
-                ctx.strokeText(line.text, line.x, line.y);
-                ctx.fillText(line.text, line.x, line.y);
+                ctx.save();
+                ctx.globalAlpha *= motion.alpha;
+                ctx.translate(line.x, line.y + motion.yOffset * canvas.height / 1920);
+                ctx.scale(motion.scale, motion.scale);
+                ctx.strokeText(line.text, 0, 0);
+                ctx.fillText(line.text, 0, 0);
+                ctx.restore();
               }
             }
             ctx.textBaseline = "alphabetic";

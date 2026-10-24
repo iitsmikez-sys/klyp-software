@@ -10,6 +10,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { runYtDlpCaptureWithIpv6Fallback } from "@/lib/bin";
 import { estimateSparks } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
+import { acquireUserProcessingSlot } from "@/lib/clip-access";
+import { runQueued } from "@/lib/job-queue";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -32,25 +35,33 @@ export async function GET(req: NextRequest) {
 
   const url = (req.nextUrl.searchParams.get("url") ?? "").trim();
 
-  if (!VOD_URL_PATTERN.test(url)) {
+  if (url.length > 2048 || !VOD_URL_PATTERN.test(url)) {
     return withCors(NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 }));
   }
+  const token = bearerToken(req);
+  let profile;
+  try { profile = token ? await getProfileFromToken(token) : null; }
+  catch { return withCors(NextResponse.json({ error: "Could not verify your account." }, { status: 500 })); }
+  if (!profile) return withCors(NextResponse.json({ error: "Sign in to check a VOD." }, { status: 401 }));
 
   let durationSeconds = durationCache.get(url);
 
   if (durationSeconds === undefined) {
+    const releaseSlot = acquireUserProcessingSlot(profile.id);
+    if (!releaseSlot) return withCors(NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 }));
     try {
-      const out = await runYtDlpCaptureWithIpv6Fallback([
+      const out = await runQueued(`duration:${profile.id}`, () => runYtDlpCaptureWithIpv6Fallback([
         "--print", "duration",
         "--skip-download",
         "--no-playlist",
         url,
-      ]);
+      ]));
       durationSeconds = Math.round(parseFloat(out.trim()));
       if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
         throw new Error("No duration in metadata (is this a live stream?).");
       }
       durationCache.set(url, durationSeconds);
+      if (durationCache.size > 1000) durationCache.delete(durationCache.keys().next().value!);
     } catch (err) {
       return withCors(
         NextResponse.json(
@@ -58,6 +69,8 @@ export async function GET(req: NextRequest) {
           { status: 500 }
         )
       );
+    } finally {
+      releaseSlot();
     }
   }
 

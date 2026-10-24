@@ -21,6 +21,7 @@ import { runQueued } from "@/lib/job-queue";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
+import { canProcessClip, acquireUserProcessingSlot } from "@/lib/clip-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -124,6 +125,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!profile) {
     return NextResponse.json({ error: "You must be signed in to preview clips." }, { status: 401 });
   }
+  try {
+    if (!await canProcessClip(profile.id, clipId, url, start, end)) {
+      return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
+    }
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Clip access check failed." }, { status: 500 });
+  }
 
   // Archived proxy first. It is already this exact clip cut to 540p, so there
   // is nothing to download or encode — and crucially it still works when the
@@ -149,6 +157,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
 
   log("start", url.slice(0, 100), `${start}-${end}s`, crop ? "9:16" : "source-aspect");
+  const releaseSlot = acquireUserProcessingSlot(profile.id);
+  if (!releaseSlot) return NextResponse.json({ error: "Too many clip requests are processing. Try again shortly." }, { status: 429 });
   let previewPath: string | null = null;
   try {
     const t0 = Date.now();
@@ -170,7 +180,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       return result;
     });
 
-    const fileBuffer = await readFile(previewPath);
+    const fileBuffer = await readFile(/* turbopackIgnore: true */ previewPath);
     log("done, total", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `${(fileBuffer.byteLength / 1e6).toFixed(1)}MB`);
     return new NextResponse(fileBuffer, {
       headers: {
@@ -184,6 +194,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     log("FAILED:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
+    releaseSlot();
     if (previewPath) rm(previewPath, { force: true }).catch(() => {});
   }
 }

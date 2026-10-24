@@ -10,15 +10,15 @@ const faqs = [
   },
   {
     q: "Which streaming platforms are supported?",
-    a: "You can analyze published YouTube videos and Twitch VODs. Automatic clipping after a stream is coming soon.",
+    a: "You can analyze published YouTube videos and Twitch VODs. Connect a Twitch channel to queue automatic clipping after a new VOD is published.",
   },
   {
     q: "Do I need to leave my computer on?",
-    a: "The VOD analysis runs on Klyp's processing service. Keep the dashboard open until it returns your results.",
+    a: "No for connected Twitch channels: Klyp processes new published VODs on its service. For a manual analysis, keep the dashboard open until the results return.",
   },
   {
     q: "What video quality are the exported clips?",
-    a: "Clips are exported at the source quality of your stream — up to 1080p60 on Pro and Agency plans. Free plan clips are capped at 720p30.",
+    a: "Exports support 9:16 vertical and Original on Free, with 1:1 and 16:9 also available on Pro. Resolution depends on the source video and selected format.",
   },
   {
     q: "Does it work with pre-recorded VODs?",

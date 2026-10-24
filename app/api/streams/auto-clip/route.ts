@@ -55,6 +55,14 @@ export async function POST(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: "Couldn't save that change." }, { status: 500 });
   }
+  if (!enabled) {
+    // Finish RPC also checks this flag under a row lock, so a processing job
+    // cannot commit a charge after the disable has taken effect.
+    const { error: cancelError } = await admin.from("auto_vod_jobs")
+      .update({ status: "canceled", lease_until: null })
+      .eq("stream_id", streamId).in("status", ["pending", "retry", "processing"]);
+    if (cancelError) return NextResponse.json({ error: "Auto-clipping was disabled, but queued work could not be cleared." }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, enabled });
 }

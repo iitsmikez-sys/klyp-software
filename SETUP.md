@@ -1,119 +1,34 @@
-# Klyp — Setup & Deploy
+# Klyp setup and release order
 
-## What's built
+## Services
 
-- **Analysis pipeline** — paste a Twitch/Kick/YouTube VOD URL → yt-dlp audio download → AssemblyAI transcript → Claude finds the 5 best moments (type, viral score, title, caption, timestamps)
-- **Twitch chat spike detection** — chat replay is sampled in parallel with the download; windows where chat exploded are fed to Claude as ranking signals (automatic for `twitch.tv/videos/…` URLs, silent no-op elsewhere)
-- **Export** — FFmpeg cuts each clip, crops 9:16 1080×1920, burns captions (BOLD / CLEAN / KLYP), optional `@handle` overlay (top-right), animated `klyp.world` watermark on free tier
-- **Download all as ZIP** — renders every clip and bundles them client-side
-- **Sparks** — server-enforced credits in Supabase. Free = 60/mo, Pro = 500/mo. Cost estimated before analysis (10–50 ⚡ by VOD length), deducted server-side after. Monthly reset is lazy (applied on next profile read)
-- **Stripe** — Pro subscription ($28/mo), checkout + billing portal + webhook that flips the profile tier
-- **Auto-Clipping (Twitch)** — connect a Twitch channel via OAuth; a `stream.offline` EventSub webhook queues a bounded retry-poll (VODs take a few minutes to publish) that runs the same analysis pipeline automatically when a new VOD appears, plus a low-frequency safety-net sweep in case a webhook is ever missed. Low Sparks balance → skip + in-app notification, never queued
+The frontend runs on Vercel. The processing service runs the same Next.js app on a persistent Node 20.9+ host with FFmpeg and yt-dlp installed. Set `DEPLOYMENT_TARGET=processing` there; it serves analysis, preview, thumbnail, duration, and export routes and starts the background workers. Supabase stores accounts, Sparks, clips, queues, and private archived media. Stripe handles Pro subscriptions.
 
-## One-time setup (do these in order)
+## Database first
 
-### 1. Supabase — run the Sparks migration
+Apply the numbered SQL migrations in `supabase/migrations/` in order **before** deploying either service. Verify the earlier `006_transcripts.sql` and `013_clip_edit_draft.sql` migrations are present, then apply `016_auto_vod_jobs.sql` through `023_editor_media.sql`. Migration 017 creates the private `clip-media` storage bucket and queues saved clips that have not been archived. Migration 018 adds versioned editor drafts; 019 adds private creator feedback; 020 supplies the transcript owner default; 021 matches the numeric clip timestamps in the existing production schema; 022 stores a profile layout; and 023 adds the separate private `editor-media` bucket and cleanup queue. These migrations do not delete existing clips. If migrations are applied through the SQL Editor, reconcile the migration history before subsequently using the Supabase CLI.
 
-For the repeat-VOD release, apply `012_sparks_ledger.sql` first if it is not
-already installed, then `014_analysis_clip_history.sql` before deploying the
-matching processing service. Migration 014 records delivered clip windows and
-charges only for new results. Migration 013 belongs to the separate Stripe
-release and must be coordinated with its matching webhook code.
+The processing service needs `SUPABASE_SERVICE_ROLE_KEY` for claimed jobs and private media uploads. Keep this key server-side. The frontend needs the normal public Supabase URL and anon key. Both deployments must use the same Supabase project.
 
-This creates the `profiles` table (tier + Sparks), auto-provisions profiles on
-signup (and backfills existing users on first request), and adds the
-`get_profile()` / `consume_sparks()` RPCs the app calls.
+An archive is durable only when the clip shows **Footage saved**. New clips show **Saving footage** while the worker runs. The worker caps each stored object at 50 MiB; monitor total Supabase Storage usage as the library grows. Uploaded source videos currently live in the processing service's local cache until their clips finish archiving, so restarting that service before archival completes can leave those clips unavailable.
 
-### 2. Supabase — service role key
+## Processing credentials
 
-**Dashboard → Settings → API → `service_role`** — copy into `.env.local`:
+Set the variables in `.env.example` that match your enabled sources and AI pipeline: AssemblyAI, Anthropic, Twitch app credentials, and the Twitch EventSub signing secret. Set the Twitch OAuth callback URL for the frontend and route EventSub deliveries to the processing service. The processing service needs sufficient disk space for temporary video segments and FFmpeg outputs. Configure `FFMPEG_PATH` and `YTDLP_PATH` if the executables are not on `PATH`.
 
-```
-SUPABASE_SERVICE_ROLE_KEY=eyJ…
-```
+## Stripe
 
-Only the Stripe webhook uses it (webhooks have no user session). Never expose it client-side.
+Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` on the frontend. `STRIPE_PRICE_PRO` is optional. If configured, the Stripe Price must be active, $28 USD, and monthly; checkout now rejects any mismatch with the advertised price. Route `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted` to `/api/stripe/webhook`.
 
-### 3. Stripe
+## Release checks
 
-1. Create an account at stripe.com (test mode is fine to start)
-2. **Developers → API keys** → copy the secret key:
-   ```
-   STRIPE_SECRET_KEY=sk_test_…
-   ```
-3. For local webhook testing, install the Stripe CLI and run:
-   ```
-   stripe listen --forward-to localhost:3000/api/stripe/webhook
-   ```
-   Copy the printed `whsec_…` into:
-   ```
-   STRIPE_WEBHOOK_SECRET=whsec_…
-   ```
-4. `STRIPE_PRICE_PRO` is optional — leave empty and Klyp creates the $28/mo
-   price inline at checkout. Set it to a `price_…` id if you pre-create the
-   product in the Stripe dashboard (cleaner for prod).
+1. Run `npx tsc --noEmit`, the Node test suite, and `npm run build`.
+2. In a test Supabase/Stripe environment, connect a Twitch channel, publish a VOD, and confirm one queued job produces saved clips and exactly one Sparks debit.
+3. Save a manual analysis clip and confirm its archive status becomes `stored`; then preview and export from the archived media.
+4. Check retry states by temporarily failing processing/storage, restoring it, and confirming the job resumes without duplicate clips or charges.
+5. Test Free and Pro checkout/webhook paths in Stripe test mode. Confirm the checkout amount matches the pricing page.
+6. On two signed-in devices, edit the same clip, check cloud draft recovery and conflict handling, and verify imported media remains available.
+7. Export a cropped clip, a facecam/game layout, each animated caption template, and a transcript cut; compare the file against the editor preview.
+8. Run a Gaming VOD, IRL VOD, long VOD, file upload, and deleted-source playback through the real processing service. Inspect feedback and the bounded visual-check logs. The still-frame check can fail without failing analysis; record that state separately.
 
-Without the webhook running, checkout succeeds but the profile never flips to
-Pro — the webhook is what grants the tier.
-
-### 4. Twitch — Auto-Clipping
-
-1. Run `supabase/migrations/005_twitch_auto_clip.sql` in the Supabase SQL editor.
-2. Register an app at https://dev.twitch.tv/console/apps → copy the Client ID
-   and generate a Client Secret into:
-   ```
-   TWITCH_CLIENT_ID=
-   TWITCH_CLIENT_SECRET=
-   ```
-3. Add OAuth redirect URIs to that app: `https://www.klyp.world/api/twitch/callback`
-   (and `http://localhost:3000/api/twitch/callback` for local dev).
-4. Generate a random secret for EventSub webhook signature verification
-   (`openssl rand -hex 32`) and set it as `TWITCH_EVENTSUB_SECRET` — **on both**
-   Vercel (registers subscriptions) and the processing service (verifies
-   incoming webhooks and polls Get Videos).
-5. `SUPABASE_SERVICE_ROLE_KEY` must also be set on the processing service now
-   (not just Vercel) — the auto-clip background worker has no per-request user
-   session, so it uses the service-role client throughout.
-
-Twitch has no "VOD published" event, only `stream.offline` — the EventSub
-webhook (processing service, `/api/twitch/eventsub`) queues a bounded
-retry-poll that waits a few minutes and then checks Get Videos until the VOD
-actually appears. A low-frequency safety-net sweep also re-checks every
-connected channel periodically in case a webhook delivery is ever missed.
-
-### 5. Test the flow end-to-end
-
-1. `npm run dev`
-2. Sign in → dashboard shows **60 ⚡** (real balance from Supabase)
-3. Paste a Twitch VOD URL → cost preview appears → Find clips → balance drops after analysis
-4. Set a streamer handle → Export → `@handle` top-right, watermark drifting
-5. **Download all (.zip)** → renders all 5 and saves one archive
-6. **Upgrade to Pro** → Stripe test card `4242 4242 4242 4242` → webhook fires →
-   balance becomes 500 ⚡, watermark gone, button becomes **Manage billing**
-
-## Deploying to production
-
-FFmpeg and yt-dlp can't run on Vercel serverless, so the app splits:
-
-| Piece | Where | Notes |
-|---|---|---|
-| Next.js app (UI, auth, Stripe) | Vercel | works as-is |
-| Video processing (`/api/analyze`, `/api/clip`, `/api/preview`, `/api/duration`) | Railway or Render (Docker) | needs ffmpeg + yt-dlp installed in the image |
-
-Recommended path (roughly a day of work when you're ready):
-
-1. **Railway worker** — deploy this same Next.js repo as a Docker service with
-   `ffmpeg` and `yt-dlp` in the image. It serves the processing routes.
-2. **Vercel rewrites** — in `next.config.mjs`, rewrite `/api/analyze`,
-   `/api/clip`, `/api/preview`, `/api/duration` to the Railway URL so the
-   frontend needs no code changes. Auth cookies forward automatically on the
-   same domain if you put the worker behind a subdomain (e.g. `worker.klyp.world`).
-3. **Stripe prod webhook** — Dashboard → Webhooks → add
-   `https://<your-app>/api/stripe/webhook` with events
-   `checkout.session.completed`, `customer.subscription.updated`,
-   `customer.subscription.deleted`; put its `whsec_…` in the Vercel env.
-4. Set all `.env.local` vars in both Vercel and Railway.
-
-## Env reference
-
-See `.env.example` for the full annotated list.
+The database and local automated tests verify the queue transitions. A live Twitch, storage, and Stripe test is still required before considering the release deployed.

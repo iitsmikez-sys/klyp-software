@@ -2,11 +2,11 @@
 
 The editor imports photos and muted video cutaways into a private persistent `editor-media` bucket. Original stream audio continues underneath. Import/save/export require the clip owner's confirmed Pro subscription.
 
-## Apply migration 017 manually
+## Apply migration 023 manually
 
-Confirm the draft column from migration 013 and vertical layout column from migration 016 are installed. Preserve main migrations 014 (analysis history) and 015 (free allowance ledger); their presence in the repository does not establish live application. After migration 016, open the intended Supabase project's **SQL Editor** and paste the complete contents of [`supabase/migrations/017_editor_media.sql`](../supabase/migrations/017_editor_media.sql). Review the project and SQL, then run it there. Do not apply this migration through the CLI or deployment scripts.
+Confirm the draft column from migration 013 and vertical layout column from migration 022 are installed. Preserve migrations 014 (analysis history) and 015 (free allowance ledger); their presence in the repository does not establish live application. After migration 022, open the intended Supabase project's **SQL Editor** and paste the complete contents of [`supabase/migrations/023_editor_media.sql`](../supabase/migrations/023_editor_media.sql). Review the project and SQL, then run it there. Follow the repository's migration history procedure before using the CLI.
 
-Migration 017 creates the `public.editor_assets` table with ownership constraints and read policies, the private `editor-media` storage bucket, and a service-role-only `public.editor_asset_cleanup` queue. Its `BEFORE DELETE` trigger preserves storage paths when asset, clip, or account rows are deleted, including direct database cascades. The application returns an unavailable error if a required table or bucket is missing. No live schema installation is established by the local test suite.
+Migration 023 creates the `public.editor_assets` table with ownership constraints and read policies, the private `editor-media` storage bucket, and a service-role-only `public.editor_asset_cleanup` queue. Its `BEFORE DELETE` trigger preserves storage paths when asset, clip, or account rows are deleted, including direct database cascades. The application returns an unavailable error if a required table or bucket is missing. No live schema installation is established by the local test suite.
 
 After application, inspect the results with these read-only SQL queries:
 
@@ -46,7 +46,7 @@ The browser uploads directly to private storage with a short-lived signed URL. T
 
 Deletion cleanup waits until the later of the asset expiry and **three hours after deletion**, covering the two-hour signed upload token lifetime plus a buffer. This includes pending and failed uploads: replaying a token after its parent row is deleted can still upload bytes, which remain covered by the queue. The processing worker runs at startup and every 15 minutes, removes due objects through the Storage API, and acknowledges queue rows only after successful removal. Storage or database failures retain the manifest for retry. Existing verified assets with live rows are preserved. Storage cleanup is eventual and requires a running processing worker; monitor its `[editor-media] storage cleanup failed` logs and overdue queue rows.
 
-After applying migration 017 to a **test project**, manually run [`supabase/tests/017_editor_media_cleanup.sql`](../supabase/tests/017_editor_media_cleanup.sql) to exercise verified/pending/failed deletion through asset, clip, and account paths. The script rolls back all SQL fixtures and makes no storage calls. It has not been executed locally because no PostgreSQL runtime is available. Verify actual signed-token replay and Storage API cleanup in that test project separately.
+After applying migration 023 to a **test project**, manually run [`supabase/tests/017_editor_media_cleanup.sql`](../supabase/tests/017_editor_media_cleanup.sql) to exercise verified/pending/failed deletion through asset, clip, and account paths. The script rolls back all SQL fixtures and makes no storage calls. Verify actual signed-token replay and Storage API cleanup in that test project separately.
 
 Video import duration is the selected picture stream's duration, with presentation packet timestamps as the fallback when stream duration is missing. Longer imported audio does not extend the usable cutaway. Files without enough visual timing information are rejected instead of borrowing container/audio duration. The media library reads all result pages so older saved-draft assets remain selectable.
 

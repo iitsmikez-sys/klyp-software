@@ -1,4 +1,4 @@
--- Apply manually in Supabase SQL editor after 016_vertical_layout.sql. Never run automatically.
+-- Apply manually in Supabase SQL editor after 022_vertical_layout.sql. Never run automatically.
 -- Private immutable originals, uploaded directly with a service-issued signed token.
 begin;
 

@@ -24,7 +24,7 @@ import { DEMO_SOURCE, DEMO_CLIPS } from "@/lib/demo-reel";
  * immediately — so the current readyState is checked on mount too, otherwise
  * the badge silently never appears.
  */
-function useVideoDuration(ref: React.RefObject<HTMLVideoElement>) {
+function useVideoDuration(ref: React.RefObject<HTMLVideoElement | null>) {
   const [duration, setDuration] = useState<number | null>(null);
   useEffect(() => {
     const el = ref.current;

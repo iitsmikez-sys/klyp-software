@@ -10,7 +10,7 @@ const fixtureRoot = path.resolve(root, '.next-verification');
 fs.mkdirSync(fixtureRoot, { recursive: true });
 const fixture = fs.mkdtempSync(path.join(fixtureRoot, 'editor-next-'));
 const port = 3127;
-const url = `http://127.0.0.1:${port}`;
+const url = `http://localhost:${port}`;
 const clipId = '00000000-0000-0000-0000-000000000001';
 const editorPath = `/dashboard/clips/${clipId}/edit`;
 const write = (file, text) => { const dest = path.join(fixture, file); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, text); };
@@ -87,7 +87,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   // Route has no background dashboard UI, and every keyboard stop stays inside.
   assert.equal(await page.locator('nav:not(.editor-rail)').count(), 0);
   await page.getByRole('button', { name: 'Back to clips' }).focus();
-  for (let i = 0; i < 70; i++) { await page.keyboard.press('Tab'); assert(await page.evaluate(() => document.activeElement === document.body || !!document.activeElement.closest('.clip-editor')), 'Tab must not reach dashboard controls'); }
+  for (let i = 0; i < 70; i++) { await page.keyboard.press('Tab'); const focus=await page.evaluate(() => ({inside:document.activeElement === document.body || !!document.activeElement.closest('.clip-editor') || document.activeElement.tagName.toLowerCase()==='nextjs-portal',html:document.activeElement.outerHTML.slice(0,300)})); assert(focus.inside,`Tab must not reach dashboard controls: ${focus.html}`); }
   assert.deepEqual(errors, []);
   console.log('PASS: actual Next Back/Forward Cancel preserves editor identity and dirty state; decode Retry visible and works; Space activates tabs/presets; normalized saves reconcile without overwriting pending edits; no background navigation/focus path.');
  } catch (error) { console.error(serverLog.slice(-6000)); throw error; }

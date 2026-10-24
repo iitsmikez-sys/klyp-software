@@ -38,7 +38,7 @@ function fixture() {
  let pro = true, clipOwner = 'user', missing = false;
  const repo: EditorAssetRepository = {
   async access() { return { owner: clipOwner, tier: pro ? 'pro' : 'free', subscription: pro ? 'sub' : null }; },
-  async insert(row) { if (missing) throw new EditorAssetError('Editor media unavailable: apply migration 017_editor_media.sql.', 503); rows.set(row.id, row); },
+  async insert(row) { if (missing) throw new EditorAssetError('Editor media unavailable: apply migration 023_editor_media.sql.', 503); rows.set(row.id, row); },
   async find(user, clip, id) { const row = rows.get(id); return row?.user_id === user && row.clip_id === clip ? row : null; },
   async list(user, clip) { return Array.from(rows.values()).filter(a => a.user_id === user && a.clip_id === clip && a.status === 'verified'); },
   async verify(row, metadata) { const next = { ...row, ...metadata, status: 'verified' as const, verified_at: new Date().toISOString() }; rows.set(row.id, next); return next; },
@@ -129,7 +129,7 @@ test('draft validation requires verified owned stored assets and checks usable v
  await f.service.assertOwnedDraftAssets('user','clip',{version:2} as any);
 });
 test('missing migration gives an actionable unavailable error',async()=>{
- const f=fixture(); f.setMissing(); await assert.rejects(f.service.createEditorUpload('user','clip','x.png',100,'image/png'),e=>e instanceof EditorAssetError && e.status===503 && /017_editor_media/.test(e.message));
+ const f=fixture(); f.setMissing(); await assert.rejects(f.service.createEditorUpload('user','clip','x.png',100,'image/png'),e=>e instanceof EditorAssetError && e.status===503 && /023_editor_media/.test(e.message));
 });
 test('malformed MIME metadata is a validation error, including inherited object keys',()=>{
  for(const mime of ['__proto__','constructor','toString',null,{}]) assert.throws(()=>validateEditorUpload('a.png',100,mime as string),e=>e instanceof EditorAssetError && e.status===400);

@@ -35,6 +35,7 @@ import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { canProcessClip, acquireUserProcessingSlot } from "@/lib/clip-access";
 import { archivedClipTiming } from "@/lib/clip-trim";
 import { buildSegmentFilter, parseSegments, retimeWords, timelineDuration, type EditSegment } from "@/lib/edit-segments";
 import { editorMediaPath, parseMediaInserts, retimeWordsWithMedia, buildEditorTimeline, type MediaInsert } from "@/lib/editor-media";
@@ -308,6 +309,13 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
   if (!profile) {
     return NextResponse.json({ error: "You must be signed in to export clips." }, { status: 401 });
   }
+  try {
+    if (!await canProcessClip(profile.id, clipId, url, start, end)) {
+      return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
+    }
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Clip access check failed." }, { status: 500 });
+  }
   // "Pro" requires a real, confirmed subscription — see SparksProvider.tsx for
   // why the raw tier flag alone isn't trusted (it can drift from reality).
   const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
@@ -349,6 +357,8 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
   }
 
   log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
+  const releaseSlot = acquireUserProcessingSlot(profile.id);
+  if (!releaseSlot) return NextResponse.json({ error: "Too many clip requests are processing. Try again shortly." }, { status: 429 });
   let clipPath: string | null = null;
   let assDir: string | null = null;
   let mediaDir: string | null = null;
@@ -419,7 +429,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
           const objectPath = editorMediaPath(profile.id, clipId, entry.id, entry.kind);
           const bytes = await readArchivedObject(objectPath);
           if (!bytes) throw new Error("An imported image or video is no longer available.");
-          const localPath = path.join(mediaDir, `${entry.id}.${entry.kind === "image" ? "jpg" : "mp4"}`);
+          const localPath = path.join(/* turbopackIgnore: true */ mediaDir, `${entry.id}.${entry.kind === "image" ? "jpg" : "mp4"}`);
           await writeFile(localPath, bytes);
           if (entry.kind === "video") {
             const probe = await runCapture(resolveBin("ffprobe"), ["-v", "error", "-show_entries", "format=duration",
@@ -474,7 +484,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
       await consumeSparksFromToken(token!, UPSCALE_COST);
     }
 
-    const fileBuffer = await readFile(clipPath);
+    const fileBuffer = await readFile(/* turbopackIgnore: true */ clipPath);
     log("done, total", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `${(fileBuffer.byteLength / 1e6).toFixed(1)}MB`);
     return new NextResponse(fileBuffer, {
       headers: {
@@ -488,6 +498,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
     log("FAILED:", message);
     return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
   } finally {
+    releaseSlot();
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
     if (mediaDir) rm(mediaDir, { recursive: true, force: true }).catch(() => {});
     if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});

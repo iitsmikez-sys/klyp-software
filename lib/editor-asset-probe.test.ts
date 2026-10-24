@@ -49,8 +49,24 @@ test('audio tail cannot extend visual duration or the accepted preview/export in
    try {
     const page=await browser.newPage();page.on('pageerror',error=>console.error(error));await page.setContent('<div id="root"></div>');
     const require=createRequire(import.meta.url);
-    await page.addScriptTag({path:require.resolve('react').replace(/index\.js$/,'umd/react.development.js')});
-    await page.addScriptTag({path:require.resolve('react-dom').replace(/index\.js$/,'umd/react-dom.development.js')});
+    const packageSource=(name:string,file:string)=>readFileSync(path.join(path.dirname(require.resolve(name)), 'cjs', file),'utf8');
+    const code={
+      react:packageSource('react','react.development.js'),
+      scheduler:packageSource('scheduler','scheduler.development.js'),
+      'react-dom':packageSource('react-dom','react-dom.development.js'),
+      'react-dom-client':packageSource('react-dom','react-dom-client.development.js'),
+    };
+    await page.evaluate(({code})=>{
+      const cache:Record<string,any>={};
+      const load=(name:string):any=>{
+        if(cache[name])return cache[name];
+        const exports={};cache[name]=exports;
+        new Function('exports','require','process',code[name as keyof typeof code])(exports,load,{env:{NODE_ENV:'development'}});
+        return exports;
+      };
+      (window as any).React=load('react');
+      (window as any).ReactDOM=load('react-dom-client');
+    },{code});
     const sources=Object.fromEntries(['components/EditorCutawayPreview.tsx','lib/editor-media-client.ts','lib/editor-timeline.ts'].map(name=>[name.replace(/\.tsx?$/,''),ts.transpileModule(readFileSync(new URL('../'+name,import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText]));
     await page.evaluate(({sources,asset,span,data,mime})=>{
      const w=window as any,React=w.React;

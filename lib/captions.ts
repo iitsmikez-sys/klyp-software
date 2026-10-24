@@ -11,6 +11,7 @@
  * captions look the same relative size in 1:1 and 16:9 exports.
  */
 import type { CaptionOptions } from "./editor-captions";
+import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
@@ -112,6 +113,9 @@ const STYLE_PARAMS: Record<
   CLEAN: { fontSize: 58, color: "&H00FFFFFF", bold: 0, outline: 2, shadow: 1 },
   // Single word per cue, green (#00E5A0), heavy outline — Klyp branded.
   KLYP: { fontSize: 82, color: "&H00A0E500", bold: 1, outline: 4, shadow: 0 },
+  PULSE: { fontSize: 78, color: "&H0000FFFF", bold: 1, outline: 5, shadow: 0 },
+  SLIDE: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 3, shadow: 1 },
+  SPARK: { fontSize: 88, color: "&H00A0E500", bold: 1, outline: 5, shadow: 0 },
 };
 
 function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?: CaptionOptions): string {
@@ -184,11 +188,14 @@ export function generateAss(
   const options = typeof bottomInsetOrOptions === 'number' ? captionOptions : bottomInsetOrOptions;
   const sections = [assHeader(res), "", styleBlock(style, res, bottomInset, options), "", EVENTS_HEADER];
 
-  // KLYP shows one word at a time; other styles show small word groups.
-  const cues = buildCaptionCues(words, clipStartMs, clipEndMs, style === "KLYP" ? 1 : CUE_MAX_WORDS);
+  // KLYP and SPARK show one word at a time; other styles show small word groups.
+  const cues = buildCaptionCues(words, clipStartMs, clipEndMs,
+    style === "KLYP" || style === "SPARK" ? 1 : CUE_MAX_WORDS);
   for (const cue of cues) {
-    const text = sanitizeAssText(style === "KLYP" ? cue.text.toUpperCase() : cue.text);
-    sections.push(dialogue(cue.startMs, cue.endMs, composed ? wrapCaptionText(text, style).join("\\N") : text));
+    const text = sanitizeAssText(style === "KLYP" || style === "SPARK" ? cue.text.toUpperCase() : cue.text);
+    const wrapped = composed ? wrapCaptionText(text, style).join("\\N") : text;
+    sections.push(dialogue(cue.startMs, cue.endMs,
+      captionAssMotion(style, res.w, res.h, options?.position ?? "BOTTOM") + wrapped));
   }
 
   return sections.join("\n");
@@ -283,7 +290,8 @@ export function generateTimedCueAss(
  for (const cue of normalizeTimedCues(cues)) {
   const layout = layoutTimedCaption(cue.text, style, appearance, res, safeArea);
   for (const line of layout.lines) {
-   sections.push(dialogue(cue.start_ms, cue.end_ms, `{\\an5\\pos(${line.x},${line.y})}${line.text}`));
+   sections.push(dialogue(cue.start_ms, cue.end_ms,
+     `${captionAssMotionAt(style, line.x, line.y, res.h)}${line.text}`));
   }
  }
  return sections.join("\n");

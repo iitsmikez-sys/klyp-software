@@ -6,7 +6,7 @@ export { captionAppearance } from "./captions.ts";
 
 /** Source anchors remain in the draft; only this resolved view uses edited time. */
 export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip): CaptionCue[] {
- const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === "KLYP" ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
+ const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === "KLYP" || draft.caption_style === "SPARK" ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
  const usedIds = new Set(source.map(cue => cue.id));
  return normalizeTimedCues(source.flatMap(cue => {
   const spans = outputSpansForSourceCue(draft.segments, cue);

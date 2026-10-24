@@ -45,7 +45,8 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/profile-token':{bearerToken:()=> 'token',getProfileFromToken:async()=>({id:options.userId??'user',tier:options.pro===false?'free':'pro',stripe_subscription_id:options.pro===false?null:'sub',sparks:100,vertical_layout:options.profileLayout??null}),consumeSparksFromToken:async(...args:any[])=>record('charge',...args)},
  '@/lib/vertical-layout':{planClipComposition,validateVerticalLayout},'@/lib/vertical-layout-ffmpeg':{buildVerticalFilterGraph:(plan:any)=>{record('composition',plan);return {filter:'composed',videoLabel:'v'};}},
  '@/lib/clip-archive':{getArchivedClip:async()=>options.archive?{id:'owned',masterPath:'master',status:'stored',originalStartSeconds:options.archiveStart??100,originalEndSeconds:110}:null,readArchivedObject:async()=>options.missingArchive?null:Buffer.from('master')},
- '@/lib/clip-trim':{clipSeekRange,archivedClipTiming},'@/lib/sparks':{UPSCALE_COST:35},'@/lib/cors':{withCors:(r:Response)=>r,corsPreflight:()=>{}}
+ '@/lib/clip-trim':{clipSeekRange,archivedClipTiming},'@/lib/sparks':{UPSCALE_COST:35},'@/lib/cors':{withCors:(r:Response)=>r,corsPreflight:()=>{}},
+ '@/lib/clip-access':{canProcessClip:async()=>true,acquireUserProcessingSlot:()=>()=>record('releaseSlot')}
  };
  const legacyExports:any={};
  Object.assign(modules,{'@/lib/editor-compatibility':{isLegacyEditorExport},'@/lib/edit-segments':legacySegments,'@/lib/editor-media':legacyMedia,'@/lib/editor-media-render':{buildEditorMediaFilter},'@/lib/editor-captions':{resolveEditorCues,captionAppearance,parseCaptionOptions,parseEditedWords}});

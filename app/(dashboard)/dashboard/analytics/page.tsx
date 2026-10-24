@@ -406,7 +406,7 @@ export default function AnalyticsPage() {
           onCreateClip={() => { createClip(previewClip); }}
           onDownloadClip={() => {
             const done = exports[previewClip.id];
-            if (done) downloadExport(done);
+            if (done) downloadExport(done, previewClip.id);
           }}
         />
       )}

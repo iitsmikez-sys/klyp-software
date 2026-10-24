@@ -97,3 +97,10 @@ test("CLEAN multiline positions use its own font size and explicit per-line ASS 
  assert.ok(ass.includes("\\an5\\pos(270,462.5)"));
  assert.ok(ass.includes("\\an5\\pos(270,497.5)"));
 });
+test("animated templates retain motion in full timeline exports", () => {
+ const appearance = captionAppearance({ ...base(), caption_position: "center" });
+ const cue = [{ start_ms: 0, end_ms: 1000, text: "Moment" }];
+ assert.match(generateTimedCueAss(cue, "PULSE", appearance), /\\fscx72.*\\t\(0,180/);
+ assert.match(generateTimedCueAss(cue, "SLIDE", appearance), /\\move\(540,1015,540,960,0,220\)/);
+ assert.match(generateTimedCueAss(cue, "SPARK", appearance), /\\fscx82.*\\t\(0,140/);
+});

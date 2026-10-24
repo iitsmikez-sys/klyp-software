@@ -71,7 +71,7 @@ export default function ClipTimelineEditor({ clip, compatibilityNotice }: {
     const cues = resolveEditorCues(draft, clip);
     const clock = useRef(time);
     clock.current = time;
-    const sourceCues = () => draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === 'KLYP' ? 1 : 4).map((c, i) => ({ id: `auto-${i}`, start_ms: c.startMs + clip.start_seconds * 1000, end_ms: c.endMs + clip.start_seconds * 1000, text: c.text }));
+    const sourceCues = () => draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === 'KLYP' || draft.caption_style === 'SPARK' ? 1 : 4).map((c, i) => ({ id: `auto-${i}`, start_ms: c.startMs + clip.start_seconds * 1000, end_ms: c.endMs + clip.start_seconds * 1000, text: c.text }));
     const cue = selection?.type === 'caption' ? sourceCues().filter(c => selection.id === c.id || selection.id.startsWith(c.id + ':fragment:')).sort((a, b) => b.id.length - a.id.length)[0] : undefined;
     const commit = (next: ClipEditDraftV3) => { if (!pro) {
         setGate(true);

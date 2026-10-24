@@ -5,6 +5,7 @@ import type { ClipWithWords, CaptionStyle } from "@/lib/clips";
 import { CAPTION_STYLES } from "@/lib/clips";
 import { buildCaptionCues, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
+import { drawCaptionPreview } from "@/lib/caption-preview";
 import { useSparks } from "./SparksProvider";
 import { watermarkCanvasPos, WATERMARK_FONT_SIZE } from "@/lib/watermark";
 import { processingFetch } from "@/lib/processing-api";
@@ -39,50 +40,11 @@ function drawCaptions(
   W: number,
   H: number
 ) {
-  // Scale font sizes relative to preview height (source = 1920px)
-  const scale = H / 1920;
-  const marginBottom = Math.round(80 * scale);
-  const cx = W / 2;
-  const cy = H - marginBottom;
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-
-  if (style === "KLYP") {
-    const word = wordCues.find((c) => t >= c.start && t < c.end);
-    if (!word) return;
-
-    const fs = Math.round(82 * scale);
-    ctx.font = `bold ${fs}px Arial`;
-    ctx.lineWidth = Math.max(2, 4 * scale);
-    ctx.strokeStyle = "black";
-    ctx.fillStyle = "#00E5A0";
-    ctx.strokeText(word.text.toUpperCase(), cx, cy);
-    ctx.fillText(word.text.toUpperCase(), cx, cy);
-    return;
-  }
-
-  const cue = cues.find((c) => t >= c.start && t < c.end);
+  const selected = style === "KLYP" || style === "SPARK" ? wordCues : cues;
+  const cue = selected.find((c) => t >= c.start && t < c.end);
   if (!cue) return;
-
-  if (style === "BOLD") {
-    const fs = Math.round(82 * scale);
-    ctx.font = `bold ${fs}px Arial`;
-    ctx.lineWidth = Math.max(2, 4 * scale);
-    ctx.strokeStyle = "black";
-    ctx.fillStyle = "white";
-  } else {
-    // CLEAN
-    const fs = Math.round(58 * scale);
-    ctx.font = `${fs}px Arial`;
-    ctx.lineWidth = Math.max(1, 2 * scale);
-    ctx.strokeStyle = "rgba(0,0,0,0.85)";
-    ctx.fillStyle = "white";
-  }
-
-  // Simple single-line — 4 short words always fits at this scale
-  ctx.strokeText(cue.text, cx, cy);
-  ctx.fillText(cue.text, cx, cy);
+  drawCaptionPreview(ctx, t, [{ text: cue.text, startMs: cue.start * 1000,
+    endMs: cue.end * 1000 }], style, { color: "DEFAULT", position: "BOTTOM" }, W, H);
 }
 
 function drawWatermark(
@@ -262,6 +224,9 @@ export default function ClipPreview({
     BOLD: "Large white text, black outline — classic TikTok",
     CLEAN: "Smaller text, subtle shadow — minimalist",
     KLYP: "One word at a time in green — Klyp branded",
+    PULSE: "Yellow words pulse in as the streamer speaks",
+    SLIDE: "White captions slide up into place",
+    SPARK: "Green words flash in one at a time",
   };
 
   return (

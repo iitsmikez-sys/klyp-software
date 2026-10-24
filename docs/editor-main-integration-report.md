@@ -88,7 +88,7 @@ Main behavior retained:
 
 The existing main migrations `014_analysis_clip_history.sql` and
 `015_free_allowance_ledger.sql` are byte-for-byte unchanged. Incoming files are
-`013_clip_edit_draft.sql`, `016_vertical_layout.sql`, and `017_editor_media.sql`.
+`013_clip_edit_draft.sql`, `022_vertical_layout.sql`, and `023_editor_media.sql`.
 The rollback-only cleanup verification script is now
 `supabase/tests/017_editor_media_cleanup.sql`. All media/layout filename and
 number references were updated.

@@ -3,7 +3,7 @@ import { EDITOR_MEDIA_BUCKET, EDITOR_PREVIEW_SECONDS, EditorAssetError, type Edi
 
 /** Translate missing deployment prerequisites without leaking storage or database internals. */
 export function editorAssetStoreError(error: { code?: string; message?: string; statusCode?: string | number }): EditorAssetError {
- if (['42P01','42703','PGRST205','PGRST204'].includes(error.code || '') || /bucket.*not found|relation.*does not exist|schema cache/i.test(error.message || '')) return new EditorAssetError('Editor media is unavailable. Apply Supabase migration 017_editor_media.sql to create its private bucket and table.', 503);
+ if (['42P01','42703','PGRST205','PGRST204'].includes(error.code || '') || /bucket.*not found|relation.*does not exist|schema cache/i.test(error.message || '')) return new EditorAssetError('Editor media is unavailable. Apply Supabase migration 023_editor_media.sql to create its private bucket and table.', 503);
  return new EditorAssetError('Editor media storage is temporarily unavailable. Please try again.', 503);
 }
 

@@ -22,6 +22,7 @@ import { runQueued } from "@/lib/job-queue";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
+import { canProcessClip, acquireUserProcessingSlot } from "@/lib/clip-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -48,7 +49,7 @@ const VOD_URL_PATTERN =
  */
 function thumbCacheKey(url: string, start: number, end: number): string {
   const source = createHash("sha1").update(url).digest("hex").slice(0, 16);
-  return `thumb-${THUMB_VERSION}-${source}-${start}-${end}`;
+  return `thumb-${THUMB_VERSION}-${source}-${Math.floor(start)}-${Math.ceil(end)}`;
 }
 
 /** Midpoint of the clip — inside the range by construction, and past whatever
@@ -102,7 +103,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
     return NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 });
   }
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 180) {
     return NextResponse.json({ error: "Invalid timestamps." }, { status: 400 });
   }
 
@@ -118,6 +119,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   if (!profile) {
     return NextResponse.json({ error: "You must be signed in to load clip thumbnails." }, { status: 401 });
+  }
+  try {
+    if (!await canProcessClip(profile.id, clipId, url, start, end)) {
+      return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
+    }
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Clip access check failed." }, { status: 500 });
   }
 
   // Archived poster first: already this clip's frame, and it outlives the
@@ -157,6 +165,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (existsSync(outPath) && (await stat(outPath)).size > 0) return serve();
 
   const reqId = Math.random().toString(36).slice(2, 8);
+  const releaseSlot = acquireUserProcessingSlot(profile.id);
+  if (!releaseSlot) return NextResponse.json({ error: "Too many clip requests are processing. Try again shortly." }, { status: 429 });
   try {
     await runQueued(`thumbnail:${reqId}`, async () => {
       // Another request for the same clip may have produced it while this one
@@ -173,5 +183,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     const message = err instanceof Error ? err.message : "Thumbnail generation failed.";
     console.log(`[thumbnail ${reqId}] FAILED:`, message);
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    releaseSlot();
   }
 }

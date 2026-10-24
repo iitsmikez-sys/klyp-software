@@ -40,9 +40,11 @@ import { detectChatSpikes, type ChatSpike } from "@/lib/twitch-chat";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
 import { saveTranscript } from "@/lib/transcripts";
 import { runQueued } from "@/lib/job-queue";
+import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { vodSourceKey } from "@/lib/vod-source";
 import { priorClipWindows, recordAndChargeClips } from "@/lib/analysis-history";
+import { preferencesForToken } from "@/lib/creator-feedback-data";
 
 export const runtime = "nodejs";
 // Allow up to 5 minutes — download + transcription of a long VOD is slow.
@@ -135,6 +137,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   } catch (err) {
     return fail("validate", err instanceof Error ? err.message : "Could not check earlier clips.", 503);
   }
+  const creatorPreferences = await preferencesForToken(token!);
   const upfrontCost = durationHint
     ? estimateSparks(durationHint) + CLIP_COUNT_COST[clipCount]
     : MIN_ANALYZE_COST;
@@ -146,7 +149,14 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const workDir = await mkdtemp(path.join(tmpdir(), "klyp-"));
+  const releaseSlot = acquireUserProcessingSlot(profile.id);
+  if (!releaseSlot) return fail("validate", "Too many requests are processing. Try again shortly.", 429);
+  let workDir: string;
+  try { workDir = await mkdtemp(path.join(tmpdir(), "klyp-")); }
+  catch (err) {
+    releaseSlot();
+    return fail("validate", err instanceof Error ? err.message : "Could not prepare video processing.", 500);
+  }
 
   /*
    * Stream progress as Server-Sent Events. Each pipeline stage emits a
@@ -202,6 +212,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               contentType,
               keyword,
               priorWindows,
+              creatorPreferences,
               workDir,
               chatSpikesPromise: spikesPromise,
               onProgress: (progressStage, status, etaSeconds) => {
@@ -251,6 +262,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         console.error(`[analyze ${reqId}] FAILED at ${stage} after ${elapsed()}:`, err);
         send({ type: "error", stage, error: userFacingAnalysisError(stage, url, message) });
       } finally {
+        releaseSlot();
         clearInterval(heartbeat);
         rm(workDir, { recursive: true, force: true }).catch(() => {});
         controller.close();

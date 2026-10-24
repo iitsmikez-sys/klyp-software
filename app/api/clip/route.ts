@@ -48,6 +48,7 @@ import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { clipSeekRange, archivedClipTiming } from "@/lib/clip-trim";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { canProcessClip, acquireUserProcessingSlot } from "@/lib/clip-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -305,6 +306,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid editor export." }, { status: error instanceof EditorAssetError ? error.status : error instanceof ClipEditDraftError || error instanceof RangeError ? 400 : 500 });
     }
   }
+  try {
+    if (!await canProcessClip(profile.id, clipId, url, start, end)) {
+      return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
+    }
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Clip access check failed." }, { status: 500 });
+  }
   if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
     return NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 });
   }
@@ -359,6 +367,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
 
   log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
+  const releaseSlot = acquireUserProcessingSlot(profile.id);
+  if (!releaseSlot) return NextResponse.json({ error: "Too many clip requests are processing. Try again shortly." }, { status: 429 });
   let clipPath: string | null = null;
   let assDir: string | null = null;
   let editorDir: string | null = null;
@@ -491,7 +501,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       await consumeSparksFromToken(token!, UPSCALE_COST);
     }
 
-    const fileBuffer = await readFile(clipPath);
+    const fileBuffer = await readFile(/* turbopackIgnore: true */ clipPath);
     log("done, total", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `${(fileBuffer.byteLength / 1e6).toFixed(1)}MB`);
     return new NextResponse(fileBuffer, {
       headers: {
@@ -506,6 +516,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     log("FAILED:", message);
     return NextResponse.json({ error: message }, { status: err instanceof EditorAssetError ? err.status : err instanceof RangeError ? 400 : 500 });
   } finally {
+    releaseSlot();
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
     if (assDir) await rm(assDir, { recursive: true, force: true }).catch(() => {});
     if (editorDir) await rm(editorDir, { recursive: true, force: true }).catch(() => {});

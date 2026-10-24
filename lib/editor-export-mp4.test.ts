@@ -92,6 +92,7 @@ test('export route returns playable MP4 with source cuts, imported pictures, aud
    '@/lib/vertical-layout':vertical, '@/lib/vertical-layout-ffmpeg':verticalFfmpeg,
    '@/lib/clip-archive':{getArchivedClip:async()=>null}, '@/lib/clip-trim':trim,
    '@/lib/sparks':{UPSCALE_COST:35}, '@/lib/cors':{withCors:(r:Response)=>r,corsPreflight:()=>{}},
+   '@/lib/clip-access':{canProcessClip:async()=>true,acquireUserProcessingSlot:()=>()=>{}},
   };
   const routeSource = await fs.readFile(new URL('../app/api/clip/route.ts',import.meta.url),'utf8');
   const routeCode = ts.transpileModule(routeSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;

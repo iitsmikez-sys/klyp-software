@@ -33,6 +33,8 @@ interface Channel {
   auto_clip_enabled: boolean;
 }
 
+type AutoVodJob = { id: string; video_id: string; status: string; last_error: string | null };
+
 /** Derive the platform from a channel URL; null = unsupported. */
 function channelPlatform(url: string): Platform | null {
   try {
@@ -101,6 +103,7 @@ type VodGroup = {
 export default function StreamsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [clips, setClips] = useState<SavedClip[]>([]);
+  const [autoJobs, setAutoJobs] = useState<AutoVodJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [newUrl, setNewUrl] = useState("");
   const [adding, setAdding] = useState(false);
@@ -116,12 +119,15 @@ export default function StreamsPage() {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
-    const [ch, cl] = await Promise.all([
+    const [ch, cl, jobs] = await Promise.all([
       supabase.from("streams").select("*").order("created_at", { ascending: false }),
       supabase.from("clips").select("*").order("created_at", { ascending: false }),
+      supabase.from("auto_vod_jobs").select("id,video_id,status,last_error")
+        .not("status", "in", '(succeeded,canceled)').order("created_at", { ascending: false }).limit(5),
     ]);
     setChannels((ch.data ?? []) as Channel[]);
     setClips((cl.data ?? []) as SavedClip[]);
+    setAutoJobs((jobs.data ?? []) as AutoVodJob[]);
     setLoading(false);
   }, []);
 
@@ -295,6 +301,22 @@ export default function StreamsPage() {
         <p className="px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
           {error}
         </p>
+      )}
+
+      {autoJobs.length > 0 && (
+        <section className="rounded-xl border border-border bg-surface p-4" aria-label="Automatic VOD processing">
+          <h2 className="text-sm font-semibold text-white mb-2">Automatic VOD processing</h2>
+          <div className="space-y-1.5">
+            {autoJobs.map((job) => (
+              <p key={job.id} className="text-sm text-foreground-muted">
+                Twitch VOD {job.video_id}: {job.status === "failed" ? "Needs manual attention" :
+                  job.status === "processing" ? "Finding clips" :
+                  job.status === "retry" ? "Retrying" : "Queued"}
+                {job.status === "failed" && <> · <Link href="/dashboard" className="text-accent underline">Open Find Clips</Link></>}
+              </p>
+            ))}
+          </div>
+        </section>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
