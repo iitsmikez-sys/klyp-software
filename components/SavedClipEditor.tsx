@@ -132,6 +132,7 @@ export default function SavedClipEditor({
   }, [clip.start_seconds, draft.words]);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -249,6 +250,7 @@ export default function SavedClipEditor({
     if (editorLayout.exportBlocked) { setExportError("Save your account layout before exporting this preview."); return; }
     setExporting(true);
     setExportError(null);
+    setExportSuccess(false);
     // Timeout so a hung export fails loudly instead of spinning forever. The
     // server keeps working after an abort, so a retry usually hits a warm cache.
     const controller = new AbortController();
@@ -279,7 +281,8 @@ export default function SavedClipEditor({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      setExportSuccess(true);
     } catch (err) {
       setExportError(
         controller.signal.aborted
@@ -583,6 +586,7 @@ export default function SavedClipEditor({
       )}
 
       {/* Export */}
+      {exportSuccess && !exportError && <p role="status" className="mb-2 text-xs text-accent">Export ready. Check your downloads for the MP4.</p>}
       <button
         onClick={exportClip}
         disabled={exporting || editorLayout.exportBlocked}
