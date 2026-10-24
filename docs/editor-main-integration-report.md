@@ -1,5 +1,15 @@
 # Editor integration verification
 
+## Update for main at dc633c4 (PR 26)
+
+Merged main's shared Klyp logo fix into the integration branch after `dcf7495`.
+The sole conflict was resolved by retaining the integrated `SavedClipEditor` and
+applying main's exact `Logo size="lg"` replacement to `LegacySavedClipEditor`,
+which also serves results customization. The V3 editor already uses shared
+`Logo`. Focused compatibility/export/results/watermark tests pass (24/24),
+TypeScript passes, and the mounted import/results/legacy suite passes. Existing
+build, live-service and schema release gates below remain unchanged.
+
 ## Update for main at 28f5c23 (PRs 22–24)
 
 Merged `origin/main` at `28f5c23` into the reviewed integration branch, whose

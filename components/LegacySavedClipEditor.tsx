@@ -19,6 +19,7 @@ import ProGateModal from "./ProGateModal";
 import ClipTrimControl from "./LegacyClipTrimControl";
 import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import EditorTimeline from "./LegacyEditorTimeline";
+import Logo from "./Logo";
 import workspaceStyles from "./EditorWorkspace.module.css";
 import { archivedClipTiming } from "@/lib/clip-trim";
 import type { SavedClip } from "@/lib/clip-ui";
@@ -763,7 +764,7 @@ export default function LegacySavedClipEditor({
     <div data-mobile-panel={mobilePanel} className={workspace ? `${workspaceStyles.workspace} xl:h-full xl:flex xl:flex-col bg-[#080f13]` : "mt-4 pt-4 border-t border-border"} onClick={(e) => e.stopPropagation()}>
       {workspace && (
         <div className={workspaceStyles.header}>
-          <span className="font-syne text-[28px] font-black tracking-tight text-white"><span className="text-accent">K</span>LYP</span>
+          <Logo size="lg" />
           <span className="hidden sm:block h-7 w-px bg-[#2b3941]" />
           <span className="min-w-0 truncate text-base font-semibold text-foreground" title={clip.title}>{clip.title}</span>
           <span className="hidden md:block h-7 w-px bg-[#2b3941]" />
