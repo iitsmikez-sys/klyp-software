@@ -12,6 +12,7 @@
  */
 import type { TimedWord, CaptionStyle } from "./clips";
 import type { CaptionOptions } from "./editor-captions";
+import { captionAssMotion } from "./caption-template-motion.ts";
 
 export type PlayRes = { w: number; h: number };
 const DEFAULT_RES: PlayRes = { w: 1080, h: 1920 };
@@ -112,6 +113,9 @@ const STYLE_PARAMS: Record<
   CLEAN: { fontSize: 58, color: "&H00FFFFFF", bold: 0, outline: 2, shadow: 1 },
   // Single word per cue, green (#00E5A0), heavy outline — Klyp branded.
   KLYP: { fontSize: 82, color: "&H00A0E500", bold: 1, outline: 4, shadow: 0 },
+  PULSE: { fontSize: 78, color: "&H0000FFFF", bold: 1, outline: 5, shadow: 0 },
+  SLIDE: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 3, shadow: 1 },
+  SPARK: { fontSize: 88, color: "&H00A0E500", bold: 1, outline: 5, shadow: 0 },
 };
 
 function assColor(hex: string): string {
@@ -173,11 +177,13 @@ export function generateAss(
 ): string {
   const sections = [assHeader(res), "", styleBlock(style, res, options), "", EVENTS_HEADER];
 
-  // KLYP shows one word at a time; other styles show small word groups.
-  const cues = buildCaptionCues(words, clipStartMs, clipEndMs, style === "KLYP" ? 1 : CUE_MAX_WORDS);
+  // KLYP and SPARK show one word at a time; other styles show small groups.
+  const cues = buildCaptionCues(words, clipStartMs, clipEndMs,
+    style === "KLYP" || style === "SPARK" ? 1 : CUE_MAX_WORDS);
   for (const cue of cues) {
-    const text = sanitizeAssText(style === "KLYP" ? cue.text.toUpperCase() : cue.text);
-    sections.push(dialogue(cue.startMs, cue.endMs, text));
+    const text = sanitizeAssText(style === "KLYP" || style === "SPARK" ? cue.text.toUpperCase() : cue.text);
+    sections.push(dialogue(cue.startMs, cue.endMs,
+      captionAssMotion(style, res.w, res.h, options?.position ?? "BOTTOM") + text));
   }
 
   return sections.join("\n");

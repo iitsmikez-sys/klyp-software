@@ -7,6 +7,8 @@
  * "Create clip" to "Download clip" and hand over the same file again without
  * re-rendering it on the server.
  */
+import { createClient } from "@/lib/supabase/client";
+
 export type ExportState =
   | { status: "working" }
   | { status: "ready"; objectUrl: string; filename: string }
@@ -19,7 +21,7 @@ export function exportFilename(title: string, suffix = ""): string {
 }
 
 /** Trigger a browser download for an already-rendered export. */
-export function downloadExport(state: ExportState): void {
+export function downloadExport(state: ExportState, clipId?: string): void {
   if (state.status !== "ready") return;
   const a = document.createElement("a");
   a.href = state.objectUrl;
@@ -27,4 +29,5 @@ export function downloadExport(state: ExportState): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
+  if (clipId) void createClient().rpc("record_clip_feedback", { p_clip_id: clipId, p_signal: "downloaded" });
 }

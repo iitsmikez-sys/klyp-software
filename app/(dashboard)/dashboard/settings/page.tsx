@@ -15,6 +15,9 @@ const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   BOLD: "Big high-impact captions — the TikTok classic",
   CLEAN: "Minimal, understated captions",
   KLYP: "Branded style with the accent green keyword pop",
+  PULSE: "Yellow captions pulse in with each phrase",
+  SLIDE: "White captions slide into view",
+  SPARK: "Green words flash in one at a time",
 };
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {

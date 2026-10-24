@@ -21,7 +21,7 @@ await page.route('**/rest/v1/rpc/get_profile',r=>r.fulfill({json:{sparks:100,tie
 await page.route('**/auth/v1/user',r=>r.fulfill({json:{id:'11111111-1111-4111-8111-111111111111',aud:'authenticated',role:'authenticated',email:'fixture@example.com'}}));
 await page.route('**/rest/v1/clips*',r=>{saved++;return r.fulfill(saveFails?{status:500,json:{message:'Test save failed'}}:{json:[{id:'22222222-2222-4222-8222-222222222222'}]})});
 await page.addInitScript(()=>{window.__watermarkDraws=0;const fill=CanvasRenderingContext2D.prototype.fillText;CanvasRenderingContext2D.prototype.fillText=function(text,...args){if(text==='klyp.world')window.__watermarkDraws++;return fill.call(this,text,...args)};const enc=x=>btoa(JSON.stringify(x));const token=enc({alg:'HS256'})+'.'+enc({sub:'11111111-1111-4111-8111-111111111111',exp:Math.floor(Date.now()/1000)+3600})+'.fixture';const session=JSON.stringify({access_token:token,refresh_token:'fixture',expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:'bearer',user:{id:'11111111-1111-4111-8111-111111111111'}});document.cookie='sb-example-auth-token=base64-'+btoa(session)+'; path=/';});
-await page.goto('http://127.0.0.1:3018/results-check-local');
+await page.goto(`${process.env.KLYP_TEST_BASE_URL ?? 'http://127.0.0.1:3018'}/results-check-local`);
 // Next's route watcher may briefly serve its cached 404 after fixture creation.
 for(let attempt=0;attempt<10 && await page.locator('input[type=url]').count()===0;attempt++) {
   await page.waitForTimeout(1000);
@@ -45,6 +45,8 @@ if(pro){assert.equal(await page.getByRole('combobox',{name:'Export format'}).inp
 else{await page.getByRole('heading',{name:'This is a Pro feature'}).waitFor();await page.getByRole('button',{name:'Maybe later'}).click();assert.equal(await page.getByRole('combobox',{name:'Export format'}).inputValue(),'9:16');}
 await page.getByRole('button',{name:'Yellow',exact:true}).click();
 await page.getByRole('button',{name:'Center',exact:true}).click();
+await page.getByRole('button',{name:'Facecam + game',exact:true}).click();
+await page.getByRole('button',{name:/pulse/i}).click();
 await page.waitForTimeout(100);
 assert.equal((await page.evaluate(()=>window.__watermarkDraws))>0,!pro);
 
@@ -54,6 +56,7 @@ await page.getByRole('button',{name:'Close preview'}).click();await page.getByRo
 exportFails=true;await page.getByRole('button',{name:'↓ Export',exact:true}).first().click();await page.getByRole('alert').getByText('Test export failed').waitFor();exportFails=false;exports=[];
 const download=page.waitForEvent('download');await page.getByRole('button',{name:'↓ Export',exact:true}).first().click();await download;
 assert.equal(exports[0].hook,'CHAT DID NOT EXPECT THIS');assert.equal(exports[0].aspect_ratio,'Original');assert.ok(exports[0].segments);assert.equal(exports[0].caption_color,'YELLOW');assert.equal(exports[0].caption_position,'CENTER');
+assert.equal(exports[0].layout.mode,'FACECAM');assert.equal(exports[0].style,'PULSE');
 await page.getByRole('button',{name:'Customize',exact:true}).first().click();
 assert.equal(await page.getByRole('combobox',{name:'Export format'}).inputValue(),'Original');
 saveFails=true;await page.getByRole('button',{name:'Keep clip to add media'}).click();await page.getByRole('dialog').getByRole('alert').getByText('Test save failed').waitFor();

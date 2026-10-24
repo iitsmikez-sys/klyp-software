@@ -11,6 +11,9 @@
 
 # next.js
 /.next/
+/.next-browser-test/
+/.next-release-check/
+/AGENTS.md
 /out/
 
 # production
@@ -39,5 +42,6 @@ next-env.d.ts
 .stripe-listen*.log
 .claude/
 /logs/
+/work/stage-two-*.png
 
 .vercel

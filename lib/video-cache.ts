@@ -320,7 +320,9 @@ export async function resolveSourceSegment(
    * default. Baked into the cache key so a low-res preview segment is never
    * handed to an export that needs real quality.
    */
-  maxHeight = 1080
+  maxHeight = 1080,
+  /** Optional tighter fetch budget for best-effort callers such as visual checks. */
+  maxRunMs = 10 * 60_000
 ): Promise<ResolvedSegment> {
   // Uploads are already local — nothing to fetch, timeline is the original.
   if (isUploadRef(ref)) return { path: await resolveSource(ref), offsetSeconds: 0 };
@@ -360,7 +362,7 @@ export async function resolveSourceSegment(
           "--force-keyframes-at-cuts",
           "-o", segPath,
           ref,
-        ], { stallTimeoutMs: 90_000, maxRunMs: 10 * 60_000 });
+        ], { stallTimeoutMs: Math.min(90_000, maxRunMs), maxRunMs });
       };
       const probe = (filePath: string) => hasVideoStream(filePath, resolveBin("ffprobe"));
       const wasCached = existsSync(segPath) && (await stat(segPath)).size > 0 && await probe(segPath);

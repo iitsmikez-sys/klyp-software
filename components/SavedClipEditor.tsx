@@ -34,6 +34,10 @@ import {
   buildEditorTimeline, firstOpeningInsertIndex, mediaAfterDelete, mediaAfterSplit, outputTimeForSource,
   parseMediaInserts, retimeWordsWithMedia, timelineItemAt, type MediaInsert,
 } from "@/lib/editor-media";
+import { findQuietPauses, removeTranscriptRange } from "@/lib/transcript-edits";
+import { chooseEditorDraft, normalizeLocalDraft, type CloudEditorDraft, type EditorDraftDocument } from "@/lib/editor-draft-sync";
+import { createClient } from "@/lib/supabase/client";
+import { DEFAULT_EDITOR_LAYOUT, EDITOR_LAYOUT_MODES, drawEditorLayoutPreview, parseEditorLayout, type EditorLayout } from "@/lib/editor-layout";
 
 type EditorMedia = MediaInsert & { name: string; url?: string };
 
@@ -82,7 +86,10 @@ export default function SavedClipEditor({
   const settingsPanelRef = useRef<HTMLDivElement>(null);
   const styleSectionRef = useRef<HTMLDivElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
+  const layoutCanvasRef = useRef<HTMLCanvasElement>(null);
   const [transcriptSearch, setTranscriptSearch] = useState("");
+  const [transcriptSelection, setTranscriptSelection] = useState<{ first: number; last: number } | null>(null);
+  const [transcriptEditError, setTranscriptEditError] = useState<string | null>(null);
   const [timelinePoster, setTimelinePoster] = useState<string | null>(() => peekClipThumbnail(clip));
   const [timelineFrames, setTimelineFrames] = useState<string[]>([]);
   const [sourcePeaks, setSourcePeaks] = useState<number[]>([]);
@@ -96,12 +103,14 @@ export default function SavedClipEditor({
   // Transcript cues for the scene analysis panel — clip-relative timestamps.
   const transcriptCues = useMemo(() => {
     if (!Array.isArray(clip.words) || clip.words.length === 0) return [];
-    const cues: { t: number; text: string }[] = [];
+    const cues: { t: number; text: string; startIndex: number; endIndex: number }[] = [];
     for (let i = 0; i < clip.words.length; i += 8) {
       const group = clip.words.slice(i, i + 8);
       cues.push({
         t: Math.max(0, group[0].start / 1000 - clip.start_seconds),
         text: group.map((w) => w.text).join(" "),
+        startIndex: i,
+        endIndex: i + group.length,
       });
     }
     return cues;
@@ -116,6 +125,7 @@ export default function SavedClipEditor({
   const [editingCaptionIndex, setEditingCaptionIndex] = useState<number | null>(null);
   const [editingHook, setEditingHook] = useState(false);
   const [format, setFormat] = useState<ExportFormat>("9:16");
+  const [layout, setLayout] = useState<EditorLayout>(DEFAULT_EDITOR_LAYOUT);
   const exportFormat = resolveExportFormat(format, isPro);
   const [sourceAspect, setSourceAspect] = useState(16 / 9);
   const previewAspect = exportFormat === "Original" ? sourceAspect
@@ -124,6 +134,14 @@ export default function SavedClipEditor({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
+  const [draftRevision, setDraftRevision] = useState(0);
+  const [draftStatus, setDraftStatus] = useState<"loading" | "saved" | "saving" | "offline" | "conflict">("loading");
+  const [draftRetry, setDraftRetry] = useState(0);
+  const draftRevisionRef = useRef(0);
+  const draftSavingRef = useRef(false);
+  const draftConflictRef = useRef(false);
+  const lastSavedDraftRef = useRef("");
+  const currentDraftRef = useRef("");
   const [currentTime, setCurrentTime] = useState(0);
   const [previewLeadSeconds, setPreviewLeadSeconds] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -168,8 +186,12 @@ export default function SavedClipEditor({
       : retimeWords(captionWords, clip.start_seconds, segments);
     return words;
   }, [captionWords, clip.start_seconds, hasWords, segments, media]);
+  const quietPauses = useMemo(() => findQuietPauses(
+    Array.isArray(clip.words) ? clip.words : [], clip.start_seconds, segments,
+    sourcePeaks, previewDuration, previewLeadSeconds,
+  ), [clip.words, clip.start_seconds, segments, sourcePeaks, previewDuration, previewLeadSeconds]);
   const liveCaptionCues = useMemo(() => buildCaptionCues(outputCaptionWords, 0, editedDuration * 1000,
-    captionStyle === "KLYP" ? 1 : 4), [outputCaptionWords, editedDuration, captionStyle]);
+    captionStyle === "KLYP" || captionStyle === "SPARK" ? 1 : 4), [outputCaptionWords, editedDuration, captionStyle]);
 
   const seekOutput = (seconds: number, autoPlay = false) => {
     const target = Math.max(0, Math.min(seconds, editedDuration));
@@ -293,6 +315,25 @@ export default function SavedClipEditor({
     const next = deleteSegment(segments, selectedSegment);
     applySegments(next, Math.min(selectedSegment, next.length - 1), false,
       next === segments ? media : mediaAfterDelete(media, selectedSegment));
+  };
+
+  const cutSourceRange = (start: number, end: number) => {
+    const cut = removeTranscriptRange(segments, media, start, end);
+    if (!cut) {
+      setTranscriptEditError("Keep at least a short part of this clip after the cut.");
+      return;
+    }
+    const index = cut.segments.findIndex((section) => section.start >= end);
+    applySegments(cut.segments, index < 0 ? cut.segments.length - 1 : index, false, cut.media);
+    setTranscriptSelection(null);
+    setTranscriptEditError(null);
+  };
+
+  const selectTranscriptWord = (index: number) => {
+    setTranscriptEditError(null);
+    setTranscriptSelection((current) => !current || current.first !== current.last
+      ? { first: index, last: index }
+      : { first: Math.min(current.first, index), last: Math.max(current.first, index) });
   };
 
   const applyMedia = (next: EditorMedia[]) => {
@@ -456,74 +497,160 @@ export default function SavedClipEditor({
     }
   };
 
-  // Keep the user's hook and export choices when they close and reopen the editor.
-  useEffect(() => {
-    try {
-      let raw: string | null = null;
-      try { raw = localStorage.getItem(`klyp-editor-${draftId}`); } catch { /* Use the in-memory draft below. */ }
-      if (!raw && initialSettings) raw = JSON.stringify({
-        hook: initialSettings.hook ?? null, hookStyle: initialSettings.hook_style,
-        captionStyle: initialSettings.style, captionColor: initialSettings.caption_color, captionPosition: initialSettings.caption_position,
-        captionEdits: initialSettings.caption_edits?.map(({ text }) => text), format: initialSettings.aspect_ratio,
-        segments: initialSettings.segments, media: initialSettings.media,
+  const applyDraftDocument = (saved: EditorDraftDocument) => {
+    if (typeof saved.hook === "string" || saved.hook === null) setSelectedHook(saved.hook);
+    if (typeof saved.hookStyle === "string" && HOOK_STYLES.includes(saved.hookStyle as HookStyle)) setHookStyle(saved.hookStyle as HookStyle);
+    if (typeof saved.captionStyle === "string" && CAPTION_STYLES.includes(saved.captionStyle as CaptionStyle)) setCaptionStyle(saved.captionStyle as CaptionStyle);
+    if (typeof saved.captionColor === "string" && CAPTION_COLORS.includes(saved.captionColor as CaptionColor)) setCaptionColor(saved.captionColor as CaptionColor);
+    if (typeof saved.captionPosition === "string" && CAPTION_POSITIONS.includes(saved.captionPosition as CaptionPosition)) setCaptionPosition(saved.captionPosition as CaptionPosition);
+    if (Array.isArray(saved.captionEdits) && saved.captionEdits.length === clip.words?.length &&
+      saved.captionEdits.every((text) => typeof text === "string" && text.length <= 80)) {
+      const edits = saved.captionEdits as string[];
+      setCaptionWords(clip.words!.map((word, index) => ({ ...word, text: edits[index] })));
+    }
+    if (typeof saved.format === "string" && EXPORT_FORMATS.includes(saved.format as ExportFormat)) setFormat(saved.format as ExportFormat);
+    if (saved.layout) {
+      try { setLayout(parseEditorLayout(saved.layout)); } catch { /* Keep the default framing. */ }
+    }
+    const loadedSegments = saved.segments ? parseSegments(saved.segments, sourceDuration)
+      : [{ start: 0, end: sourceDuration }];
+    setSegments(loadedSegments);
+    if (saved.media) {
+      const parsed = parseMediaInserts(saved.media, loadedSegments);
+      const named = parsed.map((entry, index) => ({ ...entry,
+        name: typeof (saved.media as EditorMedia[])[index]?.name === "string"
+          ? (saved.media as EditorMedia[])[index].name.slice(0, 100) : `Imported ${entry.kind}` }));
+      setMedia(named);
+      const firstImported = firstOpeningInsertIndex(named);
+      setActiveMediaIndex(firstImported >= 0 ? firstImported : null);
+      setSelectedMediaIndex(firstImported >= 0 ? firstImported : null);
+      named.forEach(async (entry) => {
+        try {
+          const response = await processingFetch(`/api/editor-media?clip_id=${encodeURIComponent(clip.id)}&id=${entry.id}&kind=${entry.kind}`);
+          if (!response.ok) return;
+          const data = await response.json();
+          setMedia((current) => current.map((item) => item.id === entry.id ? { ...item, url: data.url } : item));
+        } catch { /* Keep the missing item visible so it can be removed. */ }
       });
-      if (raw) {
-        const saved = JSON.parse(raw) as {
-          hook?: string | null; hookStyle?: HookStyle;
-          captionStyle?: CaptionStyle; captionColor?: CaptionColor;
-          captionPosition?: CaptionPosition; captionEdits?: unknown;
-          format?: ExportFormat;
-          segments?: unknown; media?: unknown;
-        };
-        if (typeof saved.hook === "string" || saved.hook === null) setSelectedHook(saved.hook);
-        if (saved.hookStyle && HOOK_STYLES.includes(saved.hookStyle)) setHookStyle(saved.hookStyle);
-        if (saved.captionStyle && CAPTION_STYLES.includes(saved.captionStyle)) setCaptionStyle(saved.captionStyle);
-        if (saved.captionColor && CAPTION_COLORS.includes(saved.captionColor)) setCaptionColor(saved.captionColor);
-        if (saved.captionPosition && CAPTION_POSITIONS.includes(saved.captionPosition)) setCaptionPosition(saved.captionPosition);
-        const savedEdits = saved.captionEdits;
-        if (Array.isArray(savedEdits) && savedEdits.length === clip.words?.length &&
-            savedEdits.every((text) => typeof text === "string" && text.length <= 80)) {
-          setCaptionWords(clip.words!.map((word, index) => ({ ...word, text: savedEdits[index] as string })));
-        }
-        if (saved.format && EXPORT_FORMATS.includes(saved.format)) setFormat(saved.format);
-        const loadedSegments = saved.segments ? parseSegments(saved.segments, sourceDuration)
-          : [{ start: 0, end: sourceDuration }];
-        if (saved.segments) setSegments(loadedSegments);
-        if (saved.media) {
-          const parsed = parseMediaInserts(saved.media, loadedSegments);
-          const named = parsed.map((entry, index) => ({ ...entry,
-            name: typeof (saved.media as EditorMedia[])[index]?.name === "string"
-              ? (saved.media as EditorMedia[])[index].name.slice(0, 100) : `Imported ${entry.kind}` }));
-          setMedia(named);
-          const firstImported = firstOpeningInsertIndex(named);
-          if (firstImported >= 0) {
-            setActiveMediaIndex(firstImported);
-            setSelectedMediaIndex(firstImported);
-          }
-          named.forEach(async (entry) => {
-            try {
-              const response = await processingFetch(`/api/editor-media?clip_id=${encodeURIComponent(clip.id)}&id=${entry.id}&kind=${entry.kind}`);
-              if (!response.ok) return;
-              const data = await response.json();
-              setMedia((current) => current.map((item) => item.id === entry.id ? { ...item, url: data.url } : item));
-            } catch { /* The missing item remains visible so the user can remove it. */ }
-          });
-        }
-      }
-    } catch { /* A malformed old draft should not prevent editing. */ }
-    setDraftReady(true);
-  }, [clip.id]);
+    } else setMedia([]);
+  };
+
+  // Load the cloud revision before applying the local cache, so another device's
+  // work cannot be replaced by a stale browser tab on first render.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      let local = null;
+      try { local = normalizeLocalDraft(JSON.parse(localStorage.getItem(`klyp-editor-${draftId}`) ?? "null")); }
+      catch { /* Ignore a malformed browser cache. */ }
+      if (!local && initialSettings) local = normalizeLocalDraft({
+        version: 1, hook: initialSettings.hook ?? null, hookStyle: initialSettings.hook_style,
+        captionStyle: initialSettings.style, captionColor: initialSettings.caption_color,
+        captionPosition: initialSettings.caption_position,
+        captionEdits: initialSettings.caption_edits?.map(({ text }) => text),
+        format: initialSettings.aspect_ratio, segments: initialSettings.segments,
+        media: initialSettings.media, layout: initialSettings.layout,
+      });
+      let cloud: CloudEditorDraft | null = null;
+      let cloudFailed = false;
+      try { if (clip.id) {
+        const { data, error } = await createClient().from("clip_editor_drafts")
+          .select("draft,revision").eq("clip_id", clip.id).maybeSingle();
+        if (error) throw error;
+        if (data) cloud = { revision: data.revision, draft: data.draft as EditorDraftDocument };
+      } } catch { cloudFailed = true; }
+      if (!live) return;
+      const choice = chooseEditorDraft(local, cloud);
+      try { if (choice.draft) applyDraftDocument(choice.draft); }
+      catch { /* A corrupted draft falls back to the original clip. */ }
+      draftRevisionRef.current = choice.revision;
+      setDraftRevision(choice.revision);
+      lastSavedDraftRef.current = choice.source === "cloud" && choice.draft
+        ? JSON.stringify(choice.draft) : "";
+      draftConflictRef.current = choice.source === "conflict";
+      setDraftStatus(!clip.id ? "offline" : choice.source === "conflict" ? "conflict" : cloudFailed ? "offline"
+        : choice.source === "cloud" ? "saved" : "saving");
+      setDraftReady(true);
+    })();
+    return () => { live = false; };
+  }, [clip.id, draftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!draftReady) return;
+    const document: EditorDraftDocument = {
+      version: 1, hook: selectedHook, hookStyle, captionStyle, captionColor, captionPosition,
+      captionEdits: captionWords.map((word) => word.text), format, layout, segments,
+      media: media.map(({ id, kind, after, duration, placement, at, name }) => ({ id, kind, after, duration, placement, at, name })),
+    };
+    const serialized = JSON.stringify(document);
+    currentDraftRef.current = serialized;
+    if (serialized === lastSavedDraftRef.current && !draftConflictRef.current) return;
+    try { localStorage.setItem(`klyp-editor-${draftId}`, JSON.stringify({
+      ...document, cloudRevision: draftRevisionRef.current, dirty: true, savedAt: Date.now(),
+    })); } catch { /* Local storage is optional. */ }
+    if (!clip.id) { setDraftStatus("offline"); return; }
+    if (draftConflictRef.current) return;
+    const timer = setTimeout(async () => {
+      if (draftSavingRef.current) return;
+      draftSavingRef.current = true;
+      setDraftStatus("saving");
+      try {
+        const { data, error } = await createClient().rpc("save_clip_editor_draft", {
+          p_clip_id: clip.id, p_base_revision: draftRevisionRef.current, p_draft: document,
+        });
+        if (error) throw error;
+        const revision = Number(data);
+        if (!Number.isInteger(revision) || revision <= 0) throw new Error("Draft save returned an invalid revision.");
+        draftRevisionRef.current = revision;
+        lastSavedDraftRef.current = serialized;
+        setDraftRevision(revision);
+        if (currentDraftRef.current === serialized) {
+          try { localStorage.setItem(`klyp-editor-${draftId}`, JSON.stringify({
+            ...document, cloudRevision: revision, dirty: false, savedAt: Date.now(),
+          })); } catch { /* Cloud copy is saved. */ }
+          setDraftStatus("saved");
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("draft conflict")) {
+          draftConflictRef.current = true;
+          setDraftStatus("conflict");
+        } else setDraftStatus("offline");
+      } finally { draftSavingRef.current = false; }
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [clip.id, draftId, draftReady, draftRevision, draftRetry, selectedHook, hookStyle, captionStyle, captionColor, captionPosition, captionWords, format, layout, segments, media]);
+
+  const resolveDraftConflict = async (useCloud: boolean) => {
     try {
-      localStorage.setItem(`klyp-editor-${draftId}`, JSON.stringify({
-        hook: selectedHook, hookStyle, captionStyle, captionColor, captionPosition,
-        captionEdits: captionWords.map((word) => word.text), format, segments,
-        media: media.map(({ id, kind, after, duration, placement, at, name }) => ({ id, kind, after, duration, placement, at, name })),
-      }));
-    } catch { /* Storage can be unavailable; editing and export still work. */ }
-  }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, captionColor, captionPosition, captionWords, format, segments, media]);
+      const { data, error } = await createClient().from("clip_editor_drafts")
+        .select("draft,revision").eq("clip_id", clip.id).maybeSingle();
+      if (error) throw error;
+      const revision = data?.revision ?? 0;
+      if (useCloud && data) {
+        applyDraftDocument(data.draft as EditorDraftDocument);
+        lastSavedDraftRef.current = JSON.stringify(data.draft);
+        try { localStorage.setItem(`klyp-editor-${draftId}`, JSON.stringify({
+          ...data.draft, cloudRevision: revision, dirty: false, savedAt: Date.now(),
+        })); } catch { /* Cloud copy remains available. */ }
+      } else lastSavedDraftRef.current = "";
+      draftRevisionRef.current = revision;
+      draftConflictRef.current = false;
+      setDraftRevision(revision);
+      setDraftStatus(useCloud ? "saved" : "saving");
+      setDraftRetry((count) => count + 1);
+    } catch { setDraftStatus("offline"); }
+  };
+
+  const updateFaceRegion = (field: "x" | "y" | "w" | "h", value: number) => {
+    setLayout((current) => {
+      const face = { ...current.face, [field]: Math.round(value * 100) / 100 };
+      face.w = Math.max(0.1, Math.min(face.w, 1 - face.x));
+      face.h = Math.max(0.1, Math.min(face.h, 1 - face.y));
+      face.x = Math.max(0, Math.min(face.x, 1 - face.w));
+      face.y = Math.max(0, Math.min(face.y, 1 - face.h));
+      return { ...current, face };
+    });
+  };
 
   useEffect(() => {
     if (!draftReady) return;
@@ -531,9 +658,9 @@ export default function SavedClipEditor({
       hook: selectedHook ?? undefined, hook_style: hookStyle, aspect_ratio: exportFormat,
       caption_color: captionColor, caption_position: captionPosition,
       caption_edits: hasWords ? captionWords.map(({ text }) => ({ text })) : undefined,
-      segments, media: media.map(({ id, kind, after, duration, placement, at }) => ({ id, kind, after, duration, placement, at })),
+      segments, media: media.map(({ id, kind, after, duration, placement, at }) => ({ id, kind, after, duration, placement, at })), layout,
     });
-  }, [draftReady, onSettingsChange, hasWords, captionStyle, selectedHook, hookStyle, exportFormat, captionColor, captionPosition, captionWords, segments, media]);
+  }, [draftReady, onSettingsChange, hasWords, captionStyle, selectedHook, hookStyle, exportFormat, captionColor, captionPosition, captionWords, segments, media, layout]);
 
 
   useEffect(() => {
@@ -563,6 +690,29 @@ export default function SavedClipEditor({
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [activeMediaIndex, playing, timelineItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Draw the source with the exact manual layout selected for FFmpeg export.
+  // The native video stays active for playback and seeking underneath.
+  useEffect(() => {
+    if (!previewUrl) return;
+    let frameId = 0;
+    const draw = () => {
+      const video = videoRef.current;
+      const canvas = layoutCanvasRef.current;
+      const frame = previewFrameRef.current;
+      if (video && canvas && frame && video.readyState >= 2) {
+        const width = Math.max(1, Math.round(frame.clientWidth));
+        const height = Math.max(1, Math.round(frame.clientHeight));
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) drawEditorLayoutPreview(ctx, video, width, height, layout);
+      }
+      frameId = requestAnimationFrame(draw);
+    };
+    frameId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frameId);
+  }, [previewUrl, layout, exportFormat]);
 
   // Live hook overlay on the preview — mirrors the export burn and reacts
   // instantly to hook/style changes (the loop redraws every frame, playing or not).
@@ -731,6 +881,7 @@ export default function SavedClipEditor({
           hook_style: hookStyle,
           handle: getStoredHandle(),
           aspect_ratio: exportFormat,
+          layout,
         }),
       });
       if (!res.ok) {
@@ -747,6 +898,7 @@ export default function SavedClipEditor({
       a.click();
       a.remove();
       URL.revokeObjectURL(objectUrl);
+      void createClient().rpc("record_clip_feedback", { p_clip_id: clip.id, p_signal: "downloaded" });
     } catch (err) {
       failure = controller.signal.aborted
         ? "Export timed out after 10 minutes. Try again in a bit."
@@ -768,7 +920,11 @@ export default function SavedClipEditor({
           <span className="hidden sm:block h-7 w-px bg-[#2b3941]" />
           <span className="min-w-0 truncate text-base font-semibold text-foreground" title={clip.title}>{clip.title}</span>
           <span className="hidden md:block h-7 w-px bg-[#2b3941]" />
-          <span className="hidden md:block shrink-0 text-xs text-foreground-muted"><span className="text-accent">☁</span> &nbsp;Saved on this device</span>
+          <span className={`hidden md:block shrink-0 text-xs ${draftStatus === "saved" ? "text-accent" : draftStatus === "conflict" ? "text-amber-400" : "text-foreground-muted"}`}>
+            {draftStatus === "saved" ? "☁ Saved across devices" : draftStatus === "saving" ? "Saving draft…"
+              : draftStatus === "loading" ? "Loading draft…" : draftStatus === "conflict" ? "Draft conflict" : "Saved on this device"}
+          </span>
+          {draftStatus === "offline" && <button type="button" className="text-xs text-accent hover:underline" onClick={() => setDraftRetry((count) => count + 1)}>Retry sync</button>}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <button type="button" onClick={undoEdit} disabled={undoStack.length === 0 || exporting}
               title="Undo" aria-label="Undo" className="hidden sm:inline rounded px-2 text-xl text-foreground-muted hover:text-white disabled:opacity-40">↶</button>
@@ -782,6 +938,12 @@ export default function SavedClipEditor({
           </div>
         </div>
       )}
+      {draftStatus === "conflict" && <div role="alert" className="flex flex-wrap items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-xs text-amber-200">
+        <span className="flex-1">This clip was also edited on another device. Choose which draft to keep.</span>
+        <button type="button" onClick={() => void resolveDraftConflict(true)} className="rounded border border-amber-500/50 px-2 py-1 font-semibold hover:bg-amber-500/10">Load cloud draft</button>
+        <button type="button" onClick={() => void resolveDraftConflict(false)} className="rounded bg-amber-400 px-2 py-1 font-semibold text-black">Keep this draft</button>
+      </div>}
+      {!workspace && draftStatus === "offline" && <button type="button" className="mb-2 text-xs text-amber-300 hover:underline" onClick={() => setDraftRetry((count) => count + 1)}>Draft saved on this device. Retry cloud sync</button>}
       <div className={workspace
         ? workspaceStyles.grid
         : "grid grid-cols-1 lg:grid-cols-2 gap-6 items-start"}>
@@ -851,21 +1013,46 @@ export default function SavedClipEditor({
         )}
 
         {(!workspace || leftTab === "transcript") && (transcriptCues.length > 0 ? (
-          <div className={workspace ? "min-h-0 flex-1 overflow-y-auto scrollbar-thin" : "max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border"}>
-            {transcriptCues.filter((cue) => cue.text.toLowerCase().includes(transcriptSearch.toLowerCase())).map((cue) => (
-              <button
-                key={cue.t}
-                type="button"
-                onClick={() => seekTo(cue.t)}
-                disabled={segmentIndexAtSource(segments, cue.t) < 0}
-                className={`w-full flex items-start gap-3 px-3.5 py-2 text-left hover:bg-surface-2 focus:outline-none focus:bg-surface-2 disabled:opacity-35 disabled:line-through disabled:cursor-not-allowed ${workspace && cue.t <= currentTime && (transcriptCues.find((next) => next.t > cue.t)?.t ?? Infinity) > currentTime ? "rounded-md bg-accent/10 text-accent" : ""}`}
-              >
-                <span className="flex-shrink-0 text-[10px] font-mono text-accent mt-0.5">
-                  {fmtClipTime(cue.t)}
+          <div className="min-h-0 flex flex-col gap-2">
+            <p className="text-[11px] text-foreground-muted">Click the first and last words to select a passage, then cut it from the video.</p>
+            {transcriptSelection && (
+              <div className="flex items-center gap-2 rounded-md border border-accent/30 bg-accent/10 p-2">
+                <span className="flex-1 text-[11px] text-accent">{transcriptSelection.last - transcriptSelection.first + 1} word{transcriptSelection.last === transcriptSelection.first ? "" : "s"} selected</span>
+                <button type="button" className="text-[11px] text-foreground-muted hover:text-white" onClick={() => setTranscriptSelection(null)}>Clear</button>
+                <button type="button" className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-black" onClick={() => {
+                  const first = clip.words![transcriptSelection.first];
+                  const last = clip.words![transcriptSelection.last];
+                  cutSourceRange(first.start / 1000 - clip.start_seconds, last.end / 1000 - clip.start_seconds);
+                }}>Cut selection</button>
+              </div>
+            )}
+            {transcriptEditError && <p role="alert" className="text-[11px] text-red-400">{transcriptEditError}</p>}
+            {quietPauses.length > 0 && <div className="rounded-md border border-border bg-surface-2/50 p-2">
+              <p className="mb-1 text-[11px] font-semibold text-foreground">Quiet pauses</p>
+              <p className="mb-2 text-[10px] text-foreground-muted">Suggested from transcript gaps and low audio volume. Preview before cutting.</p>
+              <div className="flex flex-wrap gap-1.5">{quietPauses.map((pause) => (
+                <span key={`${pause.start}-${pause.end}`} className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-1 text-[10px]">
+                  <button type="button" onClick={() => seekTo(pause.start)} className="text-foreground-muted hover:text-white">{fmtClipTime(pause.start)}–{fmtClipTime(pause.end)}</button>
+                  <button type="button" onClick={() => cutSourceRange(pause.start, pause.end)} className="font-semibold text-accent hover:underline">Cut</button>
                 </span>
-                <p className="text-xs text-foreground-muted leading-relaxed">{cue.text}</p>
-              </button>
-            ))}
+              ))}</div>
+            </div>}
+            <div className={workspace ? "min-h-0 flex-1 overflow-y-auto scrollbar-thin" : "max-h-96 overflow-y-auto scrollbar-thin rounded-lg border border-border bg-surface-2/50 divide-y divide-border"}>
+              {transcriptCues.filter((cue) => cue.text.toLowerCase().includes(transcriptSearch.toLowerCase())).map((cue) => (
+                <div key={cue.startIndex} className={`flex items-start gap-3 px-3.5 py-2 hover:bg-surface-2 ${workspace && cue.t <= currentTime && (transcriptCues.find((next) => next.t > cue.t)?.t ?? Infinity) > currentTime ? "rounded-md bg-accent/10" : ""}`}>
+                  <button type="button" onClick={() => seekTo(cue.t)} className="flex-shrink-0 text-[10px] font-mono text-accent mt-0.5 hover:underline" aria-label={`Play from ${fmtClipTime(cue.t)}`}>{fmtClipTime(cue.t)}</button>
+                  <p className="text-xs text-foreground-muted leading-relaxed">{clip.words!.slice(cue.startIndex, cue.endIndex).map((word, localIndex) => {
+                    const index = cue.startIndex + localIndex;
+                    const selected = transcriptSelection && index >= transcriptSelection.first && index <= transcriptSelection.last;
+                    const kept = segmentIndexAtSource(segments, word.start / 1000 - clip.start_seconds) >= 0;
+                    return <button type="button" key={index} disabled={!kept} onClick={() => selectTranscriptWord(index)}
+                      className={`mr-1 rounded px-0.5 text-left hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent ${selected ? "bg-accent text-black hover:text-black" : ""} ${kept ? "" : "opacity-35 line-through"}`}>
+                      {word.text}
+                    </button>;
+                  })}</p>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <p className="text-[10px] text-subtle">
@@ -942,7 +1129,7 @@ export default function SavedClipEditor({
             <video
               ref={videoRef}
               src={previewUrl}
-              className="w-full h-full object-cover cursor-pointer"
+              className="w-full h-full object-contain opacity-0 cursor-pointer"
               playsInline
               onClick={togglePlayback}
               muted={muted}
@@ -956,14 +1143,15 @@ export default function SavedClipEditor({
                 if (timelineItems[0]?.kind !== "source") seekOutput(0);
               }}
             />
+            <canvas ref={layoutCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true" />
             {activeMedia && (
               activeMedia.url ? activeMedia.kind === "image" ? (
                 <img src={activeMedia.url} alt={activeMedia.name}
-                  className="absolute inset-0 h-full w-full object-contain bg-black cursor-pointer"
+                  className="absolute inset-0 h-full w-full object-cover bg-black cursor-pointer"
                   onClick={togglePlayback} />
               ) : (
                 <video key={activeMedia.id} ref={mediaVideoRef} src={activeMedia.url}
-                  className="absolute inset-0 h-full w-full object-contain bg-black cursor-pointer"
+                  className="absolute inset-0 h-full w-full object-cover bg-black cursor-pointer"
                   playsInline muted={muted} onClick={togglePlayback}
                   onLoadedMetadata={(event) => { event.currentTarget.currentTime = mediaTime; }}
                   onTimeUpdate={(event) => {
@@ -1072,7 +1260,38 @@ export default function SavedClipEditor({
             aria-current={settingsTab === "style" ? "page" : undefined}
             className={`w-1/2 border-b-[3px] py-3 text-sm font-semibold ${settingsTab === "style" ? "border-accent text-accent" : "border-transparent text-foreground-muted hover:text-white"}`}>Style</button>
         </> : <h3 className="text-sm font-semibold text-foreground">Clip settings</h3>}
-        {!workspace && <span className="text-[10px] text-subtle">Saved on this device</span>}
+        {!workspace && <span className="text-[10px] text-subtle">{draftStatus === "saved" ? "Saved across devices" : "Saved on this device"}</span>}
+      </div>
+
+      <div className="rounded-lg border border-border bg-surface-2/50 p-3 space-y-3">
+        <p className="text-sm font-semibold text-foreground">Video layout</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {EDITOR_LAYOUT_MODES.map((mode) => <button key={mode} type="button" disabled={exporting}
+            onClick={() => setLayout((current) => ({ ...current, mode }))}
+            className={`rounded border px-2 py-2 text-[11px] font-semibold ${layout.mode === mode ? "border-accent bg-accent/10 text-accent" : "border-border text-foreground-muted hover:border-accent/40"}`}>
+            {mode === "FILL" ? "Fill" : mode === "FIT" ? "Full frame" : "Facecam + game"}
+          </button>)}
+        </div>
+        <p className="text-[10px] text-foreground-muted">{layout.mode === "FIT" ? "Show the whole source with black bars where needed."
+          : layout.mode === "FACECAM" ? "Place a selected facecam region above the gameplay."
+            : "Fill the output frame; move the crop to keep the action visible."}</p>
+        {layout.mode !== "FIT" && <div className="grid grid-cols-2 gap-3">
+          {(["x", "y"] as const).map((axis) => <label key={axis} className="block text-[11px] text-foreground-muted">
+            {axis === "x" ? "Source left / right" : "Source up / down"}
+            <input type="range" min="0" max="100" step="1" value={Math.round(layout[axis] * 100)} disabled={exporting}
+              onChange={(event) => setLayout((current) => ({ ...current, [axis]: Number(event.target.value) / 100 }))}
+              className="mt-1 block w-full accent-emerald-400" />
+          </label>)}
+        </div>}
+        {layout.mode === "FACECAM" && <div className="grid grid-cols-2 gap-3 border-t border-border pt-2">
+          {(["x", "y", "w", "h"] as const).map((field) => <label key={field} className="block text-[11px] text-foreground-muted">
+            {({ x: "Facecam left / right", y: "Facecam up / down", w: "Facecam width", h: "Facecam height" })[field]}
+            <input type="range" min={field === "w" || field === "h" ? "10" : "0"} max="100" step="1"
+              value={Math.round(layout.face[field] * 100)} disabled={exporting}
+              onChange={(event) => updateFaceRegion(field, Number(event.target.value) / 100)}
+              className="mt-1 block w-full accent-emerald-400" />
+          </label>)}
+        </div>}
       </div>
 
       {!clip.id && onKeepClip && <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm">
@@ -1166,7 +1385,7 @@ export default function SavedClipEditor({
       {/* Caption style */}
       <div ref={selectedHook ? undefined : styleSectionRef}>
         <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>
-          Caption Style
+          Caption templates
         </p>
         {hasWords ? (
           <div className={workspace ? "grid grid-cols-3 gap-2" : "flex gap-2"}>

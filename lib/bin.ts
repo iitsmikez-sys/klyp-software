@@ -122,7 +122,7 @@ function isDiskSpaceError(text: string): boolean {
  */
 export function ffmpegLocationArgs(): string[] {
   const resolved = resolveBin("ffmpeg");
-  return path.isAbsolute(resolved) && existsSync(resolved) ? ["--ffmpeg-location", resolved] : [];
+  return path.isAbsolute(resolved) && existsSync(/* turbopackIgnore: true */ resolved) ? ["--ffmpeg-location", resolved] : [];
 }
 
 /** True if a thrown error is a disk-full failure — lets callers free space and retry. */

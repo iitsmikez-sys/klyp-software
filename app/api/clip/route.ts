@@ -39,7 +39,9 @@ import { archivedClipTiming } from "@/lib/clip-trim";
 import { buildSegmentFilter, parseSegments, retimeWords, timelineDuration, type EditSegment } from "@/lib/edit-segments";
 import { editorMediaPath, parseMediaInserts, retimeWordsWithMedia, buildEditorTimeline, type MediaInsert } from "@/lib/editor-media";
 import { buildEditorMediaFilter } from "@/lib/editor-media-render";
+import { DEFAULT_EDITOR_LAYOUT, parseEditorLayout, type EditorLayout } from "@/lib/editor-layout";
 import { parseCaptionOptions, parseEditedWords } from "@/lib/editor-captions";
+import { canProcessClip, acquireUserProcessingSlot } from "@/lib/clip-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -110,6 +112,7 @@ async function cutClip(
   isPro: boolean,
   format: ExportFormat,
   outputSize: { w: number; h: number },
+  layout: EditorLayout,
   assPath?: string,
   hookAssPath?: string,
   handle?: string,
@@ -119,8 +122,11 @@ async function cutClip(
   const first = segments[0];
   const multiSection = segments.length > 1;
   const hasMedia = mediaFiles.length > 0;
-  const inputStart = multiSection || hasMedia ? startSeconds : startSeconds + first.start;
-  const inputDuration = multiSection || hasMedia ? endSeconds - startSeconds : first.end - first.start;
+  const customLayout = layout.mode !== DEFAULT_EDITOR_LAYOUT.mode ||
+    layout.x !== DEFAULT_EDITOR_LAYOUT.x || layout.y !== DEFAULT_EDITOR_LAYOUT.y;
+  const needsGraph = hasMedia || customLayout;
+  const inputStart = multiSection || needsGraph ? startSeconds : startSeconds + first.start;
+  const inputDuration = multiSection || needsGraph ? endSeconds - startSeconds : first.end - first.start;
   const outPath = path.join(
     CACHE_DIR,
     `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`
@@ -156,13 +162,13 @@ async function cutClip(
     vf += `,${watermarkFilter()}`;
   }
 
-  const audio = multiSection || hasMedia ? await hasAudioStream(sourcePath) : true;
-  const segmentFilter = multiSection && !hasMedia ? buildSegmentFilter(segments, raw ? undefined : vf, audio) : null;
+  const audio = multiSection || needsGraph ? await hasAudioStream(sourcePath) : true;
+  const segmentFilter = multiSection && !needsGraph ? buildSegmentFilter(segments, raw ? undefined : vf, audio) : null;
   const mediaAudio = hasMedia ? await Promise.all(mediaFiles.map(({ entry, path }) =>
     entry.kind === "video" ? hasAudioStream(path) : Promise.resolve(false))) : [];
-  const mediaFilter = hasMedia ? buildEditorMediaFilter(segments, mediaFiles.map(({ entry }) => entry),
+  const mediaFilter = needsGraph ? buildEditorMediaFilter(segments, mediaFiles.map(({ entry }) => entry),
     audio, mediaAudio, outputSize.w - outputSize.w % 2, outputSize.h - outputSize.h % 2,
-    raw ? undefined : vf) : null;
+    raw ? undefined : vf, raw ? undefined : layout) : null;
   await run(resolveBin("ffmpeg"), [
     "-ss", String(inputStart),
     "-t", String(inputDuration),
@@ -224,6 +230,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let upscale = false;
   let requestedSegments: unknown;
   let requestedMedia: unknown;
+  let layout = DEFAULT_EDITOR_LAYOUT;
   try {
     const body = await req.json();
     clipId = String(body.clip_id ?? "");
@@ -234,6 +241,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     end = Number(body.end_seconds);
     requestedSegments = body.segments;
     requestedMedia = body.media ?? [];
+    layout = parseEditorLayout(body.layout);
     title = String(body.title ?? "klyp clip");
 
     if ((EXPORT_FORMATS as readonly string[]).includes(body.aspect_ratio)) {
@@ -308,6 +316,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!profile) {
     return NextResponse.json({ error: "You must be signed in to export clips." }, { status: 401 });
   }
+  try {
+    if (!await canProcessClip(profile.id, clipId, url, start, end)) {
+      return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
+    }
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Clip access check failed." }, { status: 500 });
+  }
   // "Pro" requires a real, confirmed subscription — see SparksProvider.tsx for
   // why the raw tier flag alone isn't trusted (it can drift from reality).
   const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
@@ -333,6 +348,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // Raw export (clean cut, nothing burned in) is Pro-only — enforced here, not
   // in the UI, so free users can't get a watermark-free clip by crafting a request.
   if (raw) {
+    if (layout.mode !== DEFAULT_EDITOR_LAYOUT.mode || layout.x !== DEFAULT_EDITOR_LAYOUT.x ||
+        layout.y !== DEFAULT_EDITOR_LAYOUT.y) {
+      return NextResponse.json({ error: "Raw export cannot include a custom layout." }, { status: 400 });
+    }
     if (media.length > 0) {
       return NextResponse.json({ error: "Raw export cannot include imported media." }, { status: 400 });
     }
@@ -348,6 +367,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     handle = undefined;
   }
 
+  const releaseSlot = acquireUserProcessingSlot(profile.id);
+  if (!releaseSlot) return NextResponse.json({ error: "Too many clip requests are processing. Try again shortly." }, { status: 429 });
   log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
   let clipPath: string | null = null;
   let assDir: string | null = null;
@@ -419,7 +440,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           const objectPath = editorMediaPath(profile.id, clipId, entry.id, entry.kind);
           const bytes = await readArchivedObject(objectPath);
           if (!bytes) throw new Error("An imported image or video is no longer available.");
-          const localPath = path.join(mediaDir, `${entry.id}.${entry.kind === "image" ? "jpg" : "mp4"}`);
+          const localPath = path.join(/* turbopackIgnore: true */ mediaDir, `${entry.id}.${entry.kind === "image" ? "jpg" : "mp4"}`);
           await writeFile(localPath, bytes);
           if (entry.kind === "video") {
             const probe = await runCapture(resolveBin("ffprobe"), ["-v", "error", "-show_entries", "format=duration",
@@ -459,6 +480,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         isPro,
         format,
         res,
+        layout,
         assPath,
         hookAssPath,
         handle,
@@ -474,7 +496,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       await consumeSparksFromToken(token!, UPSCALE_COST);
     }
 
-    const fileBuffer = await readFile(clipPath);
+    const fileBuffer = await readFile(/* turbopackIgnore: true */ clipPath);
     log("done, total", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `${(fileBuffer.byteLength / 1e6).toFixed(1)}MB`);
     return new NextResponse(fileBuffer, {
       headers: {
@@ -488,6 +510,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     log("FAILED:", message);
     return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
   } finally {
+    releaseSlot();
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
     if (mediaDir) rm(mediaDir, { recursive: true, force: true }).catch(() => {});
     if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});

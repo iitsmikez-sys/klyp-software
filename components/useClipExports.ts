@@ -65,7 +65,7 @@ export function useClipExports(onSparksSpent?: () => void) {
         };
         setExports((prev) => ({ ...prev, [clip.id]: state }));
         // The click that asked for it is still the user's intent to save.
-        downloadExport(state);
+        downloadExport(state, clip.id);
         if (upscale) onSparksSpent?.();
         return null;
       } catch (err) {
@@ -84,7 +84,7 @@ export function useClipExports(onSparksSpent?: () => void) {
     (clip: SavedClip) => {
       const done = exportsRef.current[clip.id];
       if (done?.status === "ready") {
-        downloadExport(done);
+        downloadExport(done, clip.id);
         return Promise.resolve(null);
       }
       return createClip(clip);

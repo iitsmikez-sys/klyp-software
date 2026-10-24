@@ -140,10 +140,16 @@ export function parseTwitchDuration(duration: string): number {
 
 /** Most recent published VOD ("archive") for a broadcaster, or null if none. */
 export async function getLatestVod(broadcasterId: string): Promise<TwitchVideo | null> {
-  const res = await helix(`/videos?user_id=${broadcasterId}&type=archive&first=1`);
+  return (await getRecentVods(broadcasterId, 1))[0] ?? null;
+}
+
+/** Recent archives, newest first. A single latest-VOD check can miss streams
+ * when more than one VOD publishes before the safety sweep. */
+export async function getRecentVods(broadcasterId: string, count = 20): Promise<TwitchVideo[]> {
+  const res = await helix(`/videos?user_id=${encodeURIComponent(broadcasterId)}&type=archive&first=${Math.max(1, Math.min(count, 100))}`);
   if (!res.ok) throw new Error(`Twitch Get Videos failed: HTTP ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { data: TwitchVideo[] };
-  return data.data[0] ?? null;
+  return data.data;
 }
 
 /**

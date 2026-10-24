@@ -210,7 +210,7 @@ export default function SavedClips() {
           onCreateClip={() => { createClip(previewClip).then(flash); }}
           onDownloadClip={() => {
             const done = exports[previewClip.id];
-            if (done) downloadExport(done);
+            if (done) downloadExport(done, previewClip.id);
           }}
         />
       )}

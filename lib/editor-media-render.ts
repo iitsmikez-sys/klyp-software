@@ -1,10 +1,12 @@
 import type { EditSegment } from "./edit-segments";
 import type { MediaInsert } from "./editor-media";
+import { sourceLayoutGraph, type EditorLayout } from "./editor-layout.ts";
 
 /** FFmpeg graph for a timeline containing source sections and imported full-frame media. */
 export function buildEditorMediaFilter(
   segments: EditSegment[], media: MediaInsert[], sourceHasAudio: boolean,
   mediaHasAudio: boolean[], width: number, height: number, postFilter?: string,
+  layout?: EditorLayout,
 ): { graph: string; videoLabel: string; audioLabel: string } {
   const parts: string[] = [];
   const labels: string[] = [];
@@ -12,7 +14,10 @@ export function buildEditorMediaFilter(
   const append = (input: number, from: number, to: number, audio: boolean) => {
     const duration = to - from;
     const prefix = `s${index++}`;
-    parts.push(`[${input}:v]trim=start=${from}:end=${to},setpts=PTS-STARTPTS,fps=30,` +
+    if (input === 0 && layout) {
+      parts.push(`[0:v]trim=start=${from}:end=${to},setpts=PTS-STARTPTS,fps=30[${prefix}raw]`);
+      parts.push(sourceLayoutGraph(`[${prefix}raw]`, `[v${prefix}]`, width, height, layout, prefix));
+    } else parts.push(`[${input}:v]trim=start=${from}:end=${to},setpts=PTS-STARTPTS,fps=30,` +
       `scale=${width}:${height}:force_original_aspect_ratio=increase:force_divisible_by=2,` +
       `crop=${width}:${height},setsar=1,format=yuv420p[v${prefix}]`);
     if (audio) {

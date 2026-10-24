@@ -1,11 +1,13 @@
 /**
  * In-process concurrency limiter for the yt-dlp+ffmpeg processing jobs
- * (analyze/clip/preview) — single Railway instance, single Node process.
+ * (analyze/clip/preview/archive) — single Railway instance, single Node process.
  * Deliberately NOT Redis/BullMQ: this instance is the only thing running
  * these jobs, so an in-memory FIFO queue is sufficient and has zero new
  * infra. Horizontal scaling (multiple replicas needing shared queue state)
  * is a separate, later project — see MEMORY.md / project notes.
  *
+ * State lives on globalThis because Next compiles routes into separate module
+ * graphs; module-local counters can allow each route to fill the same CPU.
  * Caps how many jobs run at once so concurrent users don't each spawn their
  * own yt-dlp+ffmpeg pair and collectively exhaust the container's 2 vCPU /
  * ~1GB budget — the exact failure mode chased through most of this session,
@@ -32,17 +34,17 @@ type QueuedJob = {
   start: () => void;
 };
 
-let running = 0;
-const queue: QueuedJob[] = [];
-let nextId = 1;
+type QueueState = { running: number; queue: QueuedJob[]; nextId: number };
+const shared = globalThis as typeof globalThis & { __klypQueueState?: QueueState };
+const state = shared.__klypQueueState ??= { running: 0, queue: [], nextId: 1 };
 
 /** Pull jobs off the front of the queue while slots are free. Called after
  *  every enqueue and after every job finishes, so it's the only place that
  *  starts a job — no other code path is allowed to run one directly. */
 function pump(): void {
-  while (running < MAX_CONCURRENT_JOBS && queue.length > 0) {
-    const job = queue.shift()!;
-    running++;
+  while (state.running < MAX_CONCURRENT_JOBS && state.queue.length > 0) {
+    const job = state.queue.shift()!;
+    state.running++;
     job.start();
   }
 }
@@ -56,14 +58,14 @@ function pump(): void {
  * despite Node's single-threaded event loop interleaving many requests.
  */
 export function runQueued<T>(label: string, fn: () => Promise<T>): Promise<T> {
-  const id = `q${nextId++}`;
+  const id = `q${state.nextId++}`;
   const queuedAt = Date.now();
-  const willQueue = running >= MAX_CONCURRENT_JOBS || queue.length > 0;
+  const willQueue = state.running >= MAX_CONCURRENT_JOBS || state.queue.length > 0;
 
   if (willQueue) {
-    console.log(`[queue] ${id} (${label}) queued — ${running}/${MAX_CONCURRENT_JOBS} slots busy, ${queue.length + 1} waiting`);
+    console.log(`[queue] ${id} (${label}) queued — ${state.running}/${MAX_CONCURRENT_JOBS} slots busy, ${state.queue.length + 1} waiting`);
   } else {
-    console.log(`[queue] ${id} (${label}) running immediately — ${running + 1}/${MAX_CONCURRENT_JOBS} slots in use`);
+    console.log(`[queue] ${id} (${label}) running immediately — ${state.running + 1}/${MAX_CONCURRENT_JOBS} slots in use`);
   }
 
   return new Promise<T>((resolve, reject) => {
@@ -81,7 +83,7 @@ export function runQueued<T>(label: string, fn: () => Promise<T>): Promise<T> {
         fn()
           .then(resolve, reject)
           .finally(() => {
-            running--;
+            state.running--;
             pump();
           });
       },
@@ -90,13 +92,13 @@ export function runQueued<T>(label: string, fn: () => Promise<T>): Promise<T> {
     // job is still sitting in the queue when this fires — a job already
     // pulled off by pump() has cleared this timer in start() above.
     waitTimer = setTimeout(() => {
-      const idx = queue.indexOf(job);
+      const idx = state.queue.indexOf(job);
       if (idx === -1) return;
-      queue.splice(idx, 1);
+      state.queue.splice(idx, 1);
       const waitedMs = Date.now() - queuedAt;
       console.log(
         `[queue] ${id} (${label}) gave up after waiting ${Math.round(waitedMs / 1000)}s — ` +
-          `${running}/${MAX_CONCURRENT_JOBS} slots busy, ${queue.length} still waiting`
+        `${state.running}/${MAX_CONCURRENT_JOBS} slots busy, ${state.queue.length} still waiting`
       );
       reject(
         new Error(
@@ -104,12 +106,12 @@ export function runQueued<T>(label: string, fn: () => Promise<T>): Promise<T> {
         )
       );
     }, MAX_QUEUE_WAIT_MS);
-    queue.push(job);
+    state.queue.push(job);
     pump();
   });
 }
 
 /** Current queue depth — backs GET /api/queue-status. */
 export function queueStatus(): { running: number; queued: number; maxConcurrentJobs: number } {
-  return { running, queued: queue.length, maxConcurrentJobs: MAX_CONCURRENT_JOBS };
+  return { running: state.running, queued: state.queue.length, maxConcurrentJobs: MAX_CONCURRENT_JOBS };
 }

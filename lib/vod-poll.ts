@@ -1,6 +1,6 @@
 /**
  * Auto-Clipping background worker — processing service only (started from
- * instrumentation.ts, guarded by DEPLOYMENT_TARGET). Two loops:
+ * instrumentation.ts, guarded by DEPLOYMENT_TARGET). Three loops:
  *
  *   1. Retry-poll: processes `pending_vod_checks` rows queued by the
  *      stream.offline EventSub webhook (app/api/twitch/eventsub). Twitch has
@@ -9,16 +9,19 @@
  *   2. Safety net: sweeps every connected, auto-clip-enabled Twitch channel
  *      on a long interval, in case a webhook delivery was ever missed.
  *
- * Low-Sparks handling is skip+notify, not queue+retry: if a user can't afford
- * the newly-found VOD right now, we notify them and move on. They can always
- * run it manually later from the dashboard — no pending state to hold.
+ *   3. Durable jobs: claims and processes a newly discovered VOD. The DB
+ *      commits clips, Sparks, and the last-seen cursor together.
  */
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getLatestVod, parseTwitchDuration } from "@/lib/twitch";
+import { getRecentVods, parseTwitchDuration } from "@/lib/twitch";
+import { unseenVods } from "@/lib/vod-discovery";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
+import { preferencesForUser } from "@/lib/creator-feedback-data";
+import { processClipArchiveJobs } from "@/lib/clip-archive-worker";
+import { runQueued } from "@/lib/job-queue";
 import { estimateSparks, clipCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
 import type { Profile } from "@/lib/tier";
 
@@ -28,6 +31,7 @@ type StreamRow = {
   user_id: string;
   twitch_user_id: string;
   twitch_login: string | null;
+  auto_clip_enabled: boolean;
   last_seen_video_id: string | null;
   created_at: string;
 };
@@ -37,6 +41,7 @@ const RETRY_DELAY_MS = 2 * 60_000;
 const PENDING_CHECK_INTERVAL_MS = 30_000;
 const SAFETY_NET_INTERVAL_MS = 3 * 60 * 60_000; // every 3 hours
 const SAFETY_NET_CALL_SPACING_MS = 200; // keeps well under Twitch's 800 pts/min shared limit
+const JOB_INTERVAL_MS = 30_000;
 
 const log = (...args: unknown[]) => console.log("[vod-poll]", new Date().toISOString(), ...args);
 
@@ -47,14 +52,12 @@ async function notify(admin: Admin, userId: string, message: string) {
 
 /**
  * Checks one stream's latest VOD against what we've already seen. If it's
- * new: advances last_seen_video_id immediately (before any Sparks/pipeline
- * work) so a crash or a low-Sparks skip never causes a duplicate notification
- * or re-processing on the next pass. Returns whether a new VOD was found —
+ * new: enqueues a durable job. Returns whether a new VOD was found —
  * callers use this to decide whether to keep retrying (pending checks) or move on.
  */
 export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Promise<"found" | "not_found"> {
-  const video = await getLatestVod(stream.twitch_user_id);
-  if (!video || video.id === stream.last_seen_video_id) return "not_found";
+  const videos = await getRecentVods(stream.twitch_user_id);
+  if (videos.length === 0 || videos[0].id === stream.last_seen_video_id) return "not_found";
 
   // First sight of a channel: a VOD that predates the connection is a stream
   // the user finished before Klyp was watching, so clipping it would spend
@@ -63,68 +66,61 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
   // is for, so it goes through even on the very first poll — the channel may
   // simply have had no VODs when it was connected.
   const predatesConnection =
-    new Date(video.created_at).getTime() <= new Date(stream.created_at).getTime();
+    new Date(videos[0].created_at).getTime() <= new Date(stream.created_at).getTime();
   if (stream.last_seen_video_id === null && predatesConnection) {
-    await admin.from("streams").update({ last_seen_video_id: video.id }).eq("id", stream.id);
-    log("baseline set for newly connected channel", stream.id, video.id);
+    const { error } = await admin.from("streams").update({ last_seen_video_id: videos[0].id }).eq("id", stream.id);
+    if (error) throw error;
+    log("baseline set for newly connected channel", stream.id, videos[0].id);
     return "not_found";
   }
 
-  await admin.from("streams").update({ last_seen_video_id: video.id }).eq("id", stream.id);
-
-  const channelLabel = stream.twitch_login ?? "your channel";
-  const durationSeconds = parseTwitchDuration(video.duration);
-  const clipCount = DEFAULT_CLIP_COUNT;
-  const upfrontCost = estimateSparks(durationSeconds) + CLIP_COUNT_COST[clipCount];
-
-  const { data: profile, error: profileError } = await admin.rpc("admin_get_profile", { target_user: stream.user_id });
-  if (profileError || !profile) {
-    log("profile lookup failed, skipping", stream.id, profileError?.message);
-    return "found";
+  const unseen = unseenVods(videos, stream.last_seen_video_id, stream.created_at);
+  for (const video of unseen) {
+    const durationSeconds = parseTwitchDuration(video.duration);
+    const { error } = await admin.rpc("enqueue_auto_vod_job", {
+      p_stream_id: stream.id,
+      p_video_id: video.id,
+      p_url: `https://www.twitch.tv/videos/${video.id}`,
+      p_duration_seconds: durationSeconds,
+    });
+    if (error) throw error;
+    log("queued VOD", stream.id, video.id);
   }
-  const p = profile as Profile;
+  return unseen.length ? "found" : "not_found";
+}
 
+type VodJob = {
+  id: string; stream_id: string; user_id: string; video_id: string;
+  url: string; duration_seconds: number; attempts: number;
+};
+
+async function processJob(admin: Admin, job: VodJob): Promise<void> {
+  const clipCount = DEFAULT_CLIP_COUNT;
+  const upfrontCost = estimateSparks(job.duration_seconds) + CLIP_COUNT_COST[clipCount];
+  const { data: profile, error: profileError } = await admin.rpc("admin_get_profile", { target_user: job.user_id });
+  if (profileError || !profile) throw new Error(profileError?.message ?? "Profile not found");
+  const p = profile as Profile;
   if (p.sparks < upfrontCost) {
-    await notify(
-      admin,
-      stream.user_id,
-      `New VOD from ${channelLabel} found — top up Sparks to auto-clip it (needs ${upfrontCost}⚡, you have ${p.sparks}⚡).`
-    );
-    log("skip+notify (low sparks)", stream.id, video.id, `need=${upfrontCost}`, `have=${p.sparks}`);
-    return "found";
+    if (job.attempts === 1) {
+      await notify(admin, job.user_id, `New VOD found — top up Sparks to auto-clip it (needs ${upfrontCost}⚡, you have ${p.sparks}⚡).`);
+    }
+    throw new Error(`insufficient sparks: need ${upfrontCost}, have ${p.sparks}`);
   }
 
   const workDir = await mkdtemp(path.join(tmpdir(), "klyp-autoclip-"));
   try {
-    const result = await runAnalysisPipeline({
+    const creatorPreferences = await preferencesForUser(job.user_id);
+    const result = await runQueued(`auto-vod:${job.id}`, () => runAnalysisPipeline({
       uploadedPath: null,
-      url: video.url,
-      durationHint: durationSeconds,
+      url: job.url,
+      durationHint: job.duration_seconds,
       clipCount,
       workDir,
-    });
+      creatorPreferences,
+    }));
 
     const sparksSpent = estimateSparks(result.durationSeconds) + clipCharge(clipCount, result.clips.length);
-    const { error: chargeError } = await admin.rpc("admin_consume_sparks", {
-      target_user: stream.user_id,
-      amount: sparksSpent,
-      p_reference: `twitch:${video.id}`,
-    });
-    if (chargeError) {
-      // The clips below are still saved and delivered: the work is done and
-      // withholding it would punish the user for our accounting. But an
-      // uncharged run must never pass silently, which is what discarding this
-      // result used to do.
-      log(
-        `SPARKS NOT CHARGED for user ${stream.user_id} — ${sparksSpent} owed for ` +
-          `${video.url}: ${chargeError.message}`
-      );
-    }
-
-    if (result.clips.length > 0) {
-      const rows = result.clips.map((clip) => ({
-        user_id: stream.user_id,
-        url: video.url,
+    const rows = result.clips.map((clip) => ({
         title: clip.title,
         clip_type: clip.type,
         viral_score: Math.round(clip.viral_score),
@@ -141,31 +137,50 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
         dim_comedy: clip.dimensions?.comedy ?? null,
         dim_storyline: clip.dimensions?.storyline ?? null,
       }));
-      const { error: saveError } = await admin.from("clips").insert(rows);
-      if (saveError) {
-        // hooks/words columns may not exist yet (pre-migration-003 schema) —
-        // mirrors the same fallback AnalyzePanel's client-side save uses.
-        await admin.from("clips").insert(
-          rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)
-        );
-      }
-    }
+    const { data: committed, error: finishError } = await admin.rpc("finish_auto_vod_job", {
+      p_job_id: job.id, p_clips: rows, p_cost: sparksSpent,
+    });
+    if (finishError) throw finishError;
+    if (!committed) return;
 
     await notify(
       admin,
-      stream.user_id,
-      `${channelLabel}'s new VOD is clipped — ${result.clips.length} clip${result.clips.length === 1 ? "" : "s"} ready in your dashboard.`
+      job.user_id,
+      `Your new VOD is clipped — ${result.clips.length} clip${result.clips.length === 1 ? "" : "s"} ready in your dashboard.`
     );
-    log("auto-clipped", stream.id, video.id, `${result.clips.length} clips`, `${sparksSpent}⚡`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Auto-clipping failed.";
-    log("auto-clip FAILED", stream.id, video.id, message);
-    await notify(admin, stream.user_id, `Auto-clipping failed for ${channelLabel}'s new VOD — you can still paste the link manually.`);
+    log("auto-clipped", job.stream_id, job.video_id, `${result.clips.length} clips`, `${sparksSpent}⚡`);
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
+}
 
-  return "found";
+let jobLoopRunning = false;
+async function processAutoVodJobs(): Promise<void> {
+  if (jobLoopRunning) return;
+  jobLoopRunning = true;
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("claim_auto_vod_job");
+    if (error) throw error;
+    const job = (data as VodJob[] | null)?.[0];
+    if (!job) return;
+    try {
+      await processJob(admin, job);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log("auto-clip FAILED", job.stream_id, job.video_id, message);
+      const retrySeconds = Math.min(86400, 120 * 2 ** Math.min(job.attempts - 1, 10));
+      const { data: status, error: failError } = await admin.rpc("fail_auto_vod_job", {
+        p_job_id: job.id, p_error: message, p_retry_seconds: retrySeconds,
+      });
+      if (failError) throw failError;
+      if (status === "failed") {
+        await notify(admin, job.user_id, "Auto-clipping failed for a new VOD after several attempts. You can paste the VOD link into Find Clips to analyze it manually.");
+      }
+    }
+  } finally {
+    jobLoopRunning = false;
+  }
 }
 
 async function processPendingChecks(): Promise<void> {
@@ -184,11 +199,11 @@ async function processPendingChecks(): Promise<void> {
   for (const check of due ?? []) {
     const { data: stream } = await admin
       .from("streams")
-      .select("id, user_id, twitch_user_id, twitch_login, last_seen_video_id, created_at")
+      .select("id, user_id, twitch_user_id, twitch_login, auto_clip_enabled, last_seen_video_id, created_at")
       .eq("id", check.stream_id)
       .maybeSingle();
 
-    if (!stream || !stream.twitch_user_id) {
+    if (!stream || !stream.twitch_user_id || !stream.auto_clip_enabled) {
       await admin.from("pending_vod_checks").delete().eq("id", check.id);
       continue;
     }
@@ -221,7 +236,7 @@ async function runSafetyNetSweep(): Promise<void> {
   const admin = createAdminClient();
   const { data: streams, error } = await admin
     .from("streams")
-    .select("id, user_id, twitch_user_id, twitch_login, last_seen_video_id, created_at")
+    .select("id, user_id, twitch_user_id, twitch_login, auto_clip_enabled, last_seen_video_id, created_at")
     .eq("platform", "twitch")
     .eq("auto_clip_enabled", true)
     .not("twitch_user_id", "is", null);
@@ -243,7 +258,7 @@ async function runSafetyNetSweep(): Promise<void> {
 
 let started = false;
 
-/** Starts both background loops. Idempotent — safe to call more than once. */
+/** Starts the background loops. Idempotent — safe to call more than once. */
 export function startAutoClipWorker(): void {
   if (started) return;
   started = true;
@@ -257,5 +272,14 @@ export function startAutoClipWorker(): void {
     runSafetyNetSweep().catch((err) => log("runSafetyNetSweep crashed", err));
   }, SAFETY_NET_INTERVAL_MS);
 
+  setInterval(() => {
+    processAutoVodJobs().catch((err) => log("processAutoVodJobs crashed", err));
+  }, JOB_INTERVAL_MS);
+  setInterval(() => {
+    processClipArchiveJobs().catch((err) => log("processClipArchiveJobs crashed", err));
+  }, JOB_INTERVAL_MS);
+
   processPendingChecks().catch((err) => log("processPendingChecks crashed", err));
+  processAutoVodJobs().catch((err) => log("processAutoVodJobs crashed", err));
+  processClipArchiveJobs().catch((err) => log("processClipArchiveJobs crashed", err));
 }
