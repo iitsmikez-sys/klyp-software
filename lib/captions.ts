@@ -11,6 +11,7 @@
  * captions look the same relative size in 1:1 and 16:9 exports.
  */
 import type { CaptionOptions } from "./editor-captions";
+import type { CaptionFont } from "./clip-edit-draft.ts";
 import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
@@ -116,9 +117,18 @@ const STYLE_PARAMS: Record<
   PULSE: { fontSize: 78, color: "&H0000FFFF", bold: 1, outline: 5, shadow: 0 },
   SLIDE: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 3, shadow: 1 },
   SPARK: { fontSize: 88, color: "&H00A0E500", bold: 1, outline: 5, shadow: 0 },
+  BOUNCE: { fontSize: 82, color: "&H00FFFFFF", bold: 1, outline: 6, shadow: 0 },
+  GLOW: { fontSize: 72, color: "&H00FF99FF", bold: 1, outline: 3, shadow: 7 },
 };
 
-function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?: CaptionOptions): string {
+const FONT_NAMES: Record<CaptionFont, { ass: string; css: string }> = {
+  sans: { ass: "DejaVu Sans", css: '"DejaVu Sans", Arial, sans-serif' },
+  serif: { ass: "DejaVu Serif", css: '"DejaVu Serif", Georgia, serif' },
+  mono: { ass: "DejaVu Sans Mono", css: '"DejaVu Sans Mono", monospace' },
+};
+export const captionFontFamily = (font: CaptionFont = "sans") => FONT_NAMES[font].css;
+
+function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?: CaptionOptions, font?: CaptionFont): string {
   const p = STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
   const size = Math.round(p.fontSize * scale);
@@ -132,7 +142,7 @@ function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?
   return [
     "[V4+ Styles]",
     STYLES_FORMAT,
-    `Style: Default,Arial,${size},${color},&H00FFFFFF,&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,1,${outline},${p.shadow},${alignment},10,10,${marginV},1`,
+    `Style: Default,${font ? FONT_NAMES[font].ass : "Arial"},${size},${color},&H00FFFFFF,&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,1,${outline},${p.shadow},${alignment},10,10,${marginV},1`,
   ].join("\n");
 }
 
@@ -283,12 +293,13 @@ export function generateTimedCueAss(
  style: CaptionStyle,
  appearance: CaptionAppearance,
  res: PlayRes = DEFAULT_RES,
- safeArea: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: res.w, h: res.h }
+ safeArea: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: res.w, h: res.h },
+ font: CaptionFont = "sans",
 ): string {
- const styles = styleBlock(style, res).replace(STYLE_PARAMS[style].color, appearance.assColor);
+ const styles = styleBlock(style, res, 0, undefined, font).replace(STYLE_PARAMS[style].color, appearance.assColor);
  const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
  for (const cue of normalizeTimedCues(cues)) {
-  const layout = layoutTimedCaption(cue.text, style, appearance, res, safeArea);
+  const layout = layoutTimedCaption(cue.text, style, appearance, res, safeArea, font);
   for (const line of layout.lines) {
    sections.push(dialogue(cue.start_ms, cue.end_ms,
      `${captionAssMotionAt(style, line.x, line.y, res.h)}${line.text}`));
@@ -304,7 +315,7 @@ export function normalizeTimedCues<T extends { start_ms: number; end_ms: number;
 }
 
 /** Position each line explicitly so neither renderer chooses automatic line metrics. */
-export function layoutTimedCaption(text: string, style: CaptionStyle, appearance: CaptionAppearance, res: PlayRes = DEFAULT_RES, safeArea = { x: 0, y: 0, w: res.w, h: res.h }) {
+export function layoutTimedCaption(text: string, style: CaptionStyle, appearance: CaptionAppearance, res: PlayRes = DEFAULT_RES, safeArea = { x: 0, y: 0, w: res.w, h: res.h }, font: CaptionFont = "sans") {
  const p = STYLE_PARAMS[style];
  const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h);
  const lineHeight = Math.round(fontSize * 1.2);
@@ -312,6 +323,6 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const lines = wrapCaptionText(normalized, style);
  const anchor = safeArea.y + safeArea.h * appearance.anchorY;
  const firstY = appearance.alignment === 8 ? anchor + fontSize/2 : appearance.alignment === 5 ? anchor - (lines.length-1)*lineHeight/2 : anchor - fontSize/2 - (lines.length-1)*lineHeight;
- return { fontSize, lineHeight, bold: p.bold === 1, outline: Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h)), shadow: p.shadow,
+ return { fontSize, lineHeight, fontFamily: captionFontFamily(font), bold: p.bold === 1, outline: Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h)), shadow: p.shadow,
  lines: lines.map((line,index) => ({ text: line, x: safeArea.x + safeArea.w/2, y: firstY + index*lineHeight })) };
 }

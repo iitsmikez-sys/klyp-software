@@ -64,9 +64,9 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const appearance = captionAppearance(editor.draft);
               const safe = plan.mode === "composed" ? plan.textSafe : plan.dest;
               const style = editor.draft.caption_style;
-              const caption = layoutTimedCaption(overlay.caption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe);
+              const caption = layoutTimedCaption(overlay.caption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe, editor.draft.caption_font ?? 'sans');
               const motion = captionMotion(style, outputTime * 1000 - overlay.caption.start_ms);
-              ctx.font = `${caption.bold ? "bold" : "normal"} ${caption.fontSize}px Arial`;
+              ctx.font = `${caption.bold ? "bold" : "normal"} ${caption.fontSize}px ${caption.fontFamily}`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.lineWidth = caption.outline * 2;

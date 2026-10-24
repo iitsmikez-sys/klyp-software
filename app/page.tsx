@@ -78,7 +78,7 @@ const features: {
       </svg>
     ),
     title: "Auto captions",
-    desc: "Word-level captions burned into the video, in three styles. Preview before you export.",
+    desc: "Word-level captions burned into the video. Pro includes eight original editor styles and font choices.",
     preview: (
       <div className="flex items-center gap-2">
         {["BOLD", "CLEAN", "⚡ KLYP"].map((s, i) => (

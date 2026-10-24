@@ -75,6 +75,11 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   assert.equal(await page.getByRole('button', { name: 'Play', exact: true }).count(), 1);
   await page.getByRole('button', { name: 'Caption color yellow' }).focus(); await page.keyboard.press('Space');
   assert.equal(await page.getByRole('button', { name: 'Caption color yellow' }).getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: 'Bounce caption template' }).click();
+  assert.equal(await page.getByRole('button', { name: 'Bounce caption template' }).getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: 'mono caption font' }).click();
+  assert.equal(await page.getByRole('button', { name: 'mono caption font' }).getAttribute('aria-pressed'), 'true');
+  await page.screenshot({ path: path.join(root, '.tmp-smoke', 'p1-caption-studio.png') });
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   // Confirm normalization and pending edits in the actual mounted editor.
   await page.getByLabel('Clip title').fill('  Normalized title  '); await page.getByLabel('Hook text').fill('  Normalized hook  ');

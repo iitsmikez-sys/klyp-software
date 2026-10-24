@@ -85,6 +85,17 @@ test('raw V2 exports retain cuts without captions and preserve Pro enforcement',
  const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:draft,raw:true}});assert.equal(response.status,200);assert.ok(calls.some(c=>c.name==='render'));assert.ok(!calls.some(c=>c.name==='cues'));const args=calls.find(c=>c.name==='encode')!.args[1];assert.ok(!args.includes('-filter_complex')&&!args.includes('-vf'));
 });
 
+test('P1 voice polish reaches normal export while raw export stays untouched',async()=>{
+ const edited={...draft,version:3,cutaways:[],audio_polish:'voice',caption_font:'mono'};
+ const normal=await exportRoute({body:{clip_id:'owned',edit_draft:edited}});
+ assert.equal(normal.response.status,200);
+ assert.equal(normal.calls.find(c=>c.name==='render')?.args[4],'voice');
+ assert.equal(normal.calls.find(c=>c.name==='cues')?.args[5],'mono');
+ const raw=await exportRoute({body:{clip_id:'owned',edit_draft:edited,raw:true}});
+ assert.equal(raw.response.status,200);
+ assert.equal(raw.calls.find(c=>c.name==='render')?.args[4],'off');
+});
+
 const accountLayout = {version:1,gameplay:{x:0,y:0,w:1,h:1},facecam:{x:0,y:0,w:.2,h:.2}};
 test('explicit null disables account layout while omitted draft layout inherits',async()=>{
  for(const explicit of [true,false]) {

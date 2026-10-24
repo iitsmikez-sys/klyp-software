@@ -1,5 +1,5 @@
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "./bin.ts";
-import { validateClipEditDraft, type ClipEditDraftV2, type ClipEditDraftV3 } from "./clip-edit-draft.ts";
+import { validateClipEditDraft, type AudioPolish, type ClipEditDraftV2, type ClipEditDraftV3 } from "./clip-edit-draft.ts";
 import { outputDuration, validateSegments, type SourceSegment } from "./editor-timeline.ts";
 import type { SavedClip } from "./clip-ui.ts";
 
@@ -31,6 +31,7 @@ export function buildKeptSegmentsFilter(
   sourceOffsetSeconds: number,
   segments: readonly SourceSegment[],
   hasAudio: boolean,
+  audioPolish: AudioPolish = "off",
 ): string {
   if (!Number.isFinite(sourceOffsetSeconds) || sourceOffsetSeconds < 0) {
     throw new RangeError("Invalid source offset.");
@@ -45,6 +46,7 @@ export function buildKeptSegmentsFilter(
   });
   const inputs = checked.map((_, index) => `[v${index}]${hasAudio ? `[a${index}]` : ""}`).join("");
   filters.push(`${inputs}concat=n=${checked.length}:v=1:a=${hasAudio ? 1 : 0}[video]${hasAudio ? "[audio]" : ""}`);
+  if (hasAudio && audioPolish === "voice") filters.push("[audio]highpass=f=80,lowpass=f=12000,acompressor=threshold=0.125:ratio=2:attack=15:release=180,alimiter=limit=0.95[audio_polished]");
   return filters.join(";");
 }
 
@@ -54,6 +56,7 @@ export async function renderKeptSegments(
   sourceOffsetSeconds: number,
   segments: readonly SourceSegment[],
   outputPath: string,
+  audioPolish: AudioPolish = "off",
 ): Promise<{ duration: number; hasAudio: boolean }> {
   const probe = JSON.parse(await runCapture(resolveBin("ffprobe"), [
     "-v", "error", "-show_entries", "format=duration:stream=codec_type", "-of", "json", sourcePath,
@@ -63,11 +66,11 @@ export async function renderKeptSegments(
   // Container duration can differ from the final video frame by a small rounding interval.
   validateSegments(segments, sourceOffsetSeconds, sourceOffsetSeconds + duration + 0.05);
   const hasAudio = probe.streams.some((stream: { codec_type: string }) => stream.codec_type === "audio");
-  const filter = buildKeptSegmentsFilter(sourceOffsetSeconds, segments, hasAudio);
+  const filter = buildKeptSegmentsFilter(sourceOffsetSeconds, segments, hasAudio, audioPolish);
   await run(resolveBin("ffmpeg"), [
     "-i", sourcePath,
     "-filter_complex_threads", String(FFMPEG_THREADS), "-filter_complex", filter,
-    "-map", "[video]", ...(hasAudio ? ["-map", "[audio]"] : []),
+    "-map", "[video]", ...(hasAudio ? ["-map", audioPolish === "voice" ? "[audio_polished]" : "[audio]"] : []),
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-threads", String(FFMPEG_THREADS),
     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", outputPath,
   ], { stallTimeoutMs: 30_000, maxRunMs: 10 * 60_000 });

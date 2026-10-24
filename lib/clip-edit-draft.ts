@@ -22,7 +22,13 @@ export type ClipEditDraftV2 = Omit<ClipEditDraftV1, "version"> & {
  version: 2; segments: SourceSegment[]; caption_cues: CaptionCue[] | null;
  caption_color: "white" | "yellow" | "green" | "pink";
  caption_position: "top" | "center" | "bottom";
+ caption_font?: CaptionFont;
+ audio_polish?: AudioPolish;
 };
+export const CAPTION_FONTS = ["sans", "serif", "mono"] as const;
+export type CaptionFont = (typeof CAPTION_FONTS)[number];
+export const AUDIO_POLISH = ["off", "voice"] as const;
+export type AudioPolish = (typeof AUDIO_POLISH)[number];
 export const MAX_VISUAL_CUTAWAYS = 12;
 export type VisualCutaway = {
  id: string;
@@ -164,6 +170,8 @@ function validateV2(input: Record<string, unknown>, clip: ClipSource): ClipEditD
  // The single-range duration rule must not count removed spans.
  const common = validateClipEditDraft({ ...input, version: 1, start_seconds: start, end_seconds: Math.min(end, start + 180) }, clip) as ClipEditDraftV1;
  if (!["white", "yellow", "green", "pink"].includes(input.caption_color as string) || !["top", "center", "bottom"].includes(input.caption_position as string)) throw new ClipEditDraftError("Invalid caption appearance.");
+ if (input.caption_font !== undefined && !(CAPTION_FONTS as readonly unknown[]).includes(input.caption_font)) throw new ClipEditDraftError("Invalid caption font.");
+ if (input.audio_polish !== undefined && !(AUDIO_POLISH as readonly unknown[]).includes(input.audio_polish)) throw new ClipEditDraftError("Invalid audio polish setting.");
  let cues: CaptionCue[] | null = null;
  if (input.caption_cues !== null) {
   if (!Array.isArray(input.caption_cues) || input.caption_cues.length > 400) throw new ClipEditDraftError("Keep at most 400 caption cues.");
@@ -174,7 +182,7 @@ function validateV2(input: Record<string, unknown>, clip: ClipSource): ClipEditD
    return { id: cue.id, start_ms: cue.start_ms, end_ms: cue.end_ms, text: cue.text.trim() };
   });
  }
- return { ...common, version: 2, start_seconds: start, end_seconds: end, segments, caption_cues: cues, caption_color: input.caption_color as ClipEditDraftV2["caption_color"], caption_position: input.caption_position as ClipEditDraftV2["caption_position"] };
+ return { ...common, version: 2, start_seconds: start, end_seconds: end, segments, caption_cues: cues, caption_color: input.caption_color as ClipEditDraftV2["caption_color"], caption_position: input.caption_position as ClipEditDraftV2["caption_position"], caption_font: (input.caption_font ?? "sans") as CaptionFont, audio_polish: (input.audio_polish ?? "off") as AudioPolish };
 }
 function validateV3(input: Record<string, unknown>, clip: ClipSource): ClipEditDraftV3 {
  const common = validateV2(input, clip);

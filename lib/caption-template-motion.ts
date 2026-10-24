@@ -7,6 +7,14 @@ const progress = (elapsedMs: number, durationMs: number) =>
 
 /** Values shared by live canvas preview and the ASS export keyframes. */
 export function captionMotion(style: CaptionStyle, elapsedMs: number): CaptionMotion {
+  if (style === "BOUNCE") return {
+    scale: elapsedMs < 110 ? 0.58 + 0.52 * progress(elapsedMs, 110) : 1.1 - 0.1 * progress(elapsedMs - 110, 140),
+    yOffset: 0, alpha: progress(elapsedMs, 65),
+  };
+  if (style === "GLOW") return {
+    scale: 0.95 + 0.05 * progress(elapsedMs, 220), yOffset: 0,
+    alpha: progress(elapsedMs, 180),
+  };
   if (style === "PULSE") return {
     scale: 0.72 + 0.28 * progress(elapsedMs, 180), yOffset: 0,
     alpha: progress(elapsedMs, 80),
@@ -26,6 +34,8 @@ export function captionAssMotion(
   style: CaptionStyle, width: number, height: number, position: CaptionPosition,
 ): string {
   if (style === "PULSE") return "{\\fscx72\\fscy72\\t(0,180,\\fscx100\\fscy100)\\fad(80,0)}";
+  if (style === "BOUNCE") return "{\\fscx58\\fscy58\\t(0,110,\\fscx110\\fscy110)\\t(110,250,\\fscx100\\fscy100)\\fad(65,0)}";
+  if (style === "GLOW") return "{\\fscx95\\fscy95\\t(0,220,\\fscx100\\fscy100)\\fad(180,0)}";
   if (style === "SPARK") return "{\\fscx82\\fscy82\\t(0,140,\\fscx100\\fscy100)\\fad(60,0)}";
   if (style === "SLIDE") {
     const scale = height / 1920;

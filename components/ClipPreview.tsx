@@ -227,6 +227,8 @@ export default function ClipPreview({
     PULSE: "Yellow words pulse in as the streamer speaks",
     SLIDE: "White captions slide up into place",
     SPARK: "Green words flash in one at a time",
+    BOUNCE: "Bold captions spring into place",
+    GLOW: "Soft luminous captions fade in",
   };
 
   return (
