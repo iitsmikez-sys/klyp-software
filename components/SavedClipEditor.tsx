@@ -483,13 +483,13 @@ export default function SavedClipEditor({
           Caption Style
         </p>
         {hasWords ? (
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2" aria-label="Caption styles">
             {CAPTION_STYLES.map((s) => (
               <button
                 key={s}
                 onClick={() => changeDraft({ caption_style: s })}
                 disabled={exporting || saving}
-                className={`flex-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
+                className={`min-w-0 px-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   captionStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
                     : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"

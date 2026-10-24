@@ -22,6 +22,8 @@ const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   SPARK: "Green words flash in one at a time",
   BOUNCE: "Bold captions spring into place",
   GLOW: "Soft luminous captions fade in",
+  COMIC: "Yellow comic captions pop onto the screen",
+  KEYWORD: "One word turns green as each phrase plays",
 };
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {

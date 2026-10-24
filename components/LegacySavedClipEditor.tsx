@@ -1169,13 +1169,13 @@ export default function LegacySavedClipEditor({
           Caption Style
         </p>
         {hasWords ? (
-          <div className={workspace ? "grid grid-cols-3 gap-2" : "flex gap-2"}>
+          <div className={workspace ? "grid grid-cols-3 gap-2" : "flex gap-2 overflow-x-auto pb-2"} aria-label="Caption styles">
             {CAPTION_STYLES.map((s) => (
               <button
                 key={s}
                 onClick={() => setCaptionStyle(s)}
                 disabled={exporting}
-                className={`flex-1 ${workspace ? "rounded-lg py-2.5" : "py-1.5 rounded-md"} border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
+                className={`${workspace ? "min-w-0 rounded-lg py-2.5" : "shrink-0 min-w-[70px] px-2 py-1.5 rounded-md"} border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   captionStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
                     : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
@@ -1195,7 +1195,7 @@ export default function LegacySavedClipEditor({
 
       {hasWords && (
         <div className="space-y-3">
-          <div>
+          {captionStyle === "COMIC" || captionStyle === "KEYWORD" ? <p className="text-xs text-foreground-muted">This template uses its own yellow or green palette.</p> : <div>
             <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>Caption color</p>
             <div className={workspace ? "grid grid-cols-5 gap-1.5" : "flex flex-wrap gap-1.5"}>
               {CAPTION_COLORS.map((color) => (
@@ -1206,7 +1206,7 @@ export default function LegacySavedClipEditor({
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
           <div>
             <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>Caption position</p>
             <div className="flex gap-1.5">

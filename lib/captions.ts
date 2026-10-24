@@ -106,7 +106,7 @@ const STYLES_FORMAT =
  */
 const STYLE_PARAMS: Record<
   CaptionStyle,
-  { fontSize: number; color: string; bold: 0 | 1; outline: number; shadow: number }
+  { fontSize: number; color: string; bold: 0 | 1; italic?: 0 | 1; outline: number; shadow: number }
 > = {
   // Large white Impact-style text, heavy black outline — classic TikTok.
   BOLD: { fontSize: 82, color: "&H00FFFFFF", bold: 1, outline: 4, shadow: 0 },
@@ -119,6 +119,8 @@ const STYLE_PARAMS: Record<
   SPARK: { fontSize: 88, color: "&H00A0E500", bold: 1, outline: 5, shadow: 0 },
   BOUNCE: { fontSize: 82, color: "&H00FFFFFF", bold: 1, outline: 6, shadow: 0 },
   GLOW: { fontSize: 72, color: "&H00FF99FF", bold: 1, outline: 3, shadow: 7 },
+  COMIC: { fontSize: 76, color: "&H0000DFFF", bold: 1, italic: 1, outline: 7, shadow: 2 },
+  KEYWORD: { fontSize: 66, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 1 },
 };
 
 const FONT_NAMES: Record<CaptionFont, { ass: string; css: string }> = {
@@ -137,12 +139,12 @@ function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?
   const marginV = position === 'CENTER' ? 0 : Math.round((position === 'TOP' ? 400 : 80) * scale + (position === 'BOTTOM' ? bottomInset : 0));
   const alignment = position === 'TOP' ? 8 : position === 'CENTER' ? 5 : 2;
   const colors = { WHITE: '#FFFFFF', YELLOW: '#FFFF00', GREEN: '#00E5A0', PINK: '#FF5DAA' };
-  const hex = options?.color && options.color !== 'DEFAULT' ? colors[options.color] : null;
+  const hex = style !== 'COMIC' && style !== 'KEYWORD' && options?.color && options.color !== 'DEFAULT' ? colors[options.color] : null;
   const color = hex ? '&H00' + hex.slice(5,7) + hex.slice(3,5) + hex.slice(1,3) : p.color;
   return [
     "[V4+ Styles]",
     STYLES_FORMAT,
-    `Style: Default,${font ? FONT_NAMES[font].ass : "Arial"},${size},${color},&H00FFFFFF,&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,1,${outline},${p.shadow},${alignment},10,10,${marginV},1`,
+    `Style: Default,${font ? FONT_NAMES[font].ass : "Arial"},${size},${color},&H00FFFFFF,&H00000000,&H00000000,${p.bold},${p.italic ?? 0},0,0,100,100,0,0,1,${outline},${p.shadow},${alignment},10,10,${marginV},1`,
   ].join("\n");
 }
 
@@ -175,6 +177,35 @@ function dialogue(startMs: number, endMs: number, text: string, style = "Default
   return `Dialogue: 0,${assTime(startMs)},${assTime(endMs)},${style},,0,0,0,,${text}`;
 }
 
+/** The same step timing selects the green word in canvas and ASS export. */
+export function keywordAtTime(elapsedMs: number, durationMs: number, wordCount: number): number {
+  if (wordCount < 1) return -1;
+  return Math.min(wordCount - 1, Math.max(0, Math.floor(Math.max(0, elapsedMs) * wordCount / Math.max(1, durationMs))));
+}
+
+function keywordAssText(lines: string[], activeIndex: number): string {
+  let offset = 0;
+  return lines.map(line => {
+    const words = line.split(/\s+/).filter(Boolean);
+    const colored = words.map((word, index) => offset + index === activeIndex
+      ? `{\\c&H00A0E500&}${word}{\\c&H00FFFFFF&}` : word).join(" ");
+    offset += words.length;
+    return colored;
+  }).join("\\N");
+}
+
+function keywordDialogues(startMs: number, endMs: number, lines: string[]): string[] {
+  const count = lines.join(" ").split(/\s+/).filter(Boolean).length;
+  if (!count) return [];
+  const events: string[] = [];
+  for (let index = 0; index < count; index++) {
+    const start = Math.round(startMs + (endMs - startMs) * index / count);
+    const end = Math.round(startMs + (endMs - startMs) * (index + 1) / count);
+    if (end > start) events.push(dialogue(start, end, keywordAssText(lines, index)));
+  }
+  return events;
+}
+
 /**
  * Generate an ASS subtitle file content string for one clip.
  *
@@ -204,7 +235,9 @@ export function generateAss(
   for (const cue of cues) {
     const text = sanitizeAssText(style === "KLYP" || style === "SPARK" ? cue.text.toUpperCase() : cue.text);
     const wrapped = composed ? wrapCaptionText(text, style).join("\\N") : text;
-    sections.push(dialogue(cue.startMs, cue.endMs,
+    if (style === "KEYWORD") sections.push(...keywordDialogues(cue.startMs, cue.endMs,
+      composed ? wrapCaptionText(text, style) : [text]));
+    else sections.push(dialogue(cue.startMs, cue.endMs,
       captionAssMotion(style, res.w, res.h, options?.position ?? "BOTTOM") + wrapped));
   }
 
@@ -296,10 +329,26 @@ export function generateTimedCueAss(
  safeArea: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: res.w, h: res.h },
  font: CaptionFont = "sans",
 ): string {
- const styles = styleBlock(style, res, 0, undefined, font).replace(STYLE_PARAMS[style].color, appearance.assColor);
+ const styles = style === "COMIC" || style === "KEYWORD" ? styleBlock(style, res, 0, undefined, font)
+   : styleBlock(style, res, 0, undefined, font).replace(STYLE_PARAMS[style].color, appearance.assColor);
  const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
  for (const cue of normalizeTimedCues(cues)) {
   const layout = layoutTimedCaption(cue.text, style, appearance, res, safeArea, font);
+  if (style === "KEYWORD") {
+   const count = layout.lines.map(line => line.text.split(/\s+/).filter(Boolean).length).reduce((sum, n) => sum + n, 0);
+   for (let index = 0; index < count; index++) {
+    const start = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * index / count);
+    const end = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * (index + 1) / count);
+    if (end <= start) continue;
+    let offset = 0;
+    for (const line of layout.lines) {
+     const words = line.text.split(/\s+/).filter(Boolean);
+     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset)}`));
+     offset += words.length;
+    }
+   }
+   continue;
+  }
   for (const line of layout.lines) {
    sections.push(dialogue(cue.start_ms, cue.end_ms,
      `${captionAssMotionAt(style, line.x, line.y, res.h)}${line.text}`));
@@ -323,6 +372,6 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const lines = wrapCaptionText(normalized, style);
  const anchor = safeArea.y + safeArea.h * appearance.anchorY;
  const firstY = appearance.alignment === 8 ? anchor + fontSize/2 : appearance.alignment === 5 ? anchor - (lines.length-1)*lineHeight/2 : anchor - fontSize/2 - (lines.length-1)*lineHeight;
- return { fontSize, lineHeight, fontFamily: captionFontFamily(font), bold: p.bold === 1, outline: Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h)), shadow: p.shadow,
+ return { fontSize, lineHeight, fontFamily: captionFontFamily(font), bold: p.bold === 1, italic: p.italic === 1, outline: Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h)), shadow: p.shadow,
  lines: lines.map((line,index) => ({ text: line, x: safeArea.x + safeArea.w/2, y: firstY + index*lineHeight })) };
 }

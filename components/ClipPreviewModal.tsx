@@ -26,7 +26,7 @@ import { previewSourceStart } from '@/lib/editor-preview';
 import SavedClipEditor from "./SavedClipEditor";
 import { defaultClipEditDraft, readClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
 import { clipPreviewPlayback, clipPreviewActionBlocked } from "@/lib/clip-preview-state";
-import { buildCaptionCues } from "@/lib/captions";
+import { buildCaptionCues, keywordAtTime } from "@/lib/captions";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
@@ -449,8 +449,10 @@ export default function ClipPreviewModal({
               </div>
             )}
             {videoReady && activeCaption && (
-              <div aria-hidden className={`pointer-events-none absolute inset-x-6 bottom-8 text-center font-black uppercase drop-shadow-[0_2px_3px_black] text-lg sm:text-2xl ${draft.caption_style === "KLYP" ? "text-accent" : "text-white"}`}>
-                {activeCaption.text}
+              <div aria-hidden className={`pointer-events-none absolute inset-x-6 bottom-8 text-center font-black uppercase text-lg sm:text-2xl ${draft.caption_style === "COMIC" ? "italic text-[#ffdf00]" : draft.caption_style === "KLYP" ? "text-accent" : "text-white"}`}
+                style={{ textShadow: "-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000" }}>
+                {draft.caption_style === "KEYWORD" ? activeCaption.text.split(/\s+/).map((word, index, words) =>
+                  <span key={index} className={index === keywordAtTime(editedTimeMs - activeCaption.startMs, activeCaption.endMs - activeCaption.startMs, words.length) ? "text-[#00e5a0]" : ""}>{index > 0 ? " " : ""}{word}</span>) : activeCaption.text}
               </div>
             )}
           </div>
