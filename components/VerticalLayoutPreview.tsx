@@ -5,16 +5,21 @@ import { planClipComposition, previewDimensions, type VerticalLayoutV1 } from "@
 import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { captionAppearance, editorOverlayAtTime } from "@/lib/editor-captions";
-import type { ClipEditDraftV2 } from "@/lib/clip-edit-draft";
+import type { ClipEditDraftV2, ClipEditDraftV3 } from "@/lib/clip-edit-draft";
 import type { SavedClip } from "@/lib/clip-ui";
 import type { CaptionStyle, TimedWord } from "@/lib/clips";
+import { cutawayAtOutputTime, resolveCutawaySpans } from '@/lib/editor-timeline';
+import { cutawayDrawRect } from '@/lib/editor-media-client';
+import type { CutawayPicture } from './EditorCutawayPreview';
 
-export default function VerticalLayoutPreview({ video, layout, text, editor, format = "9:16" }: { format?: "9:16" | "16:9" | "1:1" | "Original"; editor?: { draft: ClipEditDraftV2; clip: SavedClip; outputTime: () => number }; video: HTMLVideoElement | null; layout: VerticalLayoutV1 | null; text?: { hook: string; hookStyle: HookStyle; captionStyle: CaptionStyle; words: TimedWord[] | null; videoTrimStart: number; vodStart: number; vodEnd: number } }) {
+export default function VerticalLayoutPreview({ video, layout, text, editor, picture, format = "9:16" }: { picture?: CutawayPicture|null; format?: "9:16" | "16:9" | "1:1" | "Original"; editor?: { draft: ClipEditDraftV2 | ClipEditDraftV3; clip: SavedClip; outputTime: () => number }; video: HTMLVideoElement | null; layout: VerticalLayoutV1 | null; text?: { hook: string; hookStyle: HookStyle; captionStyle: CaptionStyle; words: TimedWord[] | null; videoTrimStart: number; vodStart: number; vodEnd: number } }) {
   const [renderError, setRenderError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !video) return;
+    if (!canvas) return;
+    if (!video) { canvas.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height); return; }
+    const cutaways=editor?.draft.version===3?resolveCutawaySpans(editor.draft):[];
     let frame = 0;
     setRenderError(null);
     const draw = () => {
@@ -39,6 +44,19 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, for
           }
           if (editor) {
             const outputTime = editor.outputTime();
+            const cutaway=cutawayAtOutputTime(cutaways,outputTime);
+            if(cutaway) {
+              ctx.fillStyle='black';ctx.fillRect(0,0,canvas.width,canvas.height);
+              if(picture?.assetId===cutaway.asset_id) {
+                const element=picture.element;
+                const isVideo=element instanceof HTMLVideoElement;
+                const sw=isVideo?element.videoWidth:element.naturalWidth,sh=isVideo?element.videoHeight:element.naturalHeight;
+                if(sw&&sh&&(!isVideo||element.readyState>=2)) {
+                  const d=cutawayDrawRect(sw,sh,canvas.width,canvas.height,cutaway.fit,cutaway.focal_point);
+                  ctx.drawImage(element,d.x,d.y,d.w,d.h);
+                }
+              }
+            }
             const overlay = editorOverlayAtTime(editor.draft, editor.clip, outputTime);
             if (overlay.hook) drawHookPreview(ctx, outputTime, overlay.hook, editor.draft.hook_style, canvas.width, canvas.height);
             if (overlay.caption) {
@@ -91,6 +109,6 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, for
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [video, layout, text, editor, format]);
+  }, [video, layout, text, editor, picture, format]);
   return <><canvas ref={canvasRef} width={540} height={format === "16:9" ? 304 : format === "1:1" ? 540 : 960} className="w-full max-w-[220px] h-auto rounded-lg border border-border bg-black" aria-label="Vertical clip preview" />{renderError && <p role="alert">{renderError}</p>}</>;
 }

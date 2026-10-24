@@ -23,7 +23,21 @@ export type ClipEditDraftV2 = Omit<ClipEditDraftV1, "version"> & {
  caption_color: "white" | "yellow" | "green" | "pink";
  caption_position: "top" | "center" | "bottom";
 };
-export type ClipEditDraft = ClipEditDraftV1 | ClipEditDraftV2;
+export const MAX_VISUAL_CUTAWAYS = 12;
+export type VisualCutaway = {
+ id: string;
+ asset_id: string;
+ source_start_ms: number;
+ source_end_ms: number;
+ asset_in_ms: number;
+ fit: "cover" | "contain";
+ focal_point: { x: number; y: number };
+};
+export type ClipEditDraftV3 = Omit<ClipEditDraftV2, "version"> & {
+ version: 3;
+ cutaways: VisualCutaway[];
+};
+export type ClipEditDraft = ClipEditDraftV1 | ClipEditDraftV2 | ClipEditDraftV3;
 export class ClipEditDraftError extends Error {
   constructor(message: string) {
     super(message);
@@ -52,6 +66,7 @@ export function validateClipEditDraft(input: unknown, clip: ClipSource): ClipEdi
     throw new ClipEditDraftError("Invalid edit draft.");
   }
   const draft = input as Record<string, unknown>;
+  if (draft.version === 3) return validateV3(draft, clip);
   if (draft.version === 2) return validateV2(draft, clip);
   if (draft.version !== 1) throw new ClipEditDraftError("Unsupported edit draft version.");
   const start = draft.start_seconds;
@@ -125,7 +140,7 @@ export function readClipEditDraft(clip: SavedClip): { draft: ClipEditDraft; unsu
 /** The render service takes absolute VOD times, even when it reads an archive. */
 export function toClipExportPayload(clip: SavedClip, draft: ClipEditDraft) {
   return {
-    ...(draft.version === 2 ? { edit_draft: draft, segments: draft.segments, caption_cues: draft.caption_cues, caption_color: draft.caption_color, caption_position: draft.caption_position } : {}),
+    ...(draft.version !== 1 ? { edit_draft: draft, segments: draft.segments, caption_cues: draft.caption_cues, caption_color: draft.caption_color, caption_position: draft.caption_position } : {}),
     clip_id: clip.id,
     url: clip.url,
     start_seconds: draft.start_seconds,
@@ -134,7 +149,7 @@ export function toClipExportPayload(clip: SavedClip, draft: ClipEditDraft) {
     hook: draft.hook || undefined,
     hook_style: draft.hook_style,
     aspect_ratio: draft.aspect_ratio,
-    style: (draft.version === 2 ? resolveEditorCues(draft, clip).length : draft.words?.length) ? draft.caption_style : undefined,
+    style: (draft.version !== 1 ? resolveEditorCues(draft, clip).length : draft.words?.length) ? draft.caption_style : undefined,
     words: draft.words?.length ? draft.words : undefined,
     vertical_layout: draft.vertical_layout,
   };
@@ -161,7 +176,29 @@ function validateV2(input: Record<string, unknown>, clip: ClipSource): ClipEditD
  }
  return { ...common, version: 2, start_seconds: start, end_seconds: end, segments, caption_cues: cues, caption_color: input.caption_color as ClipEditDraftV2["caption_color"], caption_position: input.caption_position as ClipEditDraftV2["caption_position"] };
 }
-export function upgradeClipEditDraft(clip: ClipSource, draft: ClipEditDraft): ClipEditDraftV2 {
- if (draft.version === 2) return validateClipEditDraft(draft, clip) as ClipEditDraftV2;
- return validateClipEditDraft({ ...draft, version: 2, segments: [{ id: "segment-1", start_seconds: draft.start_seconds, end_seconds: draft.end_seconds }], caption_cues: null, caption_color: draft.caption_style === "KLYP" ? "green" : "white", caption_position: "bottom" }, clip) as ClipEditDraftV2;
+function validateV3(input: Record<string, unknown>, clip: ClipSource): ClipEditDraftV3 {
+ const common = validateV2(input, clip);
+ if (!Array.isArray(input.cutaways) || input.cutaways.length > MAX_VISUAL_CUTAWAYS) throw new ClipEditDraftError("Keep at most 12 visual cutaways.");
+ const ids = new Set<string>();
+ const cutaways = input.cutaways.map((item: unknown): VisualCutaway => {
+  if (!item || typeof item !== "object" || Array.isArray(item)) throw new ClipEditDraftError("Invalid visual cutaway.");
+  const c = item as VisualCutaway;
+  if (typeof c.id !== "string" || !c.id.trim() || c.id.length > 120 || ids.has(c.id) ||
+      typeof c.asset_id !== "string" || !c.asset_id.trim() || c.asset_id.length > 120 ||
+      !Number.isFinite(c.source_start_ms) || !Number.isFinite(c.source_end_ms) ||
+      c.source_start_ms < clip.start_seconds * 1000 || c.source_end_ms > clip.end_seconds * 1000 || c.source_end_ms <= c.source_start_ms ||
+      !Number.isFinite(c.asset_in_ms) || c.asset_in_ms < 0 ||
+      !["cover", "contain"].includes(c.fit) || !c.focal_point ||
+      !Number.isFinite(c.focal_point.x) || !Number.isFinite(c.focal_point.y) ||
+      c.focal_point.x < 0 || c.focal_point.x > 1 || c.focal_point.y < 0 || c.focal_point.y > 1) throw new ClipEditDraftError("Invalid visual cutaway.");
+  ids.add(c.id);
+  return { id: c.id, asset_id: c.asset_id, source_start_ms: c.source_start_ms, source_end_ms: c.source_end_ms, asset_in_ms: c.asset_in_ms, fit: c.fit, focal_point: { x: c.focal_point.x, y: c.focal_point.y } };
+ });
+ const ordered = [...cutaways].sort((a, b) => a.source_start_ms - b.source_start_ms);
+ if (ordered.some((c, i) => i > 0 && c.source_start_ms < ordered[i - 1].source_end_ms)) throw new ClipEditDraftError("Visual cutaways must not overlap.");
+ return { ...common, version: 3, cutaways };
+}
+export function upgradeClipEditDraft(clip: ClipSource, draft: ClipEditDraft): ClipEditDraftV3 {
+ if (draft.version !== 1) return validateClipEditDraft({ ...draft, version: 3, cutaways: draft.version === 3 ? draft.cutaways : [] }, clip) as ClipEditDraftV3;
+ return validateClipEditDraft({ ...draft, version: 3, segments: [{ id: "segment-1", start_seconds: draft.start_seconds, end_seconds: draft.end_seconds }], caption_cues: null, caption_color: draft.caption_style === "KLYP" ? "green" : "white", caption_position: "bottom", cutaways: [] }, clip) as ClipEditDraftV3;
 }

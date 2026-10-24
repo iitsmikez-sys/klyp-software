@@ -16,7 +16,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { renderKeptSegments, validateEditorExportRequest } from "@/lib/editor-render";
-import { ClipEditDraftError, type ClipEditDraftV2 } from "@/lib/clip-edit-draft";
+import { assertOwnedDraftAssets, EditorAssetError } from "@/lib/editor-assets";
+import { resolveCutawaySpans, type ResolvedCutawaySpan } from "@/lib/editor-timeline";
+import { buildCutawayGraph, cutawayInputArgs, loadEditorCutawayAssets, type RenderableEditorAsset } from "@/lib/editor-cutaway-render";
+import { ClipEditDraftError, type ClipEditDraftV2, type ClipEditDraftV3 } from "@/lib/clip-edit-draft";
 import { resolveEditorCues, captionAppearance } from "@/lib/editor-captions";
 import type { SavedClip } from "@/lib/clip-ui";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
@@ -106,7 +109,8 @@ async function cutClip(
   handle?: string,
   raw = false,
   upscale = false,
-  verticalPlan?: VerticalLayoutPlan
+  verticalPlan?: VerticalLayoutPlan,
+  cutaways?: { spans: readonly ResolvedCutawaySpan[]; assets: readonly RenderableEditorAsset[]; dimensions: {w:number;h:number} }
 ): Promise<string> {
   const duration = endSeconds - startSeconds;
   const outPath = path.join(
@@ -114,7 +118,7 @@ async function cutClip(
     `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`
   );
 
-  // Build video filter chain: scale+crop → captions → hook title → handle → watermark.
+  // Build video filter chain: framing → imported picture → captions → hook → handle → watermark.
   // Raw mode (Pro-only, enforced in POST) skips the chain entirely: original
   // framing and resolution, nothing burned in — for editing in CapCut/Premiere.
   // Upscale (Pro-only, 35⚡) doubles the output dimensions (e.g. 2160×3840).
@@ -131,30 +135,31 @@ async function cutClip(
     }
     vf = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
   }
-  if (assPath) {
-    vf += `,subtitles='${toFfmpegPath(assPath)}'`;
-  }
-  if (hookAssPath) {
-    vf += `,subtitles='${toFfmpegPath(hookAssPath)}'`;
-  }
-  if (handle) {
-    vf += `,${handleFilter(handle)}`;
-  }
-  if (!isPro) {
-    vf += `,${watermarkFilter()}`;
-  }
-
-  const composed = !raw && verticalPlan ? buildVerticalFilterGraph(verticalPlan, [
+  const framing = vf;
+  const overlays = [
     ...(assPath ? [`subtitles='${toFfmpegPath(assPath)}'`] : []),
     ...(hookAssPath ? [`subtitles='${toFfmpegPath(hookAssPath)}'`] : []),
     ...(handle ? [handleFilter(handle)] : []),
     ...(!isPro ? [watermarkFilter()] : []),
-  ]) : null;
+  ];
+  if (overlays.length) vf += `,${overlays.join(',')}`;
+  let composed = !raw && verticalPlan ? buildVerticalFilterGraph(verticalPlan, cutaways ? [] : overlays) : null;
+  if (!raw && cutaways) {
+    const base = composed ?? { filter: `[0:v]${framing},setsar=1[framed]`, videoLabel: 'framed' };
+    const imported = buildCutawayGraph(base.videoLabel, cutaways.spans, cutaways.assets, cutaways.dimensions);
+    composed = {
+      filter: [base.filter, imported.filter, `[${imported.videoLabel}]${overlays.length ? overlays.join(',')+',' : ''}format=yuv420p,setsar=1[exportv]`].filter(Boolean).join(';'),
+      videoLabel: 'exportv',
+    };
+  }
+  try {
   await run(resolveBin("ffmpeg"), [
     "-ss", String(startSeconds),
     "-t", String(duration),
     "-i", sourcePath,
-    ...(raw ? [] : composed ? ["-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", "0:a?"] : ["-vf", vf]),
+    ...(cutaways ? cutawayInputArgs(cutaways.assets) : []),
+    ...(raw ? [] : composed ? ["-filter_complex_threads", String(FFMPEG_THREADS), "-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", "0:a?"] : ["-vf", vf]),
+    "-t", String(duration),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "23",
@@ -168,6 +173,10 @@ async function cutClip(
   // ffmpeg prints progress to stderr continuously — silence means it's wedged.
   // maxRunMs bounds the whole encode so an export can't hang forever.
   { stallTimeoutMs: 30_000, maxRunMs: 10 * 60_000 });
+  } catch (error) {
+    await rm(outPath, { force: true }).catch(() => {});
+    throw error;
+  }
 
   return outPath;
 }
@@ -202,7 +211,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let upscale = false;
   let requestedLayout: unknown;
   let requestBody: Record<string, unknown>;
-  let editorDraft: ClipEditDraftV2 | null = null;
+  let editorDraft: ClipEditDraftV2 | ClipEditDraftV3 | null = null;
   let ownedEditorClip: SavedClip | null = null;
   try {
     const body = await req.json();
@@ -276,6 +285,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       ownedEditorClip = data as SavedClip;
       editorDraft = validateEditorExportRequest(requestBody, ownedEditorClip);
       if (editorDraft) {
+        await assertOwnedDraftAssets(profile.id, clipId, editorDraft);
         url = ownedEditorClip.url;
         start = editorDraft.start_seconds;
         end = editorDraft.end_seconds;
@@ -288,7 +298,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         requestedLayout = editorDraft.vertical_layout;
       }
     } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid editor export." }, { status: error instanceof ClipEditDraftError || error instanceof RangeError ? 400 : 500 });
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid editor export." }, { status: error instanceof EditorAssetError ? error.status : error instanceof ClipEditDraftError || error instanceof RangeError ? 400 : 500 });
     }
   }
   if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
@@ -449,6 +459,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
 
       const t2 = Date.now();
       const seek = editedDuration !== null ? { start: 0, end: editedDuration } : clipSeekRange(start, end, offsetSeconds, archivedEndSeconds);
+      const cutawaySpans = editorDraft?.version === 3 ? resolveCutawaySpans(editorDraft) : [];
+      const cutaways = cutawaySpans.length && editorDraft?.version === 3 ? {
+        spans: cutawaySpans,
+        assets: await loadEditorCutawayAssets(profile.id, clipId, editorDraft, editorDir!),
+        dimensions: res,
+      } : undefined;
       const result = await cutClip(
         sourcePath,
         seek.start,
@@ -460,7 +476,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         handle,
         raw,
         upscale,
-        verticalPlan
+        verticalPlan,
+        cutaways
       );
       log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
       return result;
@@ -484,7 +501,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Clip generation failed.";
     log("FAILED:", message);
-    return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: err instanceof EditorAssetError ? err.status : err instanceof RangeError ? 400 : 500 });
   } finally {
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
     if (assDir) await rm(assDir, { recursive: true, force: true }).catch(() => {});

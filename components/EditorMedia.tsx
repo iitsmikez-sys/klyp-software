@@ -14,27 +14,28 @@ export default function EditorMedia({ clip, segments, outputTime, playing, onTim
  const ref = useRef<HTMLVideoElement>(null);
  const [media, setMedia] = useState<{url:string; blob:Blob} | null>(null);
  const [error, setError] = useState<string | null>(null);
+ const [decoded,setDecoded]=useState(false);
  const [attempt, setAttempt] = useState(0);
  const callbacks = useRef({onTimeChange,onPlayingChange,onVideo,onMedia}); callbacks.current={onTimeChange,onPlayingChange,onVideo,onMedia};
  const clock = useRef(outputTime);
  useEffect(() => {
   const controller = new AbortController(); let url: string | null = null; let active = true; let timedOut = false;
   const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 300000);
-  setError(null); setMedia(null);
+  setError(null); setMedia(null);setDecoded(false);
   processingFetch('/api/preview', {method:'POST', headers:{'Content-Type':'application/json'},body:JSON.stringify({clip_id:clip.id,url:clip.url,start_seconds:clip.start_seconds,end_seconds:clip.end_seconds,crop:false}),signal:controller.signal})
    .then(async response => { if(!response.ok) throw new Error((await response.json()).error || 'Preview failed'); return response.blob(); })
    .then(blob=>{if(!active || controller.signal.aborted)return;url=URL.createObjectURL(blob);setMedia({url,blob});})
-   .catch(()=>{if(active){setError(timedOut ? 'Preview timed out. Retry to load footage.' : 'Preview unavailable. Retry to load footage.');callbacks.current.onPlayingChange(false);}})
+   .catch((e)=>{if(active){setError(timedOut ? 'Preview timed out. Retry to load footage.' : `${e instanceof Error?e.message:'Preview unavailable.'} Retry to load footage.`);callbacks.current.onPlayingChange(false);}})
    .finally(()=>clearTimeout(timeout));
   return ()=>{active=false;controller.abort();clearTimeout(timeout);if(url)URL.revokeObjectURL(url);};
  },[clip.id,clip.url,clip.start_seconds,clip.end_seconds,attempt]);
  useEffect(()=>{
   const controller = new AbortController();
-  callbacks.current.onMedia?.({thumbnails:[],peaks:null,loading:!!media});
+  callbacks.current.onMedia?.({thumbnails:[],peaks:null,loading:!error});
   if(media) Promise.all([sampleVideoFrames(media.url,segments,clip.start_seconds,controller.signal).catch(()=>[]),decodeEditedPeaks(media.blob,segments,clip.start_seconds)])
    .then(([thumbnails,peaks])=>{if(!controller.signal.aborted)callbacks.current.onMedia?.({thumbnails,peaks,loading:false});});
   return ()=>controller.abort();
- },[media,segments,clip.start_seconds]);
+ },[media,segments,clip.start_seconds,error]);
  useEffect(()=>{
   const video=ref.current; if(!video || !media)return;
   const publish=()=>{
@@ -55,7 +56,7 @@ export default function EditorMedia({ clip, segments, outputTime, playing, onTim
  useEffect(()=>{const requested=outputTime!==clock.current;clock.current=outputTime;const video=ref.current;if(requested && video && video.readyState>=1)seekEditedVideo(video,segments,outputTime,clip.start_seconds);},[outputTime,segments,clip.start_seconds,media]);
  useEffect(()=>{const video=ref.current;if(!video || !media)return;if(playing)video.play().catch(()=>callbacks.current.onPlayingChange(false));else video.pause();},[playing,media]);
  return <div className="relative bg-black rounded-lg" aria-label="Source preview">
-  {media && <video ref={ref} src={media.url} playsInline preload="auto" className="w-full max-h-[60vh]" onError={()=>{setError('Preview cannot be decoded. Retry to load footage.');callbacks.current.onPlayingChange(false);}} />}
-  {error ? <div role="alert" className="p-4">{error} <button type="button" onClick={()=>setAttempt(x=>x+1)}>Retry preview</button></div> : !media && <p role="status" className="p-4">Loading preview…</p>}
+  {media && <video ref={ref} src={media.url} playsInline preload="auto" className="w-full max-h-[60vh]" onLoadedData={()=>setDecoded(true)} onError={()=>{setError('Preview cannot be decoded. Retry to load footage.');callbacks.current.onPlayingChange(false);callbacks.current.onVideo?.(null);}} />}
+  {error ? <div role="alert" className="p-4">{error} <button type="button" onClick={()=>setAttempt(x=>x+1)}>Retry preview</button></div> : !decoded && <p role="status" className="p-4">{media?'Decoding preview…':'Loading preview…'}</p>}
  </div>;
 }

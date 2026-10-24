@@ -112,7 +112,7 @@ test("V1 upgrades preserving corrected text and layout", async () => {
   const { upgradeClipEditDraft } = await import("./clip-edit-draft.ts");
   const layout = { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 } };
   const upgraded = upgradeClipEditDraft(clip, validateClipEditDraft(draft({ vertical_layout: layout }), clip));
-  assert.equal(upgraded.version, 2);
+  assert.equal(upgraded.version, 3);
   assert.equal(upgraded.words?.[0].text, "this");
   assert.deepEqual(upgraded.vertical_layout, layout);
   assert.deepEqual(upgraded.segments.map(({ start_seconds, end_seconds }) => [start_seconds, end_seconds]), [[102, 128]]);
@@ -180,4 +180,48 @@ test('legacy KLYP upgrade retains its green caption appearance', async () => {
 
  const upgraded = upgradeClipEditDraft(clip, {...defaultClipEditDraft(clip),caption_style:'KLYP'});
  assert.equal(upgraded.caption_color,'green');
+});
+
+const cutaway = { id: "photo-1", asset_id: "asset-1", source_start_ms: 105000, source_end_ms: 108000, asset_in_ms: 0, fit: "cover", focal_point: { x: 0.5, y: 0.5 } };
+function v3(overrides: Record<string, unknown> = {}) {
+ return { ...v2(), version: 3, cutaways: [cutaway], ...overrides };
+}
+test("V2 upgrades to V3 preserving segments, caption overrides, and appearance", async () => {
+ const { upgradeClipEditDraft } = await import("./clip-edit-draft.ts");
+ const upgraded = upgradeClipEditDraft(clip, validateClipEditDraft(v2(), clip));
+ assert.equal(upgraded.version, 3);
+ assert.deepEqual(upgraded.cutaways, []);
+ assert.deepEqual(upgraded.segments, v2().segments);
+ assert.deepEqual(upgraded.caption_cues, v2().caption_cues);
+ assert.equal(upgraded.caption_position, "bottom");
+});
+test("V3 photo cutaway survives validation, saved-draft read and unsaved export", () => {
+ const checked = validateClipEditDraft(v3(), clip);
+ assert.equal(checked.version, 3);
+ if (checked.version !== 3) return;
+ assert.deepEqual(checked.cutaways, [cutaway]);
+ assert.equal(readClipEditDraft({ ...clip, edit_draft: checked }).unsupportedVersion, false);
+ assert.deepEqual(toClipExportPayload(clip, checked).edit_draft, checked);
+ assert.equal(toClipExportPayload(clip, checked).style, "BOLD");
+});
+test("V3 rejects over-limit, duplicate, overlapping, malformed and out-of-source cutaways", () => {
+ const badCutaways = [
+  null, {}, Array.from({ length: 13 }, (_, i) => ({ ...cutaway, id: String(i), source_start_ms: 100000 + i * 1000, source_end_ms: 100500 + i * 1000 })),
+  [cutaway, { ...cutaway, source_start_ms: 108000, source_end_ms: 109000 }],
+  [cutaway, { ...cutaway, id: "second", source_start_ms: 107000 }],
+  ...[{ id: "" }, { id: "x".repeat(121) }, { asset_id: " " }, { asset_id: "x".repeat(121) },
+    { source_start_ms: 99000 }, { source_end_ms: 131000 }, { source_end_ms: 105000 },
+    { source_start_ms: NaN }, { source_end_ms: Infinity }, { asset_in_ms: -1 }, { asset_in_ms: NaN },
+    { fit: "stretch" }, { focal_point: null }, { focal_point: { x: 1.1, y: 0 } }, { focal_point: { x: 0, y: NaN } },
+  ].map(change => [{ ...cutaway, ...change }]),
+ ];
+ for (const cutaways of badCutaways) assert.throws(() => validateClipEditDraft(v3({ cutaways }), clip));
+ const longClip = { ...clip, end_seconds: 300 };
+ assert.throws(() => validateClipEditDraft(v3({ end_seconds: 300, segments: [{ id: "a", start_seconds: 100, end_seconds: 300 }] }), longClip));
+});
+test("V3 permits adjacent unordered cutaways and deleted anchors without mutating IDs", () => {
+ const second = { ...cutaway, id: "photo-2", source_start_ms: 108000, source_end_ms: 111000 };
+ const checked = validateClipEditDraft(v3({ cutaways: [second, cutaway, { ...cutaway, id: "removed", source_start_ms: 112000, source_end_ms: 115000 }] }), clip);
+ assert.equal(checked.version, 3);
+ if (checked.version === 3) assert.deepEqual(checked.cutaways.map(c => c.id), ["photo-2", "photo-1", "removed"]);
 });

@@ -471,7 +471,7 @@ export default function ClipPreviewModal({
           ) : (
             <button
               onClick={onCreateClip}
-              disabled={draft.version === 2 || exporting || actionBlocked}
+              disabled={draft.version !== 1 || exporting || actionBlocked}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors disabled:opacity-60 disabled:shadow-none"
             >
               {exporting ? (
@@ -519,7 +519,7 @@ export default function ClipPreviewModal({
         {exportState?.status === "error" && (
           <p className="mx-6 mt-1 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
             {exportState.error}{" "}
-            <button onClick={onCreateClip} disabled={draft.version === 2 || actionBlocked || exporting} className="underline font-semibold hover:text-red-300 disabled:opacity-50">
+            <button onClick={onCreateClip} disabled={draft.version !== 1 || actionBlocked || exporting} className="underline font-semibold hover:text-red-300 disabled:opacity-50">
               Try again
             </button>
           </p>
@@ -550,7 +550,7 @@ export default function ClipPreviewModal({
                the dialog already has one, so it's suppressed here. */
             <>
               {unsupportedDraft && <p role="alert" className="mt-3 text-xs text-amber-300">This clip has a newer or invalid saved draft. Original edit values are shown; use Reset to remove the stored draft.</p>}
-              {draft.version === 2 ? <p role="status" className="mt-3 text-sm text-amber-300">This clip has timeline edits. Open the full timeline editor to change or export this draft.</p> : <SavedClipEditor clip={clip} draft={draft} onDraftChange={setDraft}
+              {draft.version !== 1 ? <p role="status" className="mt-3 text-sm text-amber-300">This clip has timeline edits. Open the full timeline editor to change or export this draft.</p> : <SavedClipEditor clip={clip} draft={draft} onDraftChange={setDraft}
                 onPersisted={(value) => {
                   const persisted = value ?? defaultClipEditDraft(clip);
                   setSavedDraft(persisted);

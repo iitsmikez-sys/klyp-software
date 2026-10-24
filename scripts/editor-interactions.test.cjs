@@ -50,6 +50,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   let requests = 0, delaySave = false, releaseSave;
   await page.route('**/api/preview', route => { requests++; return route.fulfill({ status: 200, contentType: 'video/mp4', body: 'not a decodable MP4' }); });
   await page.route('**/api/vertical-layout', route => route.fulfill({ json: {} }));
+  await page.route('**/api/clips/*/media', route => route.fulfill({ json: { assets: [] } }));
   await page.route('**/api/clips/*/edit-draft', async route => { const draft = route.request().postDataJSON().draft; if (delaySave) await new Promise(resolve => releaseSave = resolve); await route.fulfill({ json: { edit_draft: draft } }); });
   await page.goto(url); await page.getByRole('link', { name: 'Open fixture editor' }).click(); await page.getByLabel('Hook text').waitFor();
   // A successful HTTP request can still fail decoding. Retry must be reachable.
@@ -84,7 +85,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   await page.getByLabel('Hook text').fill('new hook while saving'); while (!releaseSave) await wait(10); releaseSave(); await page.getByText('Unsaved changes', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('Clip title').inputValue(), 'Server title'); assert.equal(await page.getByLabel('Hook text').inputValue(), 'new hook while saving');
   // Route has no background dashboard UI, and every keyboard stop stays inside.
-  assert.equal(await page.locator('nav').count(), 0);
+  assert.equal(await page.locator('nav:not(.editor-rail)').count(), 0);
   await page.getByRole('button', { name: 'Back to clips' }).focus();
   for (let i = 0; i < 70; i++) { await page.keyboard.press('Tab'); assert(await page.evaluate(() => document.activeElement === document.body || !!document.activeElement.closest('.clip-editor')), 'Tab must not reach dashboard controls'); }
   assert.deepEqual(errors, []);

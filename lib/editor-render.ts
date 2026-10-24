@@ -1,15 +1,15 @@
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "./bin.ts";
-import { validateClipEditDraft, type ClipEditDraftV2 } from "./clip-edit-draft.ts";
+import { validateClipEditDraft, type ClipEditDraftV2, type ClipEditDraftV3 } from "./clip-edit-draft.ts";
 import { outputDuration, validateSegments, type SourceSegment } from "./editor-timeline.ts";
 import type { SavedClip } from "./clip-ui.ts";
 
 type OwnedEditorClip = Pick<SavedClip, "id" | "url" | "start_seconds" | "end_seconds" | "words" | "edit_draft">;
 
-/** Legacy exports opt out; explicit editor requests must carry or select a valid owned V2 draft. */
+/** Legacy exports opt out; explicit editor requests require a valid owned timeline draft. */
 export function validateEditorExportRequest(
   body: Record<string, unknown>,
   ownedClip: OwnedEditorClip | null,
-): ClipEditDraftV2 | null {
+): ClipEditDraftV2 | ClipEditDraftV3 | null {
   const requested = body.edit_draft !== undefined || body.editor_export === true ||
     body.segments !== undefined || body.caption_cues !== undefined;
   if (!requested) return null;
@@ -22,7 +22,8 @@ export function validateEditorExportRequest(
   const draft = validateClipEditDraft(
     body.edit_draft !== undefined ? body.edit_draft : ownedClip.edit_draft, ownedClip,
   );
-  if (draft.version !== 2) throw new RangeError("A version 2 editor draft is required.");
+  if (draft.version === 1) throw new RangeError("A version 2 or 3 editor draft is required.");
+  if (body.raw === true && draft.version === 3 && draft.cutaways.length) throw new RangeError("Raw export omits editor effects. Use normal export to include imported cutaways.");
   return draft;
 }
 

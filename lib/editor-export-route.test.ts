@@ -11,10 +11,13 @@ import { clipSeekRange } from './clip-trim.ts';
 import { planClipComposition, validateVerticalLayout } from './vertical-layout.ts';
 import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_DIMENSIONS } from './clips.ts';
 import { ClipEditDraftError } from './clip-edit-draft.ts';
+import { EditorAssetError } from './editor-assets.ts';
+import { resolveCutawaySpans } from './editor-timeline.ts';
+import * as cutawayRenderer from './editor-cutaway-render.ts';
 const routeCode=ts.transpileModule(readFileSync(new URL('../app/api/clip/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
 const clip={id:'owned',url:'https://twitch.tv/videos/123',start_seconds:100,end_seconds:110,words:null,edit_draft:null};
 const draft={version:2,start_seconds:101,end_seconds:109,title:'Unsaved',hook:'Hey',hook_style:'IMPACT',caption_style:'BOLD',aspect_ratio:'9:16',words:null,segments:[{id:'a',start_seconds:101,end_seconds:102},{id:'b',start_seconds:108,end_seconds:109}],caption_cues:[{id:'cue',start_ms:101500,end_ms:108500,text:'corrected'}],caption_color:'green',caption_position:'top'};
-async function exportRoute(options:{archive?:boolean;missingArchive?:boolean;owned?:boolean;pro?:boolean;body?:Record<string,unknown>;failRender?:boolean;profileLayout?:any}={}){
+async function exportRoute(options:{archive?:boolean;missingArchive?:boolean;owned?:boolean;pro?:boolean;body?:Record<string,unknown>;failRender?:boolean;profileLayout?:any;assetError?:EditorAssetError;failAssetDownload?:boolean}={}){
  const calls:{name:string;args:any[]}[]=[];
  const record=(name:string,...args:any[])=>calls.push({name,args});
  const fs={mkdtemp:async()=>'/temp/editor',readFile:async()=>Buffer.from('mp4'),writeFile:async(...args:any[])=>record('write',...args),rm:async(...args:any[])=>record('rm',...args)};
@@ -24,6 +27,9 @@ async function exportRoute(options:{archive?:boolean;missingArchive?:boolean;own
  'next/server':{NextResponse},'fs/promises':fs,os:{tmpdir},path,
  '@/lib/supabase/admin':{createAdminClient:()=>({from:()=>db})},
  '@/lib/editor-render':{validateEditorExportRequest,renderKeptSegments:async(...args:any[])=>{record('render',...args);if(options.failRender)throw new Error('render failed');return {duration:2,hasAudio:true};}},
+ '@/lib/editor-timeline':{resolveCutawaySpans},
+ '@/lib/editor-assets':{EditorAssetError,assertOwnedDraftAssets:async(...args:any[])=>{record('verifyAssets',...args);if(options.assetError)throw options.assetError;}},
+ '@/lib/editor-cutaway-render':{...cutawayRenderer,loadEditorCutawayAssets:async(...args:any[])=>{record('loadAssets',...args);if(options.failAssetDownload)throw new EditorAssetError('Media is missing.',404);return [{id:'asset',localPath:'/trusted/asset.png',kind:'photo',mime_type:'image/png',width:128,height:64,duration_ms:null}];}},
  '@/lib/clip-edit-draft':{ClipEditDraftError},'@/lib/editor-captions':{resolveEditorCues,captionAppearance},
  '@/lib/bin':{resolveBin:(s:string)=>s,FFMPEG_THREADS:2,runCapture:async()=> '1920,1080',run:async(...args:any[])=>record('encode',...args)},
  '@/lib/captions':{generateAss:()=>{record('legacyCaptions');return 'legacy';},generateTimedCueAss:(...args:any[])=>{record('cues',...args);return 'ass';},generateHookAss:()=> 'hook',toFfmpegPath:(s:string)=>s,HOOK_STYLES:['IMPACT']},
@@ -35,7 +41,7 @@ async function exportRoute(options:{archive?:boolean;missingArchive?:boolean;own
  '@/lib/clip-archive':{getArchivedClip:async()=>options.archive?{id:'owned',masterPath:'master',status:'stored',originalStartSeconds:100,originalEndSeconds:110}:null,readArchivedObject:async()=>options.missingArchive?null:Buffer.from('master')},
  '@/lib/clip-trim':{clipSeekRange},'@/lib/sparks':{UPSCALE_COST:35},'@/lib/cors':{withCors:(r:Response)=>r,corsPreflight:()=>{}}
  };
- const exports:any={};vm.runInNewContext(routeCode,{exports,require:(name:string)=>{if(!(name in modules))throw new Error(name);return modules[name];},process:{env:{DEPLOYMENT_TARGET:'processing'}},console:{log:()=>{}},Buffer,Response});
+ const exports:any={};vm.runInNewContext(routeCode,{exports,require:(name:string)=>{if(!(name in modules))throw new Error(name);return modules[name];},process:{env:{DEPLOYMENT_TARGET:'processing'}},console:{log:()=>{}},Buffer,Response,Error,RangeError});
  const body=options.body??{clip_id:'owned',url:'https://twitch.tv/videos/forged',edit_draft:draft,caption_cues:[{text:'forged'}]};
  const response:Response=await exports.POST({json:async()=>body});return {response,calls};
 }
@@ -80,4 +86,32 @@ test('square export uses the shared composition with a centered landscape crop',
  const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:{...draft,aspect_ratio:'1:1'}}});
  assert.equal(response.status,200);
  assert.deepEqual(calls.find(c=>c.name==='composition')?.args[0].panels[0].source,{x:420,y:0,w:1080,h:1080});
+});
+
+const imported={...draft,version:3,cutaways:[{id:'visual',asset_id:'asset',source_start_ms:101000,source_end_ms:101500,asset_in_ms:0,fit:'cover',focal_point:{x:0.5,y:0.5}}]};
+test('normal export composites verified imports after framing and before captions while mapping source audio',async()=>{
+ const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:imported,assets:[{localPath:'https://evil.invalid/media'}]}});
+ assert.equal(response.status,200);
+ assert.deepEqual(calls.find(c=>c.name==='verifyAssets')?.args.slice(0,2),['user','owned']);
+ assert.deepEqual(calls.find(c=>c.name==='loadAssets')?.args.slice(0,2),['user','owned']);
+ const args=Array.from(calls.find(c=>c.name==='encode')!.args[1]) as string[];
+ assert.ok(args.includes('/trusted/asset.png'));assert.ok(!args.some(a=>a.includes('evil.invalid')));
+ const filter=args[args.indexOf('-filter_complex')+1];
+ assert.ok(filter.indexOf('composed')<filter.indexOf('overlay='));
+ assert.ok(filter.indexOf('overlay=')<filter.indexOf('subtitles='));
+ assert.ok(args.includes('0:a?'));assert.ok(!args.includes('1:a?'));
+ assert.ok(calls.some(c=>c.name==='rm'&&c.args[0]==='/temp/editor'));
+});
+test('foreign, missing, and unavailable media fail with useful status before source work',async()=>{
+ for(const status of [404,503]){
+  const {response,calls}=await exportRoute({assetError:new EditorAssetError('Media asset not found or unavailable.',status),body:{clip_id:'owned',edit_draft:imported}});
+  assert.equal(response.status,status);assert.ok(!calls.some(c=>['download','render','encode'].includes(c.name)));
+ }
+ const failed=await exportRoute({failAssetDownload:true,body:{clip_id:'owned',edit_draft:imported}});
+ assert.equal(failed.response.status,404);assert.ok(!failed.calls.some(c=>c.name==='encode'));assert.ok(failed.calls.some(c=>c.name==='rm'));
+});
+test('raw export containing cutaways rejects clearly instead of silently dropping imports',async()=>{
+ const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:imported,raw:true}});
+ assert.equal(response.status,400);assert.match((await response.json()).error,/normal export/i);
+ assert.ok(!calls.some(c=>['download','render','encode'].includes(c.name)));
 });

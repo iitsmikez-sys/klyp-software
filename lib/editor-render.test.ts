@@ -46,3 +46,13 @@ for (const audio of [true,false]) test(`real FFmpeg keeps frames and tones in or
 test('explicit null draft is rejected rather than silently exporting a saved draft',()=>{
  assert.throws(()=>validateEditorExportRequest({clip_id:'owned',edit_draft:null},{...clip,edit_draft:draft}),/draft/i);
 });
+test('V3 exports without cutaways retain the complete validated draft', () => {
+ const v3 = { ...draft, version: 3, cutaways: [] };
+ assert.deepEqual(validateEditorExportRequest({ clip_id: 'owned', edit_draft: v3 }, clip), v3);
+ assert.deepEqual(validateEditorExportRequest({ clip_id: 'owned', editor_export: true }, { ...clip, edit_draft: v3 }), v3);
+});
+test('V3 cutaways are retained for normal export and rejected for raw export', () => {
+ const v3 = { ...draft, version: 3, cutaways: [{ id: 'visual', asset_id: 'asset', source_start_ms: 101000, source_end_ms: 101500, asset_in_ms: 0, fit: 'cover', focal_point: { x: 0.5, y: 0.5 } }] };
+ assert.deepEqual(validateEditorExportRequest({ clip_id: 'owned', edit_draft: v3 }, clip), v3);
+ assert.throws(() => validateEditorExportRequest({ clip_id: 'owned', edit_draft: v3, raw: true }, clip), /normal export/i);
+});

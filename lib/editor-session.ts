@@ -1,6 +1,6 @@
 import { validateSegments, type SourceSegment } from './editor-timeline.ts';
 export type Selection = {
-    type: 'video' | 'caption';
+    type: 'video' | 'caption' | 'cutaway';
     id: string;
 } | null;
 export type SaveState = {

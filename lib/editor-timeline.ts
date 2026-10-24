@@ -1,3 +1,4 @@
+import type { ClipEditDraftV3, VisualCutaway } from "./clip-edit-draft.ts";
 export type SourceSegment = { id: string; start_seconds: number; end_seconds: number };
 export type CaptionCue = { id: string; start_ms: number; end_ms: number; text: string };
 const EPSILON = 1e-9;
@@ -19,6 +20,29 @@ export function validateSegments(input: unknown, start = 0, end = Infinity): Sou
 }
 export function outputDuration(segments: readonly SourceSegment[]): number {
   return segments.reduce((sum, s) => sum + s.end_seconds - s.start_seconds, 0);
+}
+/** Output milliseconds and the imported-media offset at this fragment's start. */
+export type ResolvedCutawaySpan = VisualCutaway & { start_ms: number; end_ms: number };
+/** Resolve each surviving source intersection without changing persisted anchors or IDs. */
+export function resolveCutawaySpans(draft: ClipEditDraftV3): ResolvedCutawaySpan[] {
+ const spans: ResolvedCutawaySpan[] = [];
+ let outputOffset = 0;
+ for (const segment of draft.segments) {
+  const sourceStart = segment.start_seconds * 1000;
+  const sourceEnd = segment.end_seconds * 1000;
+  for (const cutaway of draft.cutaways) {
+   const start = Math.max(sourceStart, cutaway.source_start_ms);
+   const end = Math.min(sourceEnd, cutaway.source_end_ms);
+   if (end > start) spans.push({ ...cutaway, focal_point: { ...cutaway.focal_point }, start_ms: outputOffset + start - sourceStart, end_ms: outputOffset + end - sourceStart, asset_in_ms: cutaway.asset_in_ms + start - cutaway.source_start_ms });
+  }
+  outputOffset += sourceEnd - sourceStart;
+ }
+ return spans.sort((a, b) => a.start_ms - b.start_ms);
+}
+/** Half-open boundaries match source segments and caption lookup. */
+export function cutawayAtOutputTime(spans: readonly ResolvedCutawaySpan[], seconds: number): ResolvedCutawaySpan | null {
+ if (!Number.isFinite(seconds) || seconds < 0) return null;
+ return spans.find(span => seconds * 1000 >= span.start_ms && seconds * 1000 < span.end_ms) ?? null;
 }
 /** Clamp finite positions; an internal boundary belongs to the next segment. */
 export function sourceAtOutputTime(segments: readonly SourceSegment[], seconds: number): number {

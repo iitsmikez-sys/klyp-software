@@ -215,7 +215,7 @@ export default function SavedClipEditor({
   }, [clip.id, retryToken, hidePreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveDraft = async (reset = false) => {
-    if ((clip.edit_draft as { version?: number } | null)?.version === 2) { setSaveError("Open the timeline editor to preserve this clip’s timeline edits."); return; }
+    if (((clip.edit_draft as { version?: number } | null)?.version ?? 1) >= 2) { setSaveError("Open the timeline editor to preserve this clip’s timeline edits."); return; }
     if (!isPro) { setProGateOpen(true); return; }
     setSaving(true);
     setSaveError(null);
