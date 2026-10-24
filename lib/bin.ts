@@ -283,6 +283,24 @@ export function runCapture(bin: string, args: string[], opts: RunOptions = {}): 
   return spawnProcess(bin, args, opts);
 }
 
+/** Capture yt-dlp metadata, retrying a YouTube bot challenge over IPv6. */
+export async function runYtDlpCaptureWithIpv6Fallback(args: string[], opts: RunOptions = {}): Promise<string> {
+  const bin = resolveBin("yt-dlp");
+  try {
+    return await runCapture(bin, args, opts);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!shouldRetryYouTubeOverIpv6(args, message)) throw err;
+    console.error("[yt-dlp] metadata request failed:", message);
+    try {
+      return await runCapture(bin, ["--force-ipv6", ...args], opts);
+    } catch (ipv6Error) {
+      console.error("[yt-dlp] IPv6 metadata retry failed:", ipv6Error);
+      throw err;
+    }
+  }
+}
+
 /** Spawn a process and resolve on exit 0, reject with stderr tail otherwise. */
 export async function run(bin: string, args: string[], opts: RunOptions = {}): Promise<void> {
   await spawnProcess(bin, args, opts);
