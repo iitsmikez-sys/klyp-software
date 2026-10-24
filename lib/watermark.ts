@@ -66,10 +66,10 @@ export function watermarkCanvasPos(
   W: number,
   H: number,
   textW: number,
-  textH: number
+  textH: number,
+  margin = MARGIN * (W / 1080)
 ): { x: number; y: number } {
   const phase = ((t % CYCLE) + CYCLE) % CYCLE;
-  const margin = MARGIN * (W / 1080); // scale margin to preview size
   const segLen = CYCLE / 3;
   const seg = Math.min(2, Math.floor(phase / segLen));
   const tNorm = (phase % segLen) / segLen;
@@ -90,3 +90,21 @@ export function watermarkCanvasPos(
 }
 
 export { FONT_SIZE as WATERMARK_FONT_SIZE };
+
+/** Draw in export coordinates so placement and font size scale together. */
+export function drawWatermarkPreview(ctx: CanvasRenderingContext2D, time: number,
+  width: number, height: number, outputWidth = 1080, outputHeight = 1920): void {
+  if (width <= 0 || height <= 0) return;
+  ctx.save();
+  ctx.scale(width / outputWidth, height / outputHeight);
+  ctx.font = `bold ${FONT_SIZE}px Arial`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  const metrics = ctx.measureText("klyp.world");
+  const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent || FONT_SIZE;
+  // The filter uses a fixed 22px margin at every export resolution.
+  const pos = watermarkCanvasPos(time, outputWidth, outputHeight, metrics.width, textHeight, MARGIN);
+  ctx.fillText("klyp.world", pos.x, pos.y);
+  ctx.restore();
+}

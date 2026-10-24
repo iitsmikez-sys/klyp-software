@@ -17,14 +17,14 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { fmtTime, clipDuration, footageGone, type SavedClip } from "@/lib/clip-ui";
-import { loadClipThumbnail, peekClipThumbnail } from "@/lib/clip-thumbnails";
+import { loadClipThumbnail, peekClipThumbnail, invalidateClipThumbnail } from "@/lib/clip-thumbnails";
 
 /**
  * Only the source and range are needed, so this also accepts a clip straight
  * out of an analysis, before it has been saved to My Clips.
  */
 export type ThumbnailClip = Pick<SavedClip, "url" | "start_seconds" | "end_seconds" | "title"> &
-  Pick<SavedClip, "archive_status">;
+  Pick<SavedClip, "archive_status"> & { id?: string };
 
 interface Props {
   clip: ThumbnailClip;
@@ -38,9 +38,12 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
   const gone = footageGone(clip);
   const [src, setSrc] = useState<string | null>(null);
   const [state, setState] = useState<State>(gone ? "gone" : "idle");
+  const [retry, setRetry] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setSrc(null);
+    setState(gone ? "gone" : "idle");
     const box = boxRef.current;
     if (!box) return;
     // No footage anywhere: a frame cannot be produced, so don't spend a request
@@ -85,19 +88,20 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
       observer.disconnect();
       // The object URL is owned by the shared cache, so it is not revoked here.
     };
-  }, [clip, gone]);
+  }, [clip.url, clip.start_seconds, clip.end_seconds, clip.id, gone, retry]);
 
   return (
+    <div className="relative">
     <div
       ref={boxRef}
-      onClick={(e) => { e.stopPropagation(); onPlay(); }}
+      onClick={(e) => { e.stopPropagation(); if (!gone) onPlay(); }}
       role="button"
-      tabIndex={0}
+      tabIndex={gone ? -1 : 0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           e.stopPropagation();
-          onPlay();
+          if (!gone) onPlay();
         }
       }}
       aria-label={gone ? `${clip.title} — footage no longer available` : `Preview ${clip.title}`}
@@ -107,10 +111,11 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
         <img
           src={src}
           alt=""
+          onError={() => { invalidateClipThumbnail(clip); setSrc(null); setState("failed"); }}
           className="w-full h-full object-cover transition-transform duration-300 group-hover/thumb:scale-[1.03]"
         />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-surface-2 via-surface to-background">
+        <div className={`absolute inset-0 bg-surface-2 ${state === "loading" ? "motion-safe:animate-pulse" : ""}`}>
           {/* Bottom-left keeps this clear of the centred play button and the
               duration badge in the opposite corner. */}
           <span className="absolute bottom-2 left-2.5 flex items-center gap-1.5 text-xs text-muted">
@@ -161,6 +166,10 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
       <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-white text-[13px] font-semibold font-mono tabular-nums tracking-tight">
         {fmtTime(clipDuration(clip))}
       </span>
+    </div>
+    {state === "failed" && <button type="button" onClick={() => setRetry((value) => value + 1)}
+      className="absolute right-2 top-2 z-10 rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      aria-label={`Retry thumbnail for ${clip.title}`}>Retry thumbnail</button>}
     </div>
   );
 }

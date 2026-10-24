@@ -11,12 +11,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, canUseExportFormat, resolveExportFormat, type CaptionStyle, type ExportFormat, type TimedWord } from "@/lib/clips";
 import { buildCaptionCues, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
+import { drawWatermarkPreview } from "@/lib/watermark";
 import { drawCaptionPreview } from "@/lib/caption-preview";
 import { CAPTION_COLORS, CAPTION_HEX, CAPTION_POSITIONS, type CaptionColor, type CaptionPosition } from "@/lib/editor-captions";
 import { useSparks } from "./SparksProvider";
 import ProGateModal from "./ProGateModal";
 import ClipTrimControl from "./ClipTrimControl";
+import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import EditorTimeline from "./EditorTimeline";
+import workspaceStyles from "./EditorWorkspace.module.css";
 import { archivedClipTiming } from "@/lib/clip-trim";
 import type { SavedClip } from "@/lib/clip-ui";
 import { processingFetch } from "@/lib/processing-api";
@@ -54,7 +57,18 @@ function fmtClipTime(seconds: number) {
 export default function SavedClipEditor({
   clip,
   workspace = false,
-}: { clip: SavedClip; workspace?: boolean }) {
+  draftId = clip.id,
+  initialCaptionStyle = "BOLD",
+  onSettingsChange,
+  onKeepClip,
+  savingClip = false,
+  saveError, initialSettings, onExportStateChange,
+}: { clip: SavedClip; workspace?: boolean; draftId?: string; initialCaptionStyle?: CaptionStyle;
+  onSettingsChange?: (settings: EditorExportSettings) => void;
+  onKeepClip?: () => void; savingClip?: boolean; saveError?: string | null;
+  initialSettings?: EditorExportSettings;
+  onExportStateChange?: (working: boolean, error?: string) => void;
+}) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -63,6 +77,7 @@ export default function SavedClipEditor({
   const [transcriptOnly, setTranscriptOnly] = useState(false);
   const [leftTab, setLeftTab] = useState<"transcript" | "scene" | "media">("transcript");
   const [settingsTab, setSettingsTab] = useState<"edit" | "style">("edit");
+  const [mobilePanel, setMobilePanel] = useState<"library" | "settings">("settings");
   const settingsPanelRef = useRef<HTMLDivElement>(null);
   const styleSectionRef = useRef<HTMLDivElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
@@ -93,7 +108,7 @@ export default function SavedClipEditor({
 
   const [selectedHook, setSelectedHook] = useState<string | null>(hooks[0] ?? null);
   const [hookStyle, setHookStyle] = useState<HookStyle>("IMPACT");
-  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("BOLD");
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(initialCaptionStyle);
   const [captionColor, setCaptionColor] = useState<CaptionColor>("DEFAULT");
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("BOTTOM");
   const [captionWords, setCaptionWords] = useState<TimedWord[]>(Array.isArray(clip.words) ? clip.words : []);
@@ -101,6 +116,10 @@ export default function SavedClipEditor({
   const [editingHook, setEditingHook] = useState(false);
   const [format, setFormat] = useState<ExportFormat>("9:16");
   const exportFormat = resolveExportFormat(format, isPro);
+  const [sourceAspect, setSourceAspect] = useState(16 / 9);
+  const previewAspect = exportFormat === "Original" ? sourceAspect
+    : exportFormat === "16:9" ? 16 / 9 : exportFormat === "1:1" ? 1 : 9 / 16;
+  const exportLock = useRef(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
@@ -410,6 +429,7 @@ export default function SavedClipEditor({
 
   const uploadMedia = async (file: File) => {
     setMediaError(null);
+    if (!clip.id) return setMediaError("Keep this clip before adding media.");
     if (media.length >= 8) return setMediaError("You can add up to 8 images or videos.");
     if (file.size > 50 * 1024 * 1024) return setMediaError("Imported media must be under 50 MB.");
     setUploadingMedia(true);
@@ -438,7 +458,14 @@ export default function SavedClipEditor({
   // Keep the user's hook and export choices when they close and reopen the editor.
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(`klyp-editor-${clip.id}`);
+      let raw: string | null = null;
+      try { raw = localStorage.getItem(`klyp-editor-${draftId}`); } catch { /* Use the in-memory draft below. */ }
+      if (!raw && initialSettings) raw = JSON.stringify({
+        hook: initialSettings.hook ?? null, hookStyle: initialSettings.hook_style,
+        captionStyle: initialSettings.style, captionColor: initialSettings.caption_color, captionPosition: initialSettings.caption_position,
+        captionEdits: initialSettings.caption_edits?.map(({ text }) => text), format: initialSettings.aspect_ratio,
+        segments: initialSettings.segments, media: initialSettings.media,
+      });
       if (raw) {
         const saved = JSON.parse(raw) as {
           hook?: string | null; hookStyle?: HookStyle;
@@ -489,13 +516,24 @@ export default function SavedClipEditor({
   useEffect(() => {
     if (!draftReady) return;
     try {
-      localStorage.setItem(`klyp-editor-${clip.id}`, JSON.stringify({
+      localStorage.setItem(`klyp-editor-${draftId}`, JSON.stringify({
         hook: selectedHook, hookStyle, captionStyle, captionColor, captionPosition,
         captionEdits: captionWords.map((word) => word.text), format, segments,
         media: media.map(({ id, kind, after, duration, placement, at, name }) => ({ id, kind, after, duration, placement, at, name })),
       }));
     } catch { /* Storage can be unavailable; editing and export still work. */ }
   }, [clip.id, draftReady, selectedHook, hookStyle, captionStyle, captionColor, captionPosition, captionWords, format, segments, media]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    onSettingsChange?.({ style: hasWords ? captionStyle : undefined,
+      hook: selectedHook ?? undefined, hook_style: hookStyle, aspect_ratio: exportFormat,
+      caption_color: captionColor, caption_position: captionPosition,
+      caption_edits: hasWords ? captionWords.map(({ text }) => ({ text })) : undefined,
+      segments, media: media.map(({ id, kind, after, duration, placement, at }) => ({ id, kind, after, duration, placement, at })),
+    });
+  }, [draftReady, onSettingsChange, hasWords, captionStyle, selectedHook, hookStyle, exportFormat, captionColor, captionPosition, captionWords, segments, media]);
+
 
   useEffect(() => {
     const item = activeMediaIndex === null ? null : media[activeMediaIndex];
@@ -545,12 +583,17 @@ export default function SavedClipEditor({
       }
       drawCaptionPreview(ctx, editedTimeRef.current, liveCaptionCues, captionStyle,
         { color: captionColor, position: captionPosition }, canvas.width, canvas.height);
+      if (!isPro) {
+        const output = exportFormat === "9:16" ? [1080, 1920] : exportFormat === "1:1" ? [1080, 1080]
+          : exportFormat === "16:9" ? [1920, 1080] : [video.videoWidth || 1080, video.videoHeight || 1920];
+        drawWatermarkPreview(ctx, editedTimeRef.current, canvas.width, canvas.height, output[0], output[1]);
+      }
       rafRef.current = requestAnimationFrame(draw);
     };
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [previewUrl, selectedHook, hookStyle, liveCaptionCues, captionStyle, captionColor, captionPosition]);
+  }, [previewUrl, selectedHook, hookStyle, liveCaptionCues, captionStyle, captionColor, captionPosition, isPro, exportFormat]);
 
   const onPreviewOverlayClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget;
@@ -620,6 +663,7 @@ export default function SavedClipEditor({
         url: clip.url,
         start_seconds: clip.start_seconds,
         end_seconds: clip.end_seconds,
+        crop: false,
       }),
       signal: controller.signal,
     })
@@ -654,6 +698,10 @@ export default function SavedClipEditor({
   }, [clip.id, retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportClip = async () => {
+    if (exportLock.current) return;
+    exportLock.current = true;
+    onExportStateChange?.(true);
+    let failure: string | undefined;
     setExporting(true);
     setExportError(null);
     // Timeout so a hung export fails loudly instead of spinning forever. The
@@ -699,21 +747,22 @@ export default function SavedClipEditor({
       a.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
-      setExportError(
-        controller.signal.aborted
-          ? "Export timed out after 10 minutes — the source VOD may still be downloading in the background. Try again in a bit."
-          : err instanceof Error ? err.message : "Export failed."
-      );
+      failure = controller.signal.aborted
+        ? "Export timed out after 10 minutes. Try again in a bit."
+        : err instanceof Error ? err.message : "Export failed.";
+      setExportError(failure);
     } finally {
       clearTimeout(timeout);
+      exportLock.current = false;
       setExporting(false);
+      onExportStateChange?.(false, failure);
     }
   };
 
   return (
-    <div className={workspace ? "xl:h-full xl:flex xl:flex-col bg-[#080f13]" : "mt-4 pt-4 border-t border-border"} onClick={(e) => e.stopPropagation()}>
+    <div data-mobile-panel={mobilePanel} className={workspace ? `${workspaceStyles.workspace} xl:h-full xl:flex xl:flex-col bg-[#080f13]` : "mt-4 pt-4 border-t border-border"} onClick={(e) => e.stopPropagation()}>
       {workspace && (
-        <div className="h-[60px] shrink-0 flex items-center gap-5 border-b border-[#24323a] bg-[#071218] px-7 pr-14">
+        <div className={workspaceStyles.header}>
           <span className="font-syne text-[28px] font-black tracking-tight text-white"><span className="text-accent">K</span>LYP</span>
           <span className="hidden sm:block h-7 w-px bg-[#2b3941]" />
           <span className="min-w-0 truncate text-base font-semibold text-foreground" title={clip.title}>{clip.title}</span>
@@ -733,14 +782,18 @@ export default function SavedClipEditor({
         </div>
       )}
       <div className={workspace
-        ? "grid grid-cols-1 xl:grid-cols-[minmax(420px,32%)_minmax(360px,31%)_minmax(420px,37%)] xl:flex-1 xl:min-h-0 items-stretch border-b border-[#24323a]"
+        ? workspaceStyles.grid
         : "grid grid-cols-1 lg:grid-cols-2 gap-6 items-start"}>
 
       {/* ── Scene analysis (left): description + transcript with timestamps ── */}
+      {workspace && <div className={workspaceStyles.mobileTabs} aria-label="Editor panels">
+        <button type="button" aria-pressed={mobilePanel === "library"} onClick={() => setMobilePanel("library")}>Transcript & media</button>
+        <button type="button" aria-pressed={mobilePanel === "settings"} onClick={() => setMobilePanel("settings")}>Clip settings</button>
+      </div>}
       <div className={workspace
-        ? "order-2 xl:order-1 min-w-0 min-h-0 flex border-r border-[#24323a] bg-[#0b151b]"
+        ? `${workspaceStyles.library} order-2 xl:order-1 min-w-0 min-h-0 flex border-r border-[#24323a] bg-[#0b151b]`
         : "space-y-3"}>
-        {workspace && <nav aria-label="Editor sections" className="hidden xl:flex w-[100px] shrink-0 flex-col items-stretch gap-1 border-r border-[#20343e] bg-[#061119] pt-2">
+        {workspace && <nav aria-label="Editor sections" className="hidden xl:flex w-[64px] shrink-0 flex-col items-stretch gap-1 border-r border-[#20343e] bg-[#061119] pt-2">
           {(["transcript", "media", "scene"] as const).map((tab) => (
             <button key={tab} type="button" onClick={() => setLeftTab(tab)} aria-current={leftTab === tab ? "page" : undefined}
               className={`mx-1 flex h-[76px] flex-col items-center justify-center gap-1.5 rounded-md text-[11px] font-semibold transition-colors ${leftTab === tab ? "border-l-4 border-accent bg-[#073d34] text-white" : "text-foreground-muted hover:bg-white/5 hover:text-white"}`}>
@@ -843,7 +896,7 @@ export default function SavedClipEditor({
             {"label":"Add video","accept":"video/mp4,video/quicktime,video/webm","icon":"▣"}]).map(({ label, accept, icon }) => (
             <label key={label} className="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#30424c] bg-[#0d1a21] text-xs font-semibold text-foreground hover:border-accent/60">
               <span className="text-lg">{icon}</span>{label}
-              <input type="file" accept={accept} className="sr-only" disabled={uploadingMedia || exporting}
+              <input type="file" accept={accept} className="sr-only" disabled={!clip.id || uploadingMedia || exporting}
                 onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadMedia(file); }} />
             </label>
           ))}
@@ -853,11 +906,12 @@ export default function SavedClipEditor({
 
       {/* ── Vertical preview (centre) ── */}
       <div className={workspace
-        ? "order-1 xl:order-2 min-w-0 min-h-0 bg-[#050d12] flex flex-col justify-between"
+        ? `${workspaceStyles.preview} order-1 xl:order-2 min-w-0 min-h-0 bg-[#050d12] flex flex-col justify-between`
         : "order-1 lg:order-2 min-w-0 rounded-xl border border-border bg-background p-3"}>
         {!workspace && <p className="mb-3 text-sm font-semibold text-foreground">Preview</p>}
-        <div ref={previewFrameRef} className="relative bg-black overflow-hidden mx-auto"
-          style={{ aspectRatio: "9/16", height: workspace ? "clamp(220px, min(56dvh, calc(100dvh - 410px)), 590px)" : undefined, maxHeight: workspace ? undefined : 380 }}>
+        <div className={workspace ? workspaceStyles.stage : undefined}>
+        <div ref={previewFrameRef} className={`relative bg-black overflow-hidden mx-auto ${workspace ? workspaceStyles.frame : ""}`}
+          style={{ aspectRatio: previewAspect, "--preview-aspect": previewAspect, maxHeight: workspace ? undefined : 380 } as React.CSSProperties}>
         {loadingPreview && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground-muted">
             <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
@@ -887,13 +941,16 @@ export default function SavedClipEditor({
             <video
               ref={videoRef}
               src={previewUrl}
-              className="w-full h-full object-contain cursor-pointer"
+              className="w-full h-full object-cover cursor-pointer"
               playsInline
               onClick={togglePlayback}
               muted={muted}
               onTimeUpdate={(e) => onPreviewTimeUpdate(e.currentTarget)}
               onLoadedMetadata={(e) => {
                 setPreviewDuration(e.currentTarget.duration || previewDuration);
+                if (e.currentTarget.videoWidth && e.currentTarget.videoHeight) {
+                  setSourceAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight);
+                }
                 e.currentTarget.currentTime = segments[0].start + previewLeadSeconds;
                 if (timelineItems[0]?.kind !== "source") seekOutput(0);
               }}
@@ -963,7 +1020,8 @@ export default function SavedClipEditor({
           </>
         )}
         </div>
-        {workspace ? <div className="flex h-[58px] items-center justify-between gap-2 border-t border-[#22343c] bg-[#07141c] px-4 text-xs text-foreground-muted">
+        </div>
+        {workspace ? <div className={`${workspaceStyles.playback} flex h-[58px] items-center justify-between gap-2 border-t border-[#22343c] bg-[#07141c] px-4 text-xs text-foreground-muted`}>
           <div className="flex min-w-0 items-center gap-2">
             <button type="button" onClick={() => setMuted((value) => !value)} disabled={!previewUrl}
               className="rounded border border-[#29424c] px-2 py-1.5 text-white hover:border-accent disabled:opacity-40"
@@ -987,7 +1045,7 @@ export default function SavedClipEditor({
             }} aria-label="Export format" className="rounded border border-[#29424c] bg-[#07141c] px-2 py-1.5 text-white">
               {EXPORT_FORMATS.map((option) => <option key={option} value={option}>{option}{!canUseExportFormat(option, isPro) ? " 🔒" : ""}</option>)}
             </select>
-            <button type="button" onClick={() => void previewFrameRef.current?.requestFullscreen?.()}
+            <button type="button" onClick={() => void previewFrameRef.current?.parentElement?.requestFullscreen?.()}
               aria-label="Full screen preview" className="rounded border border-[#29424c] px-2 py-1.5 text-white hover:border-accent">⛶</button>
           </div>
         </div> : <div className="mt-2 flex items-center justify-center gap-4 text-xs text-foreground-muted">
@@ -1002,7 +1060,7 @@ export default function SavedClipEditor({
 
       {/* ── Editing controls (right) ── */}
       <div ref={settingsPanelRef} className={workspace
-        ? "order-3 min-w-0 min-h-0 space-y-4 xl:overflow-y-auto border-l border-[#24323a] bg-[#08141b] p-4 pb-8"
+        ? `${workspaceStyles.settings} order-3 min-w-0 min-h-0 space-y-4 xl:overflow-y-auto border-l border-[#24323a] bg-[#08141b] p-4 pb-8`
         : "order-3 min-w-0 space-y-4 rounded-xl border border-border bg-background p-4"}>
       <div className={workspace ? "sticky -top-4 z-20 -mx-4 -mt-4 flex border-b border-[#29414a] bg-[#08141b]" : "flex items-center justify-between gap-2"}>
         {workspace ? <>
@@ -1016,6 +1074,12 @@ export default function SavedClipEditor({
         {!workspace && <span className="text-[10px] text-subtle">Saved on this device</span>}
       </div>
 
+      {!clip.id && onKeepClip && <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm">
+        <p className="text-foreground-muted">Keep this clip to add photos or videos.</p>
+        {saveError && <p role="alert" className="mt-2 text-red-400">{saveError}</p>}
+        <button type="button" disabled={savingClip || exporting} onClick={onKeepClip} className="mt-2 rounded border border-accent/40 px-3 py-2 font-semibold text-accent disabled:opacity-50">{savingClip ? "Saving…" : "Keep clip to add media"}</button>
+      </div>}
+      {!isPro && <p className="text-xs text-foreground-muted">Free exports include an animated Klyp watermark. Original-format preview sizing is approximate.</p>}
       {/* Hook options */}
       <div>
         <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>
@@ -1217,7 +1281,7 @@ export default function SavedClipEditor({
           <label className="mt-3 inline-flex cursor-pointer rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20">
             {uploadingMedia ? "Importing…" : "+ Add image or video"}
             <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm"
-              className="sr-only" disabled={uploadingMedia || exporting}
+              className="sr-only" disabled={!clip.id || uploadingMedia || exporting}
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
                 event.currentTarget.value = "";

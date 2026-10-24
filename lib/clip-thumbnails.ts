@@ -20,7 +20,7 @@ type ThumbClip = Pick<SavedClip, "url" | "start_seconds" | "end_seconds"> & { id
 
 /** Same identity the server caches by: source plus exact range. */
 function keyFor(clip: ThumbClip): string {
-  return `${clip.url}|${Math.floor(clip.start_seconds)}|${Math.ceil(clip.end_seconds)}`;
+  return `${clip.url}|${clip.start_seconds}|${clip.end_seconds}`;
 }
 
 const ready = new Map<string, string>();
@@ -36,6 +36,10 @@ export function peekClipThumbnail(clip: ThumbClip): string | null {
  * rather than starting a second one. Rejects if the frame can't be produced;
  * callers fall back to their placeholder.
  */
+export function invalidateClipThumbnail(clip: ThumbClip): void {
+  ready.delete(keyFor(clip));
+}
+
 export function loadClipThumbnail(clip: ThumbClip): Promise<string> {
   const key = keyFor(clip);
 
@@ -45,8 +49,17 @@ export function loadClipThumbnail(clip: ThumbClip): Promise<string> {
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const request = processingFetch("/api/thumbnail", {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error("Thumbnail timed out. Try again."));
+    }, 45_000);
+  });
+  const fetchFrame = processingFetch("/api/thumbnail", {
     method: "POST",
+    signal: controller.signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       // clip_id lets the server serve this clip's archived poster, which
@@ -62,11 +75,15 @@ export function loadClipThumbnail(clip: ThumbClip): Promise<string> {
       return res.blob();
     })
     .then((blob) => {
+      if (controller.signal.aborted) throw new Error("Thumbnail request expired.");
+      if (!blob.size || !blob.type.startsWith("image/")) throw new Error("Invalid thumbnail response.");
       const objectUrl = URL.createObjectURL(blob);
       ready.set(key, objectUrl);
       return objectUrl;
     })
-    .finally(() => {
+;
+  const request = Promise.race([fetchFrame, deadline]).finally(() => {
+      clearTimeout(timer);
       // Clear either way: a failure should be retryable on the next mount.
       inflight.delete(key);
     });
