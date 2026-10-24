@@ -17,6 +17,12 @@ test("layout override validates, exports, and old drafts remain valid", () => {
   assert.throws(() => validateClipEditDraft(draft({ vertical_layout: { version: 1, gameplay: { x: 0.9, y: 0, w: 1, h: 1 } } }), clip));
 });
 
+test("facecam-first layout survives draft validation and export", () => {
+  const layout = { version: 1, gameplay: { x: 0.2, y: 0, w: 0.8, h: 1 }, facecam: { x: 0, y: 0, w: 0.25, h: 0.4 }, arrangement: "facecam_top" };
+  const checked = validateClipEditDraft(draft({ vertical_layout: layout }), clip);
+  assert.deepEqual(toClipExportPayload(clip, checked).vertical_layout, layout);
+});
+
 const clip: SavedClip = {
   id: "clip-1", url: "https://www.twitch.tv/videos/1", title: "Original",
   clip_type: "FUNNY", viral_score: 80, caption: null, reason: null,

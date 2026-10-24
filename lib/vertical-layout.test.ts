@@ -50,6 +50,33 @@ test("one optional panel takes the lower band and two split it", () => {
   ]);
 });
 
+test("facecam-first layout puts the speaker above gameplay and keeps captions in gameplay", () => {
+  const layout = validateVerticalLayout({ version: 1, gameplay, facecam, arrangement: "facecam_top" });
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, layout, { w: 1080, h: 1920 });
+  assert.equal(plan.mode, "composed");
+  if (plan.mode !== "composed") return;
+  assert.deepEqual(plan.panels.map((panel) => [panel.name, panel.dest]), [
+    ["facecam", { x: 0, y: 0, w: 1080, h: 576 }],
+    ["gameplay", { x: 0, y: 576, w: 1080, h: 1344 }],
+  ]);
+  assert.deepEqual(plan.textSafe, { x: 0, y: 576, w: 1080, h: 1344 });
+});
+
+test("facecam-first layout shares the top strip with chat when chat is included", () => {
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, { version: 1, gameplay, facecam, chat, arrangement: "facecam_top" }, { w: 1080, h: 1920 });
+  assert.equal(plan.mode, "composed");
+  if (plan.mode !== "composed") return;
+  assert.deepEqual(plan.panels.map((panel) => [panel.name, panel.dest]), [
+    ["facecam", { x: 0, y: 0, w: 540, h: 576 }],
+    ["chat", { x: 540, y: 0, w: 540, h: 576 }],
+    ["gameplay", { x: 0, y: 576, w: 1080, h: 1344 }],
+  ]);
+});
+
+test("unknown panel arrangements are rejected", () => {
+  assert.throws(() => validateVerticalLayout({ version: 1, gameplay, arrangement: "sideways" }), /layout/i);
+});
+
 test("absent layout fits the full source without cropping", () => {
   const plan = planVerticalLayout({ w: 1920, h: 1080 }, null, { w: 1080, h: 1920 });
   assert.equal(plan.mode, "full_frame");

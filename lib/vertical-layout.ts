@@ -5,6 +5,7 @@ export type VerticalLayoutV1 = {
   gameplay: NormalizedRect;
   facecam?: NormalizedRect;
   chat?: NormalizedRect;
+  arrangement?: "gameplay_top" | "facecam_top";
 };
 export type VerticalLayoutPlan =
   | { mode: "full_frame"; source: PixelRect; dest: PixelRect; output: { w: number; h: number } }
@@ -35,12 +36,14 @@ export function validateVerticalLayout(input: unknown): VerticalLayoutV1 {
   const value = input as Record<string, unknown>;
   if (value.version !== 1 || !validRect(value.gameplay) ||
       (value.facecam != null && !validRect(value.facecam)) ||
-      (value.chat != null && !validRect(value.chat))) throw new Error("Invalid vertical layout.");
+      (value.chat != null && !validRect(value.chat)) ||
+      (value.arrangement != null && value.arrangement !== "gameplay_top" && value.arrangement !== "facecam_top")) throw new Error("Invalid vertical layout.");
   return {
     version: 1,
     gameplay: { ...value.gameplay },
     ...(value.facecam ? { facecam: { ...(value.facecam as NormalizedRect) } } : {}),
     ...(value.chat ? { chat: { ...(value.chat as NormalizedRect) } } : {}),
+    ...(value.arrangement ? { arrangement: value.arrangement as VerticalLayoutV1["arrangement"] } : {}),
   };
 }
 
@@ -73,16 +76,20 @@ export function planVerticalLayout(source: { w: number; h: number }, layout: Ver
   const valid = validateVerticalLayout(layout);
   const optional = (["facecam", "chat"] as const).filter((name) => valid[name]);
   const topHeight = optional.length ? even(output.h * 0.7) : output.h;
+  const facecamFirst = valid.arrangement === "facecam_top" && !!valid.facecam;
+  const smallBandY = facecamFirst ? 0 : topHeight;
+  const mainY = facecamFirst ? output.h - topHeight : 0;
   const destinations: { name: "gameplay" | "facecam" | "chat"; rect: NormalizedRect; dest: PixelRect }[] = [
-    { name: "gameplay", rect: valid.gameplay, dest: { x: 0, y: 0, w: output.w, h: topHeight } },
+    { name: "gameplay", rect: valid.gameplay, dest: { x: 0, y: mainY, w: output.w, h: topHeight } },
   ];
   optional.forEach((name, index) => {
     const x = optional.length === 2 ? index * even(output.w / 2) : 0;
     const w = optional.length === 2 ? (index === 0 ? x + even(output.w / 2) : output.w - x) : output.w;
-    destinations.push({ name, rect: valid[name]!, dest: { x, y: topHeight, w, h: output.h - topHeight } });
+    destinations.push({ name, rect: valid[name]!, dest: { x, y: smallBandY, w, h: output.h - topHeight } });
   });
-  return { mode: "composed", output, panels: destinations.map(({ name, rect, dest }) => ({ name, source: cropToPanel(rect, source, dest), dest })),
-    textSafe: { x: 0, y: 0, w: output.w, h: topHeight } };
+  return { mode: "composed", output, panels: (facecamFirst ? destinations.slice(1).concat(destinations[0]) : destinations)
+    .map(({ name, rect, dest }) => ({ name, source: cropToPanel(rect, source, dest), dest })),
+    textSafe: { x: 0, y: mainY, w: output.w, h: topHeight } };
 }
 
 /** Fixed nonvertical formats fill the output; vertical layouts retain their panel/contain contract. */
