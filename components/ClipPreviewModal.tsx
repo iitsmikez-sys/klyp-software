@@ -21,6 +21,7 @@
  * and stays visible on the card — when the dialog is closed mid-export.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import SavedClipEditor from "./SavedClipEditor";
 import { defaultClipEditDraft, readClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
 import { clipPreviewPlayback, clipPreviewActionBlocked } from "@/lib/clip-preview-state";
@@ -470,7 +471,7 @@ export default function ClipPreviewModal({
           ) : (
             <button
               onClick={onCreateClip}
-              disabled={exporting || actionBlocked}
+              disabled={draft.version !== 1 || exporting || actionBlocked}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors disabled:opacity-60 disabled:shadow-none"
             >
               {exporting ? (
@@ -518,7 +519,7 @@ export default function ClipPreviewModal({
         {exportState?.status === "error" && (
           <p className="mx-6 mt-1 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
             {exportState.error}{" "}
-            <button onClick={onCreateClip} disabled={actionBlocked || exporting} className="underline font-semibold hover:text-red-300 disabled:opacity-50">
+            <button onClick={onCreateClip} disabled={draft.version !== 1 || actionBlocked || exporting} className="underline font-semibold hover:text-red-300 disabled:opacity-50">
               Try again
             </button>
           </p>
@@ -543,18 +544,19 @@ export default function ClipPreviewModal({
             </svg>
             Details
           </button>
+          <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => { if ((dirty || pendingLayout) && !window.confirm("Leave without saving your quick edits?")) e.preventDefault(); }} className="inline-block my-3 px-4 py-2 rounded-lg border border-accent/40 text-accent">Open timeline editor</Link>
           {detailsOpen && (
             /* The editor renders its own 9:16 player for hook/caption placement;
                the dialog already has one, so it's suppressed here. */
             <>
               {unsupportedDraft && <p role="alert" className="mt-3 text-xs text-amber-300">This clip has a newer or invalid saved draft. Original edit values are shown; use Reset to remove the stored draft.</p>}
-              <SavedClipEditor clip={clip} draft={draft} onDraftChange={setDraft}
+              {draft.version !== 1 ? <p role="status" className="mt-3 text-sm text-amber-300">This clip has timeline edits. Open the full timeline editor to change or export this draft.</p> : <SavedClipEditor clip={clip} draft={draft} onDraftChange={setDraft}
                 onPersisted={(value) => {
                   const persisted = value ?? defaultClipEditDraft(clip);
                   setSavedDraft(persisted);
                   setUnsupportedDraft(false);
                   onClipSaved(value);
-                }} dirty={dirty} hidePreview sourcePreviewUrl={previewUrl} onLayoutPendingChange={setPendingLayout} />
+                }} dirty={dirty} hidePreview sourcePreviewUrl={previewUrl} onLayoutPendingChange={setPendingLayout} />}
             </>
           )}
         </div>

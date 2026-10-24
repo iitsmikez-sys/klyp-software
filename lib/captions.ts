@@ -251,3 +251,50 @@ export function generateHookAss(
 export function toFfmpegPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "$1\\:");
 }
+
+export type CaptionAppearance = { color: string; assColor: string; anchorY: number; alignment: 8 | 5 | 2 };
+/** Shared normalized anchors use the caption-safe rectangle supplied by the layout. */
+export function captionAppearance(draft: { caption_color: "white" | "yellow" | "green" | "pink"; caption_position: "top" | "center" | "bottom" }): CaptionAppearance {
+ const color = { white: "#FFFFFF", yellow: "#FFFF00", green: "#00E5A0", pink: "#FF69B4" }[draft.caption_color];
+ return { color, assColor: `&H00${color.slice(5,7)}${color.slice(3,5)}${color.slice(1,3)}`,
+ anchorY: draft.caption_position === "top" ? 80/1920 : draft.caption_position === "center" ? 0.5 : 1-80/1920,
+ alignment: draft.caption_position === "top" ? 8 : draft.caption_position === "center" ? 5 : 2 };
+}
+
+/** Explicit edited-output cues bypass word grouping and absolute-VOD subtraction. */
+export function generateTimedCueAss(
+ cues: readonly { id?: string; start_ms: number; end_ms: number; text: string }[],
+ style: CaptionStyle,
+ appearance: CaptionAppearance,
+ res: PlayRes = DEFAULT_RES,
+ safeArea: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: res.w, h: res.h }
+): string {
+ const styles = styleBlock(style, res).replace(STYLE_PARAMS[style].color, appearance.assColor);
+ const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
+ for (const cue of normalizeTimedCues(cues)) {
+  const layout = layoutTimedCaption(cue.text, style, appearance, res, safeArea);
+  for (const line of layout.lines) {
+   sections.push(dialogue(cue.start_ms, cue.end_ms, `{\\an5\\pos(${line.x},${line.y})}${line.text}`));
+  }
+ }
+ return sections.join("\n");
+}
+
+/** V2 display policy: later cues replace earlier ones and never revive old text. */
+export function normalizeTimedCues<T extends { start_ms: number; end_ms: number; text: string }>(cues: readonly T[]): T[] {
+ const ordered = cues.map(cue => ({ ...cue, text: sanitizeAssText(cue.text) })).sort((a,b) => a.start_ms - b.start_ms);
+ return ordered.map((cue,index) => ({ ...cue, end_ms: Math.min(cue.end_ms, ordered[index+1]?.start_ms ?? Infinity) })).filter(cue => cue.end_ms > cue.start_ms && cue.text.length > 0);
+}
+
+/** Position each line explicitly so neither renderer chooses automatic line metrics. */
+export function layoutTimedCaption(text: string, style: CaptionStyle, appearance: CaptionAppearance, res: PlayRes = DEFAULT_RES, safeArea = { x: 0, y: 0, w: res.w, h: res.h }) {
+ const p = STYLE_PARAMS[style];
+ const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h);
+ const lineHeight = Math.round(fontSize * 1.2);
+ const normalized = sanitizeAssText(style === "KLYP" ? text.toUpperCase() : text);
+ const lines = wrapCaptionText(normalized, style);
+ const anchor = safeArea.y + safeArea.h * appearance.anchorY;
+ const firstY = appearance.alignment === 8 ? anchor + fontSize/2 : appearance.alignment === 5 ? anchor - (lines.length-1)*lineHeight/2 : anchor - fontSize/2 - (lines.length-1)*lineHeight;
+ return { fontSize, lineHeight, bold: p.bold === 1, outline: Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h)), shadow: p.shadow,
+ lines: lines.map((line,index) => ({ text: line, x: safeArea.x + safeArea.w/2, y: firstY + index*lineHeight })) };
+}

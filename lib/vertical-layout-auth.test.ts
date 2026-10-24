@@ -11,9 +11,9 @@ test("only the signed-in owner may save a layout on either tier", () => {
   assert.equal(authorizeLayoutWrite("a", "a"), null);
 });
 
-test("missing or null draft uses current account default; saved override survives changes", () => {
+test("omitted draft inherits, explicit null shows full frame, and saved override survives changes", () => {
   assert.deepEqual(effectiveVerticalLayout(a, undefined), a);
-  assert.deepEqual(effectiveVerticalLayout(a, null), a);
+  assert.deepEqual(effectiveVerticalLayout(a, null), null);
   assert.deepEqual(effectiveVerticalLayout(a, b), b);
 });
 

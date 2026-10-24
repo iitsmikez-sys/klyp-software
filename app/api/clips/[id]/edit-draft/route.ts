@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getProfile } from "@/lib/profile";
 import { authorizeClipDraftWrite } from "@/lib/clip-edit-auth";
 import { ClipEditDraftError, validateClipEditDraft } from "@/lib/clip-edit-draft";
+import { assertOwnedDraftAssets, EditorAssetError } from "@/lib/editor-assets";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,7 @@ async function updateDraft(req: NextRequest, { params }: Context, reset: boolean
       (body as { draft?: unknown } | null)?.draft,
       clip!,
     );
+    if (draft) await assertOwnedDraftAssets(user.id, params.id, draft);
     const { data, error: writeError } = await admin.from("clips")
       .update({ edit_draft: draft })
       .eq("id", params.id).eq("user_id", user.id)
@@ -49,6 +51,9 @@ async function updateDraft(req: NextRequest, { params }: Context, reset: boolean
     if (writeError) throw writeError;
     return NextResponse.json({ edit_draft: data.edit_draft });
   } catch (error) {
+    if (error instanceof EditorAssetError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     if (error instanceof ClipEditDraftError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

@@ -21,7 +21,7 @@ import { processingFetch } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import VerticalLayoutEditor from "./VerticalLayoutEditor";
 import type { VerticalLayoutV1 } from "@/lib/vertical-layout";
-import { layoutEditorState } from "@/lib/vertical-layout-auth";
+import { effectiveVerticalLayout, layoutEditorState } from "@/lib/vertical-layout-auth";
 import { readLayoutExportWarning } from "@/lib/layout-export-warning";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
@@ -92,7 +92,7 @@ export default function SavedClipEditor({
     setSaveError(null);
   };
   const saveAccountLayout = async () => {
-    const layout = isPro ? draft.vertical_layout ?? accountLayout : pendingAccountLayout;
+    const layout = isPro ? effectiveVerticalLayout(accountLayout, draft.vertical_layout) : pendingAccountLayout;
     if (!layout) return;
     setLayoutSaving(true);
     setSaveError(null);
@@ -215,12 +215,14 @@ export default function SavedClipEditor({
   }, [clip.id, retryToken, hidePreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveDraft = async (reset = false) => {
+    if (((clip.edit_draft as { version?: number } | null)?.version ?? 1) >= 2) { setSaveError("Open the timeline editor to preserve this clip’s timeline edits."); return; }
     if (!isPro) { setProGateOpen(true); return; }
     setSaving(true);
     setSaveError(null);
     setSaveNotice(null);
     try {
       const checked = reset ? null : validateClipEditDraft(draft, clip);
+      if (checked && checked.version !== 1) throw new Error("Use the timeline editor for this draft.");
       const response = await fetch(`/api/clips/${clip.id}/edit-draft`, {
         method: reset ? "DELETE" : "PUT",
         headers: reset ? undefined : { "Content-Type": "application/json" },
@@ -287,6 +289,7 @@ export default function SavedClipEditor({
 
   return (
     <div className="mt-4 pt-4 border-t border-border" onClick={(e) => e.stopPropagation()}>
+      <a href={`/dashboard/clips/${clip.id}/edit`} onClick={e => { if (dirty && !window.confirm("Leave without saving your quick edits?")) e.preventDefault(); }} className="inline-block mb-4 text-accent underline">Open full timeline editor</a>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
       {/* ── Scene analysis (left): description + transcript with timestamps ── */}
@@ -503,7 +506,7 @@ export default function SavedClipEditor({
       {/* Format */}
       <div className="rounded-lg border border-border p-3">
         <button type="button" className="text-xs font-semibold text-accent" onClick={() => setLayoutOpen((open) => !open)}>Vertical layout {layoutOpen ? "▴" : "▾"}</button>
-        <p className="text-[11px] text-foreground-muted mt-1">{isPro && draft.vertical_layout ? "This clip has its own layout." : accountLayout ? "Using your saved stream layout." : "Full frame is shown until you set a layout."}</p>
+        <p className="text-[11px] text-foreground-muted mt-1">{isPro && draft.vertical_layout === null ? "This clip uses the full frame." : isPro && draft.vertical_layout ? "This clip has its own layout." : accountLayout ? "Using your saved stream layout." : "Full frame is shown until you set a layout."}</p>
         {layoutOpen && <div className="mt-3">
           <VerticalLayoutEditor sourceUrl={sourcePreviewUrl ?? previewUrl} layout={editorLayout.preview}
             text={{ hook: draft.hook, hookStyle: draft.hook_style, captionStyle: draft.caption_style, words: draft.words, videoTrimStart: draft.start_seconds - clip.start_seconds, vodStart: draft.start_seconds, vodEnd: draft.end_seconds }}
@@ -513,7 +516,7 @@ export default function SavedClipEditor({
             }} />
           <button type="button" className="text-xs text-accent mt-2 mr-3 underline disabled:opacity-50" disabled={!(isPro ? draft.vertical_layout : pendingAccountLayout) || layoutSaving} onClick={saveAccountLayout}>{layoutSaving ? "Saving…" : "Save as my layout for future clips"}</button>
           {editorLayout.exportBlocked && <p className="text-xs text-amber-300 mt-2">Save this account layout before exporting. The preview shows your unsaved changes.</p>}
-          {isPro && draft.vertical_layout && <button type="button" className="text-xs text-foreground-muted mt-2 underline" onClick={() => changeDraft({ vertical_layout: null })}>Use my account layout</button>}
+          {isPro && draft.vertical_layout !== undefined && <button type="button" className="text-xs text-foreground-muted mt-2 underline" onClick={() => changeDraft({ vertical_layout: undefined })}>Use my account layout</button>}
         </div>}
       </div>
       <div className="flex items-center gap-2">

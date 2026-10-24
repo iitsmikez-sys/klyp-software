@@ -14,11 +14,19 @@
  *   5. Stream the MP4 back as a file download
  */
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { renderKeptSegments, validateEditorExportRequest } from "@/lib/editor-render";
+import { assertOwnedDraftAssets, EditorAssetError } from "@/lib/editor-assets";
+import { resolveCutawaySpans, type ResolvedCutawaySpan } from "@/lib/editor-timeline";
+import { buildCutawayGraph, cutawayInputArgs, loadEditorCutawayAssets, type RenderableEditorAsset } from "@/lib/editor-cutaway-render";
+import { ClipEditDraftError, type ClipEditDraftV2, type ClipEditDraftV3 } from "@/lib/clip-edit-draft";
+import { resolveEditorCues, captionAppearance } from "@/lib/editor-captions";
+import type { SavedClip } from "@/lib/clip-ui";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
-import { generateAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
+import { generateAss, generateTimedCueAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
   EXPORT_FORMATS,
@@ -31,7 +39,7 @@ import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache"
 import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
-import { planVerticalLayout, validateVerticalLayout, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
+import { planClipComposition, validateVerticalLayout, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { buildVerticalFilterGraph } from "@/lib/vertical-layout-ffmpeg";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { clipSeekRange } from "@/lib/clip-trim";
@@ -101,7 +109,8 @@ async function cutClip(
   handle?: string,
   raw = false,
   upscale = false,
-  verticalPlan?: VerticalLayoutPlan
+  verticalPlan?: VerticalLayoutPlan,
+  cutaways?: { spans: readonly ResolvedCutawaySpan[]; assets: readonly RenderableEditorAsset[]; dimensions: {w:number;h:number} }
 ): Promise<string> {
   const duration = endSeconds - startSeconds;
   const outPath = path.join(
@@ -109,7 +118,7 @@ async function cutClip(
     `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`
   );
 
-  // Build video filter chain: scale+crop → captions → hook title → handle → watermark.
+  // Build video filter chain: framing → imported picture → captions → hook → handle → watermark.
   // Raw mode (Pro-only, enforced in POST) skips the chain entirely: original
   // framing and resolution, nothing burned in — for editing in CapCut/Premiere.
   // Upscale (Pro-only, 35⚡) doubles the output dimensions (e.g. 2160×3840).
@@ -126,30 +135,31 @@ async function cutClip(
     }
     vf = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
   }
-  if (assPath) {
-    vf += `,subtitles='${toFfmpegPath(assPath)}'`;
-  }
-  if (hookAssPath) {
-    vf += `,subtitles='${toFfmpegPath(hookAssPath)}'`;
-  }
-  if (handle) {
-    vf += `,${handleFilter(handle)}`;
-  }
-  if (!isPro) {
-    vf += `,${watermarkFilter()}`;
-  }
-
-  const composed = !raw && verticalPlan ? buildVerticalFilterGraph(verticalPlan, [
+  const framing = vf;
+  const overlays = [
     ...(assPath ? [`subtitles='${toFfmpegPath(assPath)}'`] : []),
     ...(hookAssPath ? [`subtitles='${toFfmpegPath(hookAssPath)}'`] : []),
     ...(handle ? [handleFilter(handle)] : []),
     ...(!isPro ? [watermarkFilter()] : []),
-  ]) : null;
+  ];
+  if (overlays.length) vf += `,${overlays.join(',')}`;
+  let composed = !raw && verticalPlan ? buildVerticalFilterGraph(verticalPlan, cutaways ? [] : overlays) : null;
+  if (!raw && cutaways) {
+    const base = composed ?? { filter: `[0:v]${framing},setsar=1[framed]`, videoLabel: 'framed' };
+    const imported = buildCutawayGraph(base.videoLabel, cutaways.spans, cutaways.assets, cutaways.dimensions);
+    composed = {
+      filter: [base.filter, imported.filter, `[${imported.videoLabel}]${overlays.length ? overlays.join(',')+',' : ''}format=yuv420p,setsar=1[exportv]`].filter(Boolean).join(';'),
+      videoLabel: 'exportv',
+    };
+  }
+  try {
   await run(resolveBin("ffmpeg"), [
     "-ss", String(startSeconds),
     "-t", String(duration),
     "-i", sourcePath,
-    ...(raw ? [] : composed ? ["-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", "0:a?"] : ["-vf", vf]),
+    ...(cutaways ? cutawayInputArgs(cutaways.assets) : []),
+    ...(raw ? [] : composed ? ["-filter_complex_threads", String(FFMPEG_THREADS), "-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", "0:a?"] : ["-vf", vf]),
+    "-t", String(duration),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "23",
@@ -163,6 +173,10 @@ async function cutClip(
   // ffmpeg prints progress to stderr continuously — silence means it's wedged.
   // maxRunMs bounds the whole encode so an export can't hang forever.
   { stallTimeoutMs: 30_000, maxRunMs: 10 * 60_000 });
+  } catch (error) {
+    await rm(outPath, { force: true }).catch(() => {});
+    throw error;
+  }
 
   return outPath;
 }
@@ -196,8 +210,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let raw = false;
   let upscale = false;
   let requestedLayout: unknown;
+  let requestBody: Record<string, unknown>;
+  let editorDraft: ClipEditDraftV2 | ClipEditDraftV3 | null = null;
+  let ownedEditorClip: SavedClip | null = null;
   try {
     const body = await req.json();
+    requestBody = body;
     clipId = String(body.clip_id ?? "");
     raw = body.raw === true;
     upscale = body.upscale === true && !raw; // upscale applies to rendered exports only
@@ -236,16 +254,6 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
-    return NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 });
-  }
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-    return NextResponse.json({ error: "Invalid start/end timestamps." }, { status: 400 });
-  }
-  if (end - start > 180) {
-    return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
-  }
-
   // Require a signed-in session, verified via Bearer token (not cookies —
   // this service is on a different origin than the frontend that calls it).
   const token = bearerToken(req);
@@ -265,12 +273,50 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // why the raw tier flag alone isn't trusted (it can drift from reality).
   const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
   const sparksBalance = profile.sparks;
+  const editorRequested = requestBody.edit_draft !== undefined || requestBody.editor_export === true || requestBody.segments !== undefined || requestBody.caption_cues !== undefined;
+  if (editorRequested) {
+    if (!isPro) return NextResponse.json({ error: "Editing saved clips requires Pro." }, { status: 403 });
+    try {
+      const { data, error } = await createAdminClient().from("clips")
+        .select("id,url,title,start_seconds,end_seconds,words,edit_draft")
+        .eq("id", clipId).eq("user_id", profile.id).maybeSingle();
+      if (error) throw error;
+      if (!data) return NextResponse.json({ error: "Clip not found." }, { status: 404 });
+      ownedEditorClip = data as SavedClip;
+      editorDraft = validateEditorExportRequest(requestBody, ownedEditorClip);
+      if (editorDraft) {
+        await assertOwnedDraftAssets(profile.id, clipId, editorDraft);
+        url = ownedEditorClip.url;
+        start = editorDraft.start_seconds;
+        end = editorDraft.end_seconds;
+        title = editorDraft.title;
+        hook = editorDraft.hook || undefined;
+        hookStyle = editorDraft.hook_style;
+        style = editorDraft.caption_style;
+        words = undefined;
+        format = editorDraft.aspect_ratio;
+        requestedLayout = editorDraft.vertical_layout;
+      }
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid editor export." }, { status: error instanceof EditorAssetError ? error.status : error instanceof ClipEditDraftError || error instanceof RangeError ? 400 : 500 });
+    }
+  }
+  if (!VOD_URL_PATTERN.test(url) && !isUploadRef(url)) {
+    return NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 });
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return NextResponse.json({ error: "Invalid start/end timestamps." }, { status: 400 });
+  }
+  if (!editorDraft && end - start > 180) {
+    return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
+  }
   // Format switching is Pro — free tier always exports the 9:16 default.
   if (!isPro) format = "9:16";
   let verticalLayout: VerticalLayoutV1 | null = null;
   let layoutWarning: string | null = null;
   if (!raw && format === "9:16") {
-    const override = isPro && requestedLayout != null;
+    // Omitted means inherit; explicit null means full frame, matching the editor.
+    const override = isPro && requestedLayout !== undefined;
     const selected = override ? requestedLayout : profile.vertical_layout;
     try { verticalLayout = selected ? validateVerticalLayout(selected) : null; }
     catch {
@@ -312,6 +358,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
   let clipPath: string | null = null;
   let assDir: string | null = null;
+  let editorDir: string | null = null;
   try {
     const t0 = Date.now();
     // Concurrency-capped: the download (yt-dlp) + encode (ffmpeg) below are
@@ -357,6 +404,15 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
       }
 
+      let editedDuration: number | null = null;
+      if (editorDraft) {
+        editorDir = await mkdtemp(path.join(tmpdir(), "klyp-editor-"));
+        const editedPath = path.join(editorDir, "kept.mp4");
+        const rendered = await renderKeptSegments(sourcePath, offsetSeconds, editorDraft.segments, editedPath);
+        sourcePath = editedPath;
+        editedDuration = rendered.duration;
+      }
+
       // ASS PlayRes must match the output resolution so burned text scales with it.
       // "Original" has no fixed dimensions — probe the source for its native size.
       let res: { w: number; h: number };
@@ -369,21 +425,27 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (upscale) res = { w: res.w * 2, h: res.h * 2 };
       let verticalPlan: VerticalLayoutPlan | undefined;
-      if (!raw && format === "9:16") {
+      if (!raw && format !== "Original") {
         const native = await probeVideoSize(sourcePath);
         if (!native && verticalLayout) {
           verticalLayout = null;
           layoutWarning = "Source dimensions could not be read; the full frame was exported.";
         }
-        verticalPlan = planVerticalLayout(native ?? { w: 1920, h: 1080 }, verticalLayout, res);
+        // When probing fails, nonvertical exports retain the dynamic scale/crop fallback.
+        if (native || format === "9:16") verticalPlan = planClipComposition(native ?? { w: 1920, h: 1080 }, format, verticalLayout, res);
       }
 
       let assPath: string | undefined;
       let hookAssPath: string | undefined;
-      if ((style && words && words.length > 0) || hook) {
+      if ((style && (editorDraft || (words && words.length > 0))) || hook) {
         assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
       }
-      if (style && words && words.length > 0) {
+      if (style && editorDraft && ownedEditorClip && !raw) {
+        assPath = path.join(assDir!, "captions.ass");
+        const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.dest;
+        const cues = resolveEditorCues(editorDraft, ownedEditorClip);
+        await writeFile(assPath, generateTimedCueAss(cues, style, captionAppearance(editorDraft), res, safe), "utf-8");
+      } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
         const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.h
           : verticalPlan?.mode === "full_frame" ? res.h - verticalPlan.dest.y - verticalPlan.dest.h : 0;
@@ -396,7 +458,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
 
       const t2 = Date.now();
-      const seek = clipSeekRange(start, end, offsetSeconds, archivedEndSeconds);
+      const seek = editedDuration !== null ? { start: 0, end: editedDuration } : clipSeekRange(start, end, offsetSeconds, archivedEndSeconds);
+      const cutawaySpans = editorDraft?.version === 3 ? resolveCutawaySpans(editorDraft) : [];
+      const cutaways = cutawaySpans.length && editorDraft?.version === 3 ? {
+        spans: cutawaySpans,
+        assets: await loadEditorCutawayAssets(profile.id, clipId, editorDraft, editorDir!),
+        dimensions: res,
+      } : undefined;
       const result = await cutClip(
         sourcePath,
         seek.start,
@@ -408,7 +476,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         handle,
         raw,
         upscale,
-        verticalPlan
+        verticalPlan,
+        cutaways
       );
       log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
       return result;
@@ -432,9 +501,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Clip generation failed.";
     log("FAILED:", message);
-    return NextResponse.json({ error: message }, { status: err instanceof RangeError ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: err instanceof EditorAssetError ? err.status : err instanceof RangeError ? 400 : 500 });
   } finally {
     if (clipPath) rm(clipPath, { force: true }).catch(() => {});
-    if (assDir) rm(assDir, { recursive: true, force: true }).catch(() => {});
+    if (assDir) await rm(assDir, { recursive: true, force: true }).catch(() => {});
+    if (editorDir) await rm(editorDir, { recursive: true, force: true }).catch(() => {});
   }
 }

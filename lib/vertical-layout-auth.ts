@@ -11,7 +11,8 @@ export function authorizeLayoutWrite(sessionUserId: string | null, rowUserId: st
 }
 
 export function effectiveVerticalLayout(accountLayout: VerticalLayoutV1 | null, draftOverride?: VerticalLayoutV1 | null): VerticalLayoutV1 | null {
-  return draftOverride ?? accountLayout;
+  // Undefined inherits the account setting; null explicitly disables composition.
+  return draftOverride === undefined ? accountLayout : draftOverride;
 }
 
 export function layoutEditorState(isPro: boolean, accountLayout: VerticalLayoutV1 | null, clipOverride: VerticalLayoutV1 | null | undefined, pendingAccount: VerticalLayoutV1 | null) {

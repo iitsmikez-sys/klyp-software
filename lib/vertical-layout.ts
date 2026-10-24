@@ -84,3 +84,14 @@ export function planVerticalLayout(source: { w: number; h: number }, layout: Ver
   return { mode: "composed", output, panels: destinations.map(({ name, rect, dest }) => ({ name, source: cropToPanel(rect, source, dest), dest })),
     textSafe: { x: 0, y: 0, w: output.w, h: topHeight } };
 }
+
+/** Fixed nonvertical formats fill the output; vertical layouts retain their panel/contain contract. */
+export function planClipComposition(source: { w: number; h: number }, format: "9:16" | "16:9" | "1:1" | "Original", layout: VerticalLayoutV1 | null, output: { w: number; h: number }): VerticalLayoutPlan {
+  return planVerticalLayout(source, format === "9:16" ? layout : format === "Original" ? null : { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 } }, output);
+}
+
+/** Canvas dimensions must satisfy the same even-pixel contract as the renderer. */
+export function previewDimensions(source: { w: number; h: number }, format: "9:16" | "16:9" | "1:1" | "Original") {
+  const height = format === "Original" ? 540 * source.h / source.w : format === "16:9" ? 540 * 9 / 16 : format === "1:1" ? 540 : 960;
+  return { w: 540, h: Math.max(2, even(height)) };
+}
