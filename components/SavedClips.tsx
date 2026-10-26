@@ -148,7 +148,7 @@ export default function SavedClips() {
                 {draft.title}
               </h3>
               <p className="mt-1 text-xs text-foreground-muted">
-                {platformName(clip.url)} <span aria-hidden="true">·</span> {fmtTime(draft.end_seconds - draft.start_seconds)} clip <span aria-hidden="true">·</span> VOD {fmtTime(draft.start_seconds)}–{fmtTime(draft.end_seconds)}
+                {clip.url.startsWith("upload:") ? "Uploaded VOD" : platformName(clip.url)} <span aria-hidden="true">·</span> {fmtTime(draft.end_seconds - draft.start_seconds)} clip <span aria-hidden="true">·</span> VOD {fmtTime(draft.start_seconds)}–{fmtTime(draft.end_seconds)}
               </p>
               <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
                 <Link href={`/dashboard/clips/${clip.id}/edit`} className="flex min-h-10 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
