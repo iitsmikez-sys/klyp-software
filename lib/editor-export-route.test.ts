@@ -18,6 +18,7 @@ import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_DIMENSIONS, resolveExportFormat 
 import { ClipEditDraftError } from './clip-edit-draft.ts';
 import { EditorAssetError } from './editor-assets.ts';
 import { resolveCutawaySpans } from './editor-timeline.ts';
+import { layoutForFocus, resolveFocusSpans, splitCuesForFocus } from './editor-focus.ts';
 import * as cutawayRenderer from './editor-cutaway-render.ts';
 const legacyCode=ts.transpileModule(readFileSync(new URL('./legacy-clip-export-route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
 const routeCode=ts.transpileModule(readFileSync(new URL('../app/api/clip/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
@@ -34,6 +35,7 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/supabase/admin':{createAdminClient:()=>({from:()=>db})},
  '@/lib/editor-render':{validateEditorExportRequest,renderKeptSegments:async(...args:any[])=>{record('render',...args);if(options.failRender)throw new Error('render failed');return {duration:2,hasAudio:true};}},
  '@/lib/editor-timeline':{resolveCutawaySpans},
+ '@/lib/editor-focus':{layoutForFocus,resolveFocusSpans,splitCuesForFocus},
  '@/lib/editor-assets':{EditorAssetError,assertOwnedDraftAssets:async(...args:any[])=>{record('verifyAssets',...args);if(options.assetError)throw options.assetError;}},
  '@/lib/editor-cutaway-render':{...cutawayRenderer,loadEditorCutawayAssets:async(...args:any[])=>{record('loadAssets',...args);if(options.failAssetDownload)throw new EditorAssetError('Media is missing.',404);return [{id:'asset',localPath:'/trusted/asset.png',kind:'photo',mime_type:'image/png',width:128,height:64,duration_ms:null}];}},
  '@/lib/clip-edit-draft':{ClipEditDraftError},'@/lib/editor-captions':{resolveEditorCues,captionAppearance,parseCaptionOptions},
@@ -43,7 +45,7 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/video-cache':{CACHE_DIR:'/cache',isUploadRef:()=>false,resolveSourceSegment:async(...args:any[])=>{record('download',...args);return {path:'/source.mp4',offsetSeconds:100};}},
  '@/lib/job-queue':{runQueued:async(_key:string,fn:()=>Promise<unknown>)=>fn()},'@/lib/watermark':{watermarkFilter:()=> 'watermark'},
  '@/lib/profile-token':{bearerToken:()=> 'token',getProfileFromToken:async()=>({id:options.userId??'user',tier:options.pro===false?'free':'pro',stripe_subscription_id:options.pro===false?null:'sub',sparks:100,vertical_layout:options.profileLayout??null}),consumeSparksFromToken:async(...args:any[])=>record('charge',...args)},
- '@/lib/vertical-layout':{planClipComposition,validateVerticalLayout},'@/lib/vertical-layout-ffmpeg':{buildVerticalFilterGraph:(plan:any)=>{record('composition',plan);return {filter:'composed',videoLabel:'v'};}},
+ '@/lib/vertical-layout':{planClipComposition,validateVerticalLayout},'@/lib/vertical-layout-ffmpeg':{buildVerticalFilterGraph:(plan:any)=>{record('composition',plan);return {filter:'composed',videoLabel:'v'};},buildTimedVerticalFilterGraph:(spans:any,overlays:any)=>{record('timedComposition',spans,overlays);return {filter:'timed',videoLabel:'v'};}},
  '@/lib/clip-archive':{getArchivedClip:async()=>options.archive?{id:'owned',masterPath:'master',status:'stored',originalStartSeconds:options.archiveStart??100,originalEndSeconds:110}:null,readArchivedObject:async()=>options.missingArchive?null:Buffer.from('master')},
  '@/lib/clip-trim':{clipSeekRange,archivedClipTiming},'@/lib/sparks':{UPSCALE_COST:35},'@/lib/cors':{withCors:(r:Response)=>r,corsPreflight:()=>{}},
  '@/lib/clip-access':{canProcessClip:async()=>true,acquireUserProcessingSlot:()=>()=>record('releaseSlot')}
@@ -108,6 +110,34 @@ test('square export uses the shared composition with a centered landscape crop',
  const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:{...draft,aspect_ratio:'1:1'}}});
  assert.equal(response.status,200);
  assert.deepEqual(calls.find(c=>c.name==='composition')?.args[0].panels[0].source,{x:420,y:0,w:1080,h:1080});
+});
+test('saved focus switches drive timed export and split captions at the switch',async()=>{
+ const layout={version:1,gameplay:{x:.25,y:0,w:.75,h:1},facecam:{x:0,y:0,w:.25,h:1},arrangement:'gameplay_top'};
+ const edited={...draft,version:3,cutaways:[],focus_events:[{id:'reaction',source_ms:101750,mode:'reaction'},{id:'gameplay',source_ms:108250,mode:'gameplay'}]};
+ const {response,calls}=await exportRoute({profileLayout:layout,body:{clip_id:'owned',edit_draft:edited}});
+ assert.equal(response.status,200);
+ const timed=calls.find(c=>c.name==='timedComposition');assert.ok(timed);
+ assert.deepEqual(timed.args[0].map((s:any)=>[s.start_ms,s.end_ms]),[[0,750],[750,1250],[1250,2000]]);
+ const captions=calls.find(c=>c.name==='cues')!.args;
+ assert.deepEqual(captions[0].map((c:any)=>[c.start_ms,c.end_ms]),[[500,750],[750,1000],[1000,1250],[1250,1500]]);
+ assert.equal(typeof captions[4],'function');
+ const args=calls.find(c=>c.name==='encode')!.args[1];assert.ok(args.includes('0:a?'));
+});
+test('focus switches require a facecam for vertical export and leave square framing unchanged',async()=>{
+ const edited={...draft,version:3,cutaways:[],focus_events:[{id:'reaction',source_ms:101500,mode:'reaction'}]};
+ const missing=await exportRoute({body:{clip_id:'owned',edit_draft:edited}});
+ assert.equal(missing.response.status,400);assert.match((await missing.response.json()).error,/facecam/i);
+ assert.ok(!missing.calls.some(c=>c.name==='download'));
+ const square=await exportRoute({body:{clip_id:'owned',edit_draft:{...edited,aspect_ratio:'1:1'}}});
+ assert.equal(square.response.status,200);assert.ok(!square.calls.some(c=>c.name==='timedComposition'));
+});
+test('focus composition stays beneath imported cutaways and keeps source audio',async()=>{
+ const layout={version:1,gameplay:{x:.25,y:0,w:.75,h:1},facecam:{x:0,y:0,w:.25,h:1}};
+ const edited={...imported,focus_events:[{id:'reaction',source_ms:101500,mode:'reaction'}]};
+ const {response,calls}=await exportRoute({profileLayout:layout,body:{clip_id:'owned',edit_draft:edited}});
+ assert.equal(response.status,200);assert.ok(calls.some(c=>c.name==='timedComposition'));
+ const args=Array.from(calls.find(c=>c.name==='encode')!.args[1]) as string[];
+ const graph=args[args.indexOf('-filter_complex')+1];assert.ok(graph.indexOf('timed')<graph.indexOf('overlay='));assert.ok(args.includes('0:a?'));
 });
 
 const imported={...draft,version:3,cutaways:[{id:'visual',asset_id:'asset',source_start_ms:101000,source_end_ms:101500,asset_in_ms:0,fit:'cover',focal_point:{x:0.5,y:0.5}}]};

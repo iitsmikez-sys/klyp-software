@@ -2,16 +2,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { outputDuration, type CaptionCue, type SourceSegment, type ResolvedCutawaySpan } from '@/lib/editor-timeline';
 import { timeToPixels, type EditorThumbnail } from '@/lib/editor-preview';
+import type { FocusSpan } from '@/lib/editor-focus';
 export type TimelineSelection = {type:'video' | 'caption' | 'cutaway'; id:string} | null;
 export type EditorTimelineProps = {
  segments: SourceSegment[]; captions: CaptionCue[]; hook: string; outputTime: number;
  thumbnails: EditorThumbnail[]; peaks: number[] | null; mediaLoading?: boolean;
  sourceStart?: number; sourceEnd?: number;
  cutaways?: ResolvedCutawaySpan[];
+ focusSpans?: FocusSpan[];
  selection: TimelineSelection; onSelect: (selection: TimelineSelection)=>void;
  onSeek: (seconds:number)=>void; onTrim: (id:string,start:number,end:number)=>void;
 };
-export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],selection,onSelect,onSeek,onTrim}:EditorTimelineProps) {
+export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],focusSpans=[],selection,onSelect,onSeek,onTrim}:EditorTimelineProps) {
  const [zoom,setZoom]=useState(1); const track=useRef<HTMLDivElement>(null),viewport=useRef<HTMLDivElement>(null);
  const [availableWidth,setAvailableWidth]=useState(800);
  const [activeTrim,setActiveTrim]=useState<{edge:'start'|'end';start:number;end:number}|null>(null);
@@ -65,11 +67,12 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
     <button type="button" style={{minWidth:44,minHeight:44}} aria-label={`Trim end of short segment ${s.id}`} onPointerDown={e=>trim(e,s,'end')} onKeyDown={e=>handleKey(e,s,'end')}>End</button>
    </fieldset>)}
   </div>
-  <div className="editor-track-layout"><div className="editor-track-labels" aria-hidden="true"><p>Video</p><p>Captions</p><p>Audio</p><p>Hook</p></div>
+  <div className="editor-track-layout"><div className="editor-track-labels" aria-hidden="true"><p>Focus</p><p>Video</p><p>Captions</p><p>Audio</p><p>Hook</p></div>
    <div ref={viewport} className="editor-track-scroll overflow-x-auto"><div ref={track} style={{width, minWidth:1,position:'relative'}}>
     <div className="editor-ruler" onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);seek(e);}} onPointerMove={e=>{if(e.buttons===1)seek(e);}}>
      {Array.from({length:Math.ceil(duration/(rulerStep))},(_,i)=>{const seconds=i*(rulerStep);return <span key={i} style={{left:seconds*scale}}>{Math.floor(seconds/60).toString().padStart(2,'0')}:{(seconds%60).toString().padStart(2,'0')}</span>;})}
     </div>
+    <div aria-label="Focus lane" className="editor-lane editor-focus-lane">{focusSpans.map((span,index)=><button key={`${span.start_ms}:${index}`} type="button" style={blockStyle(span.start_ms/1000,span.end_ms/1000)} aria-label={`${span.mode === 'reaction' ? 'Reaction' : 'Gameplay'} focus from ${(span.start_ms/1000).toFixed(1)} to ${(span.end_ms/1000).toFixed(1)} seconds`} className={span.mode === 'reaction' ? 'reaction' : 'gameplay'} onClick={()=>onSeek(span.start_ms/1000)}>{span.mode === 'reaction' ? 'Reaction focus' : 'Gameplay focus'}</button>)}</div>
     <div aria-label="Video lane" className="editor-lane editor-video-lane">{segments.map((s,index)=>{const start=offset;offset+=s.end_seconds-s.start_seconds;return <div key={s.id} style={blockStyle(start,offset)} className="editor-video-block" data-selected={selection?.type==='video'&&selection.id===s.id}>
      <button type="button" aria-label={`Trim start of segment ${s.id}`} className="editor-trim-handle" onPointerDown={e=>trim(e,s,'start')} onKeyDown={e=>handleKey(e,s,'start')}/>
      <button type="button" aria-label={`Select video segment ${s.id}`} aria-pressed={selection?.type==='video' && selection.id===s.id} className="editor-video-frames" onClick={()=>onSelect({type:'video',id:s.id})}>

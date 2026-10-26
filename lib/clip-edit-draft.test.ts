@@ -181,6 +181,18 @@ test('V2 export transports the complete unsaved draft losslessly', () => {
  assert.deepEqual(toClipExportPayload(clip, checked).edit_draft, checked);
 });
 
+test('V3 preserves bounded focus changes in saved drafts and exports', async () => {
+ const {upgradeClipEditDraft} = await import('./clip-edit-draft.ts');
+ const current = upgradeClipEditDraft(clip, validateClipEditDraft(v2(), clip));
+ const events = [{id:'reaction',source_ms:102000,mode:'reaction'},{id:'game',source_ms:105000,mode:'gameplay'}];
+ const checked = validateClipEditDraft({...current,focus_events:events},clip);
+ assert.deepEqual(checked.version===3?checked.focus_events:null,events);
+ assert.deepEqual(toClipExportPayload(clip,checked).edit_draft,checked);
+ assert.equal(upgradeClipEditDraft(clip,checked).focus_events?.length,2);
+ assert.equal(upgradeClipEditDraft(clip,current).focus_events?.length??0,0);
+ assert.throws(()=>validateClipEditDraft({...current,focus_events:[{id:'bad',source_ms:99999,mode:'reaction'}]},clip), {name:'ClipEditDraftError'});
+});
+
 test('legacy KLYP upgrade retains its green caption appearance', async () => {
  const {upgradeClipEditDraft}=await import("./clip-edit-draft.ts");
 

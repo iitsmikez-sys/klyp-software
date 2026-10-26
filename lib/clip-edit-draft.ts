@@ -4,6 +4,7 @@ import { CAPTION_STYLES, EXPORT_FORMATS, type CaptionStyle, type ExportFormat, t
 import { HOOK_STYLES, type HookStyle } from "./captions.ts";
 import type { SavedClip } from "./clip-ui.ts";
 import { validateVerticalLayout, type VerticalLayoutV1 } from "./vertical-layout.ts";
+import { validateFocusEvents, type FocusEvent } from "./editor-focus.ts";
 
 export type ClipEditDraftV1 = {
   version: 1;
@@ -42,6 +43,7 @@ export type VisualCutaway = {
 export type ClipEditDraftV3 = Omit<ClipEditDraftV2, "version"> & {
  version: 3;
  cutaways: VisualCutaway[];
+ focus_events?: FocusEvent[];
 };
 export type ClipEditDraft = ClipEditDraftV1 | ClipEditDraftV2 | ClipEditDraftV3;
 export class ClipEditDraftError extends Error {
@@ -204,7 +206,12 @@ function validateV3(input: Record<string, unknown>, clip: ClipSource): ClipEditD
  });
  const ordered = [...cutaways].sort((a, b) => a.source_start_ms - b.source_start_ms);
  if (ordered.some((c, i) => i > 0 && c.source_start_ms < ordered[i - 1].source_end_ms)) throw new ClipEditDraftError("Visual cutaways must not overlap.");
- return { ...common, version: 3, cutaways };
+ let focusEvents: FocusEvent[] | undefined;
+ if (input.focus_events !== undefined) {
+  try { focusEvents = validateFocusEvents(input.focus_events, clip.start_seconds, clip.end_seconds); }
+  catch (error) { throw new ClipEditDraftError((error as Error).message); }
+ }
+ return { ...common, version: 3, cutaways, ...(focusEvents ? { focus_events: focusEvents } : {}) };
 }
 export function upgradeClipEditDraft(clip: ClipSource, draft: ClipEditDraft): ClipEditDraftV3 {
  if (draft.version !== 1) return validateClipEditDraft({ ...draft, version: 3, cutaways: draft.version === 3 ? draft.cutaways : [] }, clip) as ClipEditDraftV3;
