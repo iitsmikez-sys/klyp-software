@@ -34,7 +34,6 @@ import {
   type SavedClip,
   TYPE_STYLES,
   fmtTime,
-  fmtDate,
   platformName,
   vodLinkAt,
 } from "@/lib/clip-ui";
@@ -302,6 +301,8 @@ export default function ClipPreviewModal({
 
   const platform = platformName(clip.url);
   const isUpload = clip.url.startsWith("upload:");
+  const duration = Math.max(0, draft.end_seconds - draft.start_seconds);
+  const selectionReason = clip.reason?.trim();
   const exporting = exportState?.status === "working";
   const ready = exportState?.status === "ready";
   const actionBlocked = clipPreviewActionBlocked(dirty || pendingLayout);
@@ -323,7 +324,7 @@ export default function ClipPreviewModal({
   return (
     <div
       onMouseDown={onBackdrop}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 font-geist ${
+      className={`fixed inset-0 z-50 flex items-center justify-center p-2 font-geist sm:p-4 ${
         reducedMotion ? "" : "backdrop-blur-sm"
       }`}
       style={{
@@ -338,27 +339,27 @@ export default function ClipPreviewModal({
         aria-modal="true"
         aria-label={`Preview: ${clip.title}`}
         style={panelStyle}
-        className="w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
+        className="max-h-[94dvh] w-full max-w-4xl overflow-y-auto rounded-xl border border-border bg-surface shadow-2xl scrollbar-thin"
       >
         {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
+        <div className="flex items-start justify-between gap-4 px-4 pb-3 pt-4 sm:px-6 sm:pt-5">
           <div className="min-w-0">
             {/* Wraps rather than truncates — on a phone the tail of a title is
                 often the point of it ("…Then THIS Happened"). */}
-            <h2 className="font-geist text-xl sm:text-2xl font-bold text-white leading-tight line-clamp-2">
+            <h2 className="line-clamp-2 font-geist text-xl font-semibold leading-tight text-white sm:text-2xl">
               {draft.title}
             </h2>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-sm text-foreground-muted">
-              <span className={`px-2 py-0.5 rounded border text-[11px] font-bold tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-muted sm:text-sm">
+              <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
                 {clip.clip_type}
               </span>
               <span className="text-subtle">•</span>
               <span>{isUpload ? "Uploaded VOD" : platform}</span>
               <span className="text-subtle">•</span>
-              <span>{fmtDate(clip.created_at)}</span>
+              <span>{fmtTime(duration)} clip</span>
               <span className="text-subtle">•</span>
-              <span className="font-mono text-[13px]">
-                {fmtTime(draft.start_seconds)} → {fmtTime(draft.end_seconds)}
+              <span className="tabular-nums">
+                VOD {fmtTime(draft.start_seconds)}–{fmtTime(draft.end_seconds)}
               </span>
             </div>
           </div>
@@ -375,8 +376,8 @@ export default function ClipPreviewModal({
         </div>
 
         {/* ── Player ── object-contain keeps the source aspect ratio intact ── */}
-        <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
-          <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
+        <div className="mx-4 overflow-hidden rounded-lg bg-black sm:mx-6">
+          <div className="relative min-h-[210px] w-full" style={{ height: "min(48dvh, 440px)" }}>
             {/* The clip's own frame, under the video and crossfaded out once
                 the first video frame has decoded. */}
             {poster && !loadError && (
@@ -393,7 +394,7 @@ export default function ClipPreviewModal({
             )}
 
             {showSpinner && !videoReady && !loadError && (
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-t from-black/85 to-transparent">
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-black/75 px-4 py-3">
                 <span className="w-4 h-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
                 <span className="text-sm text-white/90">
                   Loading preview{elapsed >= 20 ? " — downloading the source VOD" : ""}
@@ -458,64 +459,34 @@ export default function ClipPreviewModal({
           </div>
         </div>
 
-        {/* ── Actions ── */}
-        <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
-          {ready ? (
-            <button
-              onClick={onDownloadClip}
-              disabled={actionBlocked}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors disabled:opacity-60"
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Download clip
-            </button>
-          ) : (
-            <button
-              onClick={onCreateClip}
-              disabled={draft.version !== 1 || exporting || actionBlocked}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors disabled:opacity-60 disabled:shadow-none"
-            >
-              {exporting ? (
-                <>
-                  <span className="w-4 h-4 rounded-full border-2 border-background border-t-transparent animate-spin" />
-                  Creating clip…
-                </>
-              ) : (
-                <>
-                  {/* scissors */}
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
-                    <line x1="20" y1="4" x2="8.12" y2="15.88" />
-                    <line x1="14.47" y1="14.48" x2="20" y2="20" />
-                    <line x1="8.12" y1="8.12" x2="12" y2="12" />
-                  </svg>
-                  Create clip
-                </>
-              )}
-            </button>
-          )}
+        {selectionReason && (
+          <div className="mx-4 mt-4 border-l-2 border-accent/60 pl-3 sm:mx-6">
+            <p className="text-xs font-semibold text-foreground">Why this moment?</p>
+            <p className="mt-1 line-clamp-2 text-sm leading-5 text-foreground-muted" title={selectionReason}>{selectionReason}</p>
+          </div>
+        )}
 
-          {isUpload ? (
-            <span className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-foreground-muted text-base font-bold">
-              Uploaded VOD
-            </span>
-          ) : (
-            <a
-              href={vodLinkAt(clip.url, draft.start_seconds)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-accent/40 text-accent text-base font-bold hover:bg-accent-glow focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-              Watch on {platform}
+        {/* Keep rendering separate from editing: Create clip still uses the existing export flow. */}
+        <div className="flex flex-col gap-2 px-4 pb-1 pt-4 sm:flex-row sm:items-center sm:px-6">
+          <Link
+            href={`/dashboard/clips/${clip.id}/edit`}
+            onClick={e => { if ((dirty || pendingLayout) && !window.confirm("Leave without saving your quick edits?")) e.preventDefault(); }}
+            className="flex min-h-11 items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:min-w-40"
+          >
+            Edit clip
+          </Link>
+          <button
+            type="button"
+            onClick={ready ? onDownloadClip : onCreateClip}
+            disabled={actionBlocked || (!ready && (draft.version !== 1 || exporting))}
+            className="min-h-11 rounded-lg border border-border px-5 text-sm font-semibold text-foreground transition-colors hover:border-subtle disabled:opacity-60 sm:min-w-36"
+          >
+            {exporting ? "Creating clip…" : ready ? "Download clip" : "Create clip"}
+          </button>
+          {!isUpload && (
+            <a href={vodLinkAt(clip.url, draft.start_seconds)} target="_blank" rel="noopener noreferrer"
+              className="flex min-h-11 items-center justify-center px-2 text-sm font-medium text-foreground-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:ml-auto">
+              Watch on {platform} ↗
             </a>
           )}
         </div>
@@ -534,11 +505,11 @@ export default function ClipPreviewModal({
         )}
 
         {/* ── Details: scene analysis, transcript and the full export controls ── */}
-        <div className="px-6 pb-6 pt-3">
+        <div className="px-4 pb-4 pt-3 sm:px-6 sm:pb-5">
           <button
             onClick={() => setDetailsOpen((v) => !v)}
             aria-expanded={detailsOpen}
-            className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-foreground-muted hover:text-foreground hover:border-subtle focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
+            className="flex min-h-10 w-full items-center gap-2 border-t border-border px-1 pt-3 text-sm font-medium text-foreground-muted transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             <svg
               width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -547,9 +518,8 @@ export default function ClipPreviewModal({
             >
               <polyline points="6 9 12 15 18 9" />
             </svg>
-            Details
+            Quick edit options
           </button>
-          <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => { if ((dirty || pendingLayout) && !window.confirm("Leave without saving your quick edits?")) e.preventDefault(); }} className="inline-block my-3 px-4 py-2 rounded-lg border border-accent/40 text-accent">Open timeline editor</Link>
           {detailsOpen && (
             /* The editor renders its own 9:16 player for hook/caption placement;
                the dialog already has one, so it's suppressed here. */
