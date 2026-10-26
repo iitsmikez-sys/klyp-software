@@ -157,9 +157,9 @@ export default function DashboardStats() {
     ) as Stat[]);
 
   return (
-    <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+    <section className="grid grid-cols-2 gap-y-5 border-t border-border pt-5 lg:grid-cols-4" aria-label="Your activity">
       {cards.map((card) => (
-        <div key={card.label} className="bg-surface border border-border rounded-xl p-4 sm:p-5">
+        <div key={card.label} className="min-w-0 px-2 sm:px-4 first:pl-0 lg:border-r lg:border-border lg:last:border-r-0">
           <div className="flex items-center gap-2 text-foreground-muted">
             {card.icon}
             <p className="text-sm font-medium">{card.label}</p>
@@ -171,7 +171,7 @@ export default function DashboardStats() {
             <div className="mt-3 h-8 w-16 rounded bg-surface-2 animate-pulse" />
           ) : (
             <>
-              <p className="font-geist text-3xl font-bold text-white mt-2 tabular-nums">
+              <p className="mt-2 font-geist text-2xl font-semibold tabular-nums text-white">
                 {card.value}
               </p>
               <p className="text-sm text-foreground-muted mt-1">

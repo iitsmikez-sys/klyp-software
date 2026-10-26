@@ -35,9 +35,9 @@ export default function SparksBalance() {
   return (
     <div
       title={title}
-      className="flex items-center gap-2.5 pl-3.5 pr-4 py-2 rounded-full bg-surface border border-accent/25 shadow-accent-glow-sm"
+      className="flex items-center gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2"
     >
-      <span className="flex items-center justify-center w-7 h-7 rounded-full bg-accent-glow text-accent">
+      <span className="flex items-center justify-center w-7 h-7 rounded-md bg-accent-glow text-accent">
         <SparkIcon size={14} />
       </span>
       <div className="flex items-baseline gap-1.5">

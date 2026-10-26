@@ -7,28 +7,27 @@ import DashboardStats from "@/components/DashboardStats";
 
 export default function DashboardPage() {
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6 animate-fade-in font-geist">
-      <header className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+    <div className="mx-auto max-w-[1240px] space-y-8 px-4 py-6 font-geist sm:px-6 md:px-8 md:py-9">
+      <header className="flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-geist text-3xl sm:text-4xl font-bold text-white">Dashboard</h1>
-          <p className="text-[15px] text-foreground-muted mt-1">
-            Paste a video link or connect your stream to find your best moments.
+          <h1 className="font-geist text-3xl font-semibold tracking-tight text-white sm:text-4xl">Dashboard</h1>
+          <p className="mt-2 text-[15px] text-foreground-muted">
+            Start with a VOD. Review the moments Klyp finds.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <SparksBalance />
           <UpgradeButton />
         </div>
       </header>
 
-      {/* Replaces the old Quick Start checklist — same /dashboard/streams flow. */}
-      <ConnectStreamBanner />
-
       <AnalyzePanel />
 
-      <DashboardStats />
-
       <SavedClips />
+
+      <ConnectStreamBanner />
+
+      <DashboardStats />
     </div>
   );
 }

@@ -781,9 +781,10 @@ export default function AnalyzePanel() {
       )}
 
       {/* VOD input — URL paste or file upload */}
-      <div className="bg-surface border border-border rounded-xl p-6">
-        <h2 className="font-geist text-xl font-bold text-white mb-1">Analyze a VOD</h2>
-        <p className="text-[15px] text-foreground-muted mb-4">
+      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-7">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground-muted">New clips</p>
+        <h2 className="mb-1 font-geist text-2xl font-semibold tracking-tight text-white">Analyze a VOD</h2>
+        <p className="mb-6 text-[15px] text-foreground-muted">
           Paste a video link or upload a file to find your best moments.
         </p>
         {/* Input mode toggle */}
@@ -820,7 +821,7 @@ export default function AnalyzePanel() {
               <button
                 type="submit"
                 disabled={busy || loading || !url || outOfSparks || cantAfford}
-                className="px-7 py-3 rounded-lg bg-accent text-background text-[15px] font-bold hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none whitespace-nowrap"
+                className="whitespace-nowrap rounded-lg bg-accent px-7 py-3 text-[15px] font-semibold text-background transition-colors hover:bg-accent-dim disabled:opacity-50"
               >
                 {loading ? "Analyzing…" : "Find clips"}
               </button>
@@ -919,7 +920,7 @@ export default function AnalyzePanel() {
               <button
                 type="submit"
                 disabled={busy || loading || !uploadedFile || uploadPct !== null || outOfSparks || cantAfford}
-                className="px-6 py-2.5 rounded-lg bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-50 disabled:shadow-none whitespace-nowrap sm:self-start"
+                className="whitespace-nowrap rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim disabled:opacity-50 sm:self-start"
               >
                 {loading ? "Analyzing…" : "Find clips"}
               </button>
@@ -928,21 +929,21 @@ export default function AnalyzePanel() {
         </form>
 
         {/* Clip count selector */}
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
+        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-border pt-5">
           <span
             className="text-sm text-foreground whitespace-nowrap cursor-help"
             title="We only return clips worth posting — if your VOD doesn't have 10 great moments you'll get fewer"
           >
             How many clips? <span className="text-foreground-muted">ⓘ</span>
           </span>
-          <div className="flex rounded-lg border border-border overflow-hidden">
+          <div className="flex max-w-full overflow-x-auto rounded-lg border border-border">
             {CLIP_COUNT_OPTIONS.map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setClipCount(n)}
                 disabled={loading}
-                className={`px-3 py-1.5 text-xs font-bold font-syne transition-colors disabled:opacity-50 ${
+                className={`flex-none whitespace-nowrap px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50 ${
                   clipCount === n
                     ? "bg-accent-glow text-accent"
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
@@ -970,7 +971,7 @@ export default function AnalyzePanel() {
                 type="button"
                 onClick={() => updateContentType(ct)}
                 disabled={loading}
-                className={`px-3 py-1.5 text-xs font-bold font-syne transition-colors disabled:opacity-50 ${
+                className={`px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50 ${
                   contentType === ct
                     ? "bg-accent-glow text-accent"
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
@@ -1104,7 +1105,7 @@ export default function AnalyzePanel() {
             )}
           </div>
         )}
-      </div>
+      </section>
 
       {/* Results */}
       {clips && (

@@ -59,10 +59,10 @@ export default function ConnectStreamBanner() {
   const anyWatched = watched.length > 0;
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 sm:px-5 rounded-xl bg-surface border border-accent/25">
+    <div className="flex flex-col gap-4 border-t border-border py-5 sm:flex-row sm:items-center">
       <span
-        className={`flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center ${
-          anyWatched ? "bg-accent-glow" : "bg-surface-2 border border-border"
+        className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-border ${
+          anyWatched ? "bg-accent-glow" : "bg-surface"
         }`}
       >
         {/* Lit only when a channel is actually being watched — the accent ring
@@ -118,11 +118,7 @@ export default function ConnectStreamBanner() {
 
       <Link
         href="/dashboard/streams"
-        className={`flex-shrink-0 px-5 py-2.5 rounded-lg text-[15px] font-bold text-center transition-colors focus:outline-none focus:ring-2 focus:ring-accent/60 ${
-          connected
-            ? "border border-accent/40 text-accent hover:bg-accent-glow"
-            : "bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm"
-        }`}
+        className="flex-shrink-0 rounded-lg border border-border px-4 py-2.5 text-center text-sm font-semibold text-foreground transition-colors hover:border-accent/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         {connected ? "Manage streams" : "Connect stream"}
       </Link>
