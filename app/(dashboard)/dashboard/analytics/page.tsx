@@ -16,6 +16,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import ClipThumbnail from "@/components/ClipThumbnail";
 import ClipPreviewModal from "@/components/ClipPreviewModal";
+import { useRawClipDownloads } from "@/components/useRawClipDownloads";
 import { useClipExports } from "@/components/useClipExports";
 import { downloadExport } from "@/lib/clip-export";
 import { type SavedClip, TYPE_STYLES, TYPE_BAR_COLORS, fmtTime, clipDuration } from "@/lib/clip-ui";
@@ -118,6 +119,7 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState<PeriodKey>("all"); // default: All time
   const [showAllTypes, setShowAllTypes] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const { rawDownloads, downloadRaw } = useRawClipDownloads();
   const { exports, createClip, invalidateClip } = useClipExports();
 
   useEffect(() => {
@@ -408,6 +410,8 @@ export default function AnalyticsPage() {
             const done = exports[previewClip.id];
             if (done) downloadExport(done, previewClip.id);
           }}
+          rawState={rawDownloads[previewClip.id]}
+          onDownloadRaw={() => void downloadRaw(previewClip)}
         />
       )}
     </div>

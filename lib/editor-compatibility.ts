@@ -1,6 +1,5 @@
 import type {SavedClip} from './clip-ui.ts';
-import {defaultClipEditDraft,toClipExportPayload,type ClipEditDraftV3} from './clip-edit-draft.ts';
-import {resolveExportFormat} from './clips.ts';
+import {toClipExportPayload,type ClipEditDraftV3} from './clip-edit-draft.ts';
 /** Never remove or rewrite an existing device draft merely by opening the new editor. */
 export function hasLegacyEditorDraft(raw: string | null): boolean { return raw !== null; }
 /** The timeline is the primary editor; a browser-only draft remains available by choice. */
@@ -14,6 +13,8 @@ export function isLegacyEditorExport(body: Record<string, unknown>): boolean {
 /** Free explicitly exports the original clip without mutating its saved Pro draft. */
 export function timelineExportPayload(clip: SavedClip, draft: ClipEditDraftV3, isPro: boolean) {
  if(isPro) return toClipExportPayload(clip,draft);
- return toClipExportPayload(clip,{...defaultClipEditDraft(clip),aspect_ratio:resolveExportFormat(draft.aspect_ratio,false)});
+ // "Export original" must mean the same untouched detected moment as
+ // Download Raw, even when analysis suggested hooks or transcribed words.
+ return { clip_id: clip.id, raw: true as const };
 }
 
