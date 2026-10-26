@@ -399,7 +399,7 @@ function ClipsPageContent() {
 
               <h3 className="mb-1 line-clamp-2 font-geist text-base font-semibold leading-6 text-white" title={readClipEditDraft(clip).draft.title}>{readClipEditDraft(clip).draft.title}</h3>
               <p className="mb-3 text-xs text-foreground-muted">
-                {platformName(clip.url)} · {fmtTime(readClipEditDraft(clip).draft.end_seconds - readClipEditDraft(clip).draft.start_seconds)} clip · VOD {fmtTime(readClipEditDraft(clip).draft.start_seconds)}–{fmtTime(readClipEditDraft(clip).draft.end_seconds)}
+                {clip.url.startsWith("upload:") ? "Uploaded VOD" : platformName(clip.url)} · {fmtTime(readClipEditDraft(clip).draft.end_seconds - readClipEditDraft(clip).draft.start_seconds)} clip · VOD {fmtTime(readClipEditDraft(clip).draft.start_seconds)}–{fmtTime(readClipEditDraft(clip).draft.end_seconds)}
               </p>
               <details className="mb-3 text-xs text-foreground-muted" onClick={(e) => e.stopPropagation()}>
                 <summary className="cursor-pointer font-medium hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Details &amp; feedback</summary>
