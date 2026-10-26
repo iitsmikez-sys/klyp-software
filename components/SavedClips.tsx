@@ -93,7 +93,7 @@ export default function SavedClips() {
         {heading}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: LIMIT }).map((_, i) => (
-            <div key={i} className="bg-surface border border-border rounded-xl p-3">
+            <div key={i} className={`rounded-xl border border-border bg-surface/50 p-3 ${i > 0 ? "hidden sm:block" : ""}`}>
               <div className="aspect-video w-full rounded-lg bg-surface-2 animate-pulse" />
               <div className="h-4 w-24 rounded bg-surface-2 animate-pulse mt-3" />
               <div className="h-5 w-full rounded bg-surface-2 animate-pulse mt-2" />
@@ -133,7 +133,7 @@ export default function SavedClips() {
           return (
             <div
               key={clip.id}
-              className="bg-surface border border-border rounded-xl p-3 flex flex-col hover:border-accent/30 transition-colors"
+              className="flex flex-col rounded-xl border border-border bg-surface/50 p-3 transition-colors hover:border-subtle"
             >
               <ClipThumbnail clip={clip} onPlay={() => { if (!footageGone(clip)) setPreviewId(clip.id); }} />
 
