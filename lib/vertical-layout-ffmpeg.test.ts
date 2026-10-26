@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { planVerticalLayout } from "./vertical-layout.ts";
-import { buildVerticalFilterGraph } from "./vertical-layout-ffmpeg.ts";
+import { buildVerticalFilterGraph, buildTimedVerticalFilterGraph } from "./vertical-layout-ffmpeg.ts";
 
 const source = { w: 1920, h: 1080 };
 const output = { w: 1080, h: 1920 };
@@ -78,4 +78,36 @@ test("vertical export preserves an audio stream", (t) => {
     assert.equal(picture?.display_aspect_ratio, "9:16");
     assert.ok(streams.some((stream) => stream.codec_type === "audio"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('reaction focus makes facecam large on top and gameplay small below', () => {
+ const layout = {version:1 as const,gameplay:{x:.25,y:0,w:.75,h:1},facecam:{x:0,y:0,w:.25,h:1},focus:'reaction' as const};
+ const plan = planVerticalLayout({w:320,h:180},layout,{w:90,h:160});
+ assert.equal(plan.mode,'composed');
+ if(plan.mode==='composed') assert.deepEqual(plan.panels.map(p=>[p.name,p.dest.y,p.dest.h]),[['facecam',0,112],['gameplay',112,48]]);
+});
+
+test('timed export switches gameplay and reaction focus while retaining audio', (t) => {
+ if(spawnSync('ffmpeg',['-version']).error){t.skip('FFmpeg unavailable');return;}
+ const dir=mkdtempSync(path.join(tmpdir(),'klyp-focus-'));
+ try {
+  const base={version:1 as const,gameplay:{x:.25,y:0,w:.75,h:1},facecam:{x:0,y:0,w:.25,h:1},arrangement:'gameplay_top' as const};
+  const reaction={...base,arrangement:'facecam_top' as const,focus:'reaction' as const};
+  const graph=buildTimedVerticalFilterGraph([
+   {start_ms:0,end_ms:1000,plan:planVerticalLayout({w:320,h:180},base,{w:90,h:160})},
+   {start_ms:1000,end_ms:2000,plan:planVerticalLayout({w:320,h:180},reaction,{w:90,h:160})},
+  ],[]);
+  const file=path.join(dir,'focus.mp4');
+  const encode=spawnSync('ffmpeg',['-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=10:d=2,drawbox=x=0:y=0:w=80:h=180:color=blue:t=fill','-f','lavfi','-i','sine=frequency=440:duration=2','-filter_complex',graph.filter,'-map',`[${graph.videoLabel}]`,'-map','1:a','-c:v','libx264','-c:a','aac','-y',file],{encoding:'utf8'});
+  assert.equal(encode.status,0,encode.stderr);
+  const frame=(second:number)=>spawnSync('ffmpeg',['-loglevel','error','-ss',String(second),'-i',file,'-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-'],{maxBuffer:100000});
+  const first=frame(.5),later=frame(1.5);
+  assert.equal(first.status,0,first.stderr?.toString());assert.equal(later.status,0,later.stderr?.toString());
+  const pixel=(buffer:Buffer,x:number,y:number)=>Array.from(buffer.subarray((y*90+x)*3,(y*90+x)*3+3));
+  const earlyTop=pixel(first.stdout,45,20),lateTop=pixel(later.stdout,45,20);
+  assert.ok(earlyTop[0]>100&&earlyTop[2]<100,`early gameplay ${earlyTop}`);
+  assert.ok(lateTop[2]>100&&lateTop[0]<100,`late facecam ${lateTop}`);
+  const probe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type','-of','json',file],{encoding:'utf8'});
+  assert.ok(JSON.parse(probe.stdout).streams.some((s:{codec_type:string})=>s.codec_type==='audio'));
+ } finally {rmSync(dir,{recursive:true,force:true});}
 });

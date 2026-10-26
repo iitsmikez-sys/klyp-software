@@ -20,6 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { renderKeptSegments, validateEditorExportRequest } from "@/lib/editor-render";
 import { assertOwnedDraftAssets, EditorAssetError } from "@/lib/editor-assets";
 import { resolveCutawaySpans, type ResolvedCutawaySpan } from "@/lib/editor-timeline";
+import { layoutForFocus, resolveFocusSpans, splitCuesForFocus } from "@/lib/editor-focus";
 import { buildCutawayGraph, cutawayInputArgs, loadEditorCutawayAssets, type RenderableEditorAsset } from "@/lib/editor-cutaway-render";
 import { ClipEditDraftError, type ClipEditDraftV2, type ClipEditDraftV3 } from "@/lib/clip-edit-draft";
 import { resolveEditorCues, captionAppearance, parseCaptionOptions } from "@/lib/editor-captions";
@@ -43,7 +44,7 @@ import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { planClipComposition, validateVerticalLayout, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
-import { buildVerticalFilterGraph } from "@/lib/vertical-layout-ffmpeg";
+import { buildTimedVerticalFilterGraph, buildVerticalFilterGraph } from "@/lib/vertical-layout-ffmpeg";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { clipSeekRange, archivedClipTiming } from "@/lib/clip-trim";
 import { UPSCALE_COST } from "@/lib/sparks";
@@ -114,7 +115,8 @@ async function cutClip(
   raw = false,
   upscale = false,
   verticalPlan?: VerticalLayoutPlan,
-  cutaways?: { spans: readonly ResolvedCutawaySpan[]; assets: readonly RenderableEditorAsset[]; dimensions: {w:number;h:number} }
+  cutaways?: { spans: readonly ResolvedCutawaySpan[]; assets: readonly RenderableEditorAsset[]; dimensions: {w:number;h:number} },
+  focusPlans?: readonly { start_ms: number; end_ms: number; plan: VerticalLayoutPlan }[]
 ): Promise<string> {
   const duration = endSeconds - startSeconds;
   const outPath = path.join(
@@ -147,7 +149,8 @@ async function cutClip(
     ...(!isPro ? [watermarkFilter()] : []),
   ];
   if (overlays.length) vf += `,${overlays.join(',')}`;
-  let composed = !raw && verticalPlan ? buildVerticalFilterGraph(verticalPlan, cutaways ? [] : overlays) : null;
+  let composed = !raw && focusPlans?.length ? buildTimedVerticalFilterGraph(focusPlans, cutaways ? [] : overlays)
+    : !raw && verticalPlan ? buildVerticalFilterGraph(verticalPlan, cutaways ? [] : overlays) : null;
   if (!raw && cutaways) {
     const base = composed ?? { filter: `[0:v]${framing},setsar=1[framed]`, videoLabel: 'framed' };
     const imported = buildCutawayGraph(base.videoLabel, cutaways.spans, cutaways.assets, cutaways.dimensions);
@@ -335,6 +338,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       layoutWarning = "Saved layout is invalid; the full frame was exported.";
     }
   }
+  if (editorDraft?.version === 3 && editorDraft.focus_events?.length && format === "9:16" && !verticalLayout?.facecam) {
+    return NextResponse.json({ error: "Add a facecam to the vertical layout before exporting focus changes." }, { status: 400 });
+  }
 
   if (upscale) {
     if (!isPro) {
@@ -438,6 +444,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (upscale) res = { w: res.w * 2, h: res.h * 2 };
       let verticalPlan: VerticalLayoutPlan | undefined;
+      let focusPlans: { start_ms: number; end_ms: number; plan: VerticalLayoutPlan }[] | undefined;
       if (!raw && format !== "Original") {
         const native = await probeVideoSize(sourcePath);
         if (!native && verticalLayout) {
@@ -446,6 +453,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         }
         // When probing fails, nonvertical exports retain the dynamic scale/crop fallback.
         if (native || format === "9:16") verticalPlan = planClipComposition(native ?? { w: 1920, h: 1080 }, format, verticalLayout, res);
+        if (editorDraft?.version === 3 && editorDraft.focus_events?.length && format === "9:16" && verticalLayout?.facecam) {
+          focusPlans = resolveFocusSpans(editorDraft.focus_events, editorDraft.segments).map(span => ({
+            start_ms: span.start_ms, end_ms: span.end_ms,
+            plan: planClipComposition(native ?? { w: 1920, h: 1080 }, format, layoutForFocus(verticalLayout, span.mode), res),
+          }));
+        }
       }
 
       let assPath: string | undefined;
@@ -457,7 +470,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         assPath = path.join(assDir!, "captions.ass");
         const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.dest;
         const cues = resolveEditorCues(editorDraft, ownedEditorClip);
-        await writeFile(assPath, generateTimedCueAss(cues, style, captionAppearance(editorDraft), res, safe, editorDraft.caption_font ?? "sans"), "utf-8");
+        const spans = editorDraft.version === 3 && focusPlans ? resolveFocusSpans(editorDraft.focus_events ?? [], editorDraft.segments) : null;
+        const resolvedCues = spans ? splitCuesForFocus(cues, spans) : cues;
+        const captionSafe = spans && focusPlans ? (cue: { start_ms: number }) => {
+          const plan = focusPlans!.find(span => cue.start_ms >= span.start_ms && cue.start_ms < span.end_ms)?.plan;
+          return plan?.mode === "composed" ? plan.textSafe : plan?.mode === "full_frame" ? plan.dest : { x: 0, y: 0, w: res.w, h: res.h };
+        } : safe;
+        await writeFile(assPath, generateTimedCueAss(resolvedCues, style, captionAppearance(editorDraft), res, captionSafe, editorDraft.caption_font ?? "sans"), "utf-8");
       } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
         const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.y - verticalPlan.textSafe.h
@@ -490,7 +509,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         raw,
         upscale,
         verticalPlan,
-        cutaways
+        cutaways,
+        focusPlans
       );
       log("clip cut in", `${((Date.now() - t2) / 1000).toFixed(1)}s`);
       return result;

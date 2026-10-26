@@ -62,6 +62,12 @@ test("all palette colors reach ASS and composed safe geometry scales", () => {
   assert.ok(ass.includes("\\an5\\pos(270,336)"));
  }
 });
+test('timed captions can use a different safe rectangle after a focus switch', () => {
+ const appearance=captionAppearance({...base(),caption_position:'center'});
+ const ass=generateTimedCueAss([{id:'game',start_ms:0,end_ms:500,text:'PLAY'},{id:'reaction',start_ms:500,end_ms:1000,text:'REACT'}],'BOLD',appearance,{w:540,h:960},cue=>cue.id==='game'?{x:0,y:0,w:540,h:672}:{x:0,y:672,w:540,h:288});
+ assert.match(ass,/\\an5\\pos\(270,336\).*PLAY/);
+ assert.match(ass,/\\an5\\pos\(270,816\).*REACT/);
+});
 test("newer overlapping caption replaces the earlier caption in preview and ASS", () => {
  const draft = { ...base(), caption_cues: [{ id: "a", start_ms: 101000, end_ms: 104000, text: "first" }, { id: "b", start_ms: 102000, end_ms: 103000, text: "second" }] };
  assert.deepEqual(resolveEditorCues(draft, clip).map(c => [c.start_ms,c.end_ms]), [[1000,2000],[2000,3000]]);

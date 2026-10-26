@@ -326,14 +326,14 @@ export function generateTimedCueAss(
  style: CaptionStyle,
  appearance: CaptionAppearance,
  res: PlayRes = DEFAULT_RES,
- safeArea: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: res.w, h: res.h },
+ safeArea: { x: number; y: number; w: number; h: number } | ((cue: { id?: string; start_ms: number; end_ms: number; text: string }) => { x: number; y: number; w: number; h: number }) = { x: 0, y: 0, w: res.w, h: res.h },
  font: CaptionFont = "sans",
 ): string {
  const styles = style === "COMIC" || style === "KEYWORD" ? styleBlock(style, res, 0, undefined, font)
    : styleBlock(style, res, 0, undefined, font).replace(STYLE_PARAMS[style].color, appearance.assColor);
  const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
  for (const cue of normalizeTimedCues(cues)) {
-  const layout = layoutTimedCaption(cue.text, style, appearance, res, safeArea, font);
+  const layout = layoutTimedCaption(cue.text, style, appearance, res, typeof safeArea === 'function' ? safeArea(cue) : safeArea, font);
   if (style === "KEYWORD") {
    const count = layout.lines.map(line => line.text.split(/\s+/).filter(Boolean).length).reduce((sum, n) => sum + n, 0);
    for (let index = 0; index < count; index++) {

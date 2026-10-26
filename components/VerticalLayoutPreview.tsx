@@ -11,6 +11,7 @@ import type { ClipEditDraftV2, ClipEditDraftV3 } from "@/lib/clip-edit-draft";
 import type { SavedClip } from "@/lib/clip-ui";
 import type { CaptionStyle, TimedWord } from "@/lib/clips";
 import { cutawayAtOutputTime, resolveCutawaySpans } from '@/lib/editor-timeline';
+import { focusAtOutputTime, layoutForFocus, resolveFocusSpans, splitCuesForFocus } from '@/lib/editor-focus';
 import { cutawayDrawRect } from '@/lib/editor-media-client';
 import type { CutawayPicture } from './EditorCutawayPreview';
 
@@ -22,6 +23,8 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
     if (!canvas) return;
     if (!video) { canvas.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height); return; }
     const cutaways=editor?.draft.version===3?resolveCutawaySpans(editor.draft):[];
+    const focusSpans=editor?.draft.version===3 && editor.draft.focus_events?.length && layout?.facecam && format==='9:16'
+      ? resolveFocusSpans(editor.draft.focus_events,editor.draft.segments) : null;
     let frame = 0;
     setRenderError(null);
     const draw = () => {
@@ -31,7 +34,8 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
           const source = { w: video.videoWidth, h: video.videoHeight };
           const dimensions = previewDimensions(source, format);
           if (canvas.height !== dimensions.h) canvas.height = dimensions.h;
-          const plan = planClipComposition(source, format, layout, dimensions);
+          const activeLayout=focusSpans ? layoutForFocus(layout,focusAtOutputTime(focusSpans,editor!.outputTime())) : layout;
+          const plan = planClipComposition(source, format, activeLayout, dimensions);
           ctx.fillStyle = "#101014";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           if (plan.mode === "full_frame") {
@@ -61,20 +65,23 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
             }
             const overlay = editorOverlayAtTime(editor.draft, editor.clip, outputTime);
             if (overlay.hook) drawHookPreview(ctx, outputTime, overlay.hook, editor.draft.hook_style, canvas.width, canvas.height);
-            if (overlay.caption) {
+            const activeCaption = overlay.caption && focusSpans
+              ? splitCuesForFocus([overlay.caption], focusSpans).find(cue => outputTime * 1000 >= cue.start_ms && outputTime * 1000 < cue.end_ms)
+              : overlay.caption;
+            if (activeCaption) {
               const appearance = captionAppearance(editor.draft);
               const safe = plan.mode === "composed" ? plan.textSafe : plan.dest;
               const style = editor.draft.caption_style;
-              const caption = layoutTimedCaption(overlay.caption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe, editor.draft.caption_font ?? 'sans');
-              const motion = captionMotion(style, outputTime * 1000 - overlay.caption.start_ms);
+              const caption = layoutTimedCaption(activeCaption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe, editor.draft.caption_font ?? 'sans');
+              const motion = captionMotion(style, outputTime * 1000 - activeCaption.start_ms);
               ctx.font = `${caption.italic ? "italic " : ""}${caption.bold ? "bold" : "normal"} ${caption.fontSize}px ${caption.fontFamily}`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.lineWidth = caption.outline * 2;
               ctx.strokeStyle = "black";
               ctx.fillStyle = style === "COMIC" ? "#FFDF00" : style === "KEYWORD" ? "#FFFFFF" : appearance.color;
-              const keyword = keywordAtTime(outputTime * 1000 - overlay.caption.start_ms,
-                overlay.caption.end_ms - overlay.caption.start_ms, overlay.caption.text.trim().split(/\s+/).length);
+              const keyword = keywordAtTime(outputTime * 1000 - activeCaption.start_ms,
+                activeCaption.end_ms - activeCaption.start_ms, activeCaption.text.trim().split(/\s+/).length);
               let wordOffset = 0;
               for (const line of caption.lines) {
                 ctx.save();

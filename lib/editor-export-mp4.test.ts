@@ -17,6 +17,7 @@ import * as captions from './captions.ts';
 import * as clips from './clips.ts';
 import * as vertical from './vertical-layout.ts';
 import * as verticalFfmpeg from './vertical-layout-ffmpeg.ts';
+import * as editorFocus from './editor-focus.ts';
 import * as trim from './clip-trim.ts';
 import { EditorAssetError } from './editor-assets.ts';
 
@@ -80,7 +81,7 @@ test('export route returns playable MP4 with source cuts, imported pictures, aud
    '@/lib/editor-compatibility':{isLegacyEditorExport}, '@/lib/legacy-clip-export-route':{handleLegacyClipExport:()=>{throw Error('V3 export must not use legacy renderer');}},
    'next/server':{NextResponse}, 'fs/promises':fs, os:{tmpdir}, path,
    '@/lib/supabase/admin':{createAdminClient:()=>({from:()=>db})},
-   '@/lib/editor-render':editorRender, '@/lib/editor-timeline':timeline,
+   '@/lib/editor-render':editorRender, '@/lib/editor-timeline':timeline, '@/lib/editor-focus':editorFocus,
    '@/lib/editor-assets':{EditorAssetError,assertOwnedDraftAssets:async()=>{}},
    '@/lib/editor-cutaway-render':{...cutaways,loadEditorCutawayAssets:async()=>assets},
    '@/lib/clip-edit-draft':drafts, '@/lib/editor-captions':editorCaptions,

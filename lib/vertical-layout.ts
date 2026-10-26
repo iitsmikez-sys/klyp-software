@@ -6,6 +6,7 @@ export type VerticalLayoutV1 = {
   facecam?: NormalizedRect;
   chat?: NormalizedRect;
   arrangement?: "gameplay_top" | "facecam_top";
+  focus?: "reaction";
 };
 export type VerticalLayoutPlan =
   | { mode: "full_frame"; source: PixelRect; dest: PixelRect; output: { w: number; h: number } }
@@ -37,13 +38,15 @@ export function validateVerticalLayout(input: unknown): VerticalLayoutV1 {
   if (value.version !== 1 || !validRect(value.gameplay) ||
       (value.facecam != null && !validRect(value.facecam)) ||
       (value.chat != null && !validRect(value.chat)) ||
-      (value.arrangement != null && value.arrangement !== "gameplay_top" && value.arrangement !== "facecam_top")) throw new Error("Invalid vertical layout.");
+      (value.arrangement != null && value.arrangement !== "gameplay_top" && value.arrangement !== "facecam_top") ||
+      (value.focus != null && value.focus !== "reaction")) throw new Error("Invalid vertical layout.");
   return {
     version: 1,
     gameplay: { ...value.gameplay },
     ...(value.facecam ? { facecam: { ...(value.facecam as NormalizedRect) } } : {}),
     ...(value.chat ? { chat: { ...(value.chat as NormalizedRect) } } : {}),
     ...(value.arrangement ? { arrangement: value.arrangement as VerticalLayoutV1["arrangement"] } : {}),
+    ...(value.focus ? { focus: "reaction" as const } : {}),
   };
 }
 
@@ -74,6 +77,15 @@ export function planVerticalLayout(source: { w: number; h: number }, layout: Ver
       dest: { x: even((output.w - w) / 2), y: even((output.h - h) / 2), w, h }, output };
   }
   const valid = validateVerticalLayout(layout);
+  if (valid.focus === "reaction" && valid.facecam) {
+    const faceHeight = even(output.h * 0.7);
+    const faceDest = { x: 0, y: 0, w: output.w, h: faceHeight };
+    const gameDest = { x: 0, y: faceHeight, w: output.w, h: output.h - faceHeight };
+    return { mode: "composed", output, panels: [
+      { name: "facecam", source: cropToPanel(valid.facecam, source, faceDest), dest: faceDest },
+      { name: "gameplay", source: cropToPanel(valid.gameplay, source, gameDest), dest: gameDest },
+    ], textSafe: gameDest };
+  }
   const optional = (["facecam", "chat"] as const).filter((name) => valid[name]);
   const topHeight = optional.length ? even(output.h * 0.7) : output.h;
   const facecamFirst = valid.arrangement === "facecam_top" && !!valid.facecam;
