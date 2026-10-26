@@ -16,7 +16,7 @@ import ClipThumbnail from "./ClipThumbnail";
 import ClipPreviewModal from "./ClipPreviewModal";
 import { useClipExports } from "./useClipExports";
 import { downloadExport } from "@/lib/clip-export";
-import { type SavedClip, TYPE_STYLES, fmtTime, footageGone } from "@/lib/clip-ui";
+import { type SavedClip, TYPE_STYLES, fmtTime, footageGone, platformName } from "@/lib/clip-ui";
 import { readClipEditDraft } from "@/lib/clip-edit-draft";
 
 /** Enough to fill the row on every breakpoint without a second row. */
@@ -130,71 +130,40 @@ export default function SavedClips() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {clips.map((clip) => {
           const state = exports[clip.id];
+          const draft = readClipEditDraft(clip).draft;
+          const gone = footageGone(clip);
           return (
             <div
               key={clip.id}
-              className="flex flex-col rounded-xl border border-border bg-surface/50 p-3 transition-colors hover:border-subtle"
+              className="flex min-w-0 flex-col rounded-xl border border-border bg-surface p-3 transition-colors hover:border-subtle"
             >
-              <ClipThumbnail clip={clip} onPlay={() => { if (!footageGone(clip)) setPreviewId(clip.id); }} />
+              <ClipThumbnail clip={clip} onPlay={() => { if (!gone) setPreviewId(clip.id); }} />
 
-              <div className="flex items-center justify-between gap-2 mt-3">
-                <span className={`px-2 py-0.5 rounded border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
-                  {clip.clip_type}
+              <div className="mt-3 flex items-center gap-2">
+                <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
+                  {clip.clip_type.replaceAll("_", " ")}
                 </span>
+              </div>
+              <h3 className="mt-2 min-h-12 line-clamp-2 font-geist text-base font-semibold leading-6 text-white" title={draft.title}>
+                {draft.title}
+              </h3>
+              <p className="mt-1 text-xs text-foreground-muted">
+                {platformName(clip.url)} <span aria-hidden="true">·</span> {fmtTime(draft.end_seconds - draft.start_seconds)} clip <span aria-hidden="true">·</span> VOD {fmtTime(draft.start_seconds)}–{fmtTime(draft.end_seconds)}
+              </p>
+              <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
+                <Link href={`/dashboard/clips/${clip.id}/edit`} className="flex min-h-10 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                  Edit clip
+                </Link>
                 <button
+                  type="button"
                   onClick={() => createOrDownload(clip).then(flash)}
-                  disabled={state?.status === "working" || footageGone(clip)}
-                  title={footageGone(clip)
-                    ? "The source VOD was deleted before this clip was backed up, so there is no footage to render"
-                    : undefined}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors disabled:opacity-60 ${
-                    footageGone(clip)
-                      ? "bg-surface-2 text-muted border border-border cursor-not-allowed"
-                      : "bg-accent text-background hover:bg-accent-dim"
-                  }`}
+                  disabled={state?.status === "working" || gone}
+                  title={gone ? "The source VOD was deleted before this clip was backed up, so there is no footage to render" : undefined}
+                  className="min-h-10 rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {footageGone(clip) ? (
-                    <>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
-                      </svg>
-                      Footage gone
-                    </>
-                  ) : state?.status === "working" ? (
-                    <>
-                      <span className="w-3 h-3 rounded-full border-2 border-background border-t-transparent animate-spin" />
-                      Creating…
-                    </>
-                  ) : state?.status === "ready" ? (
-                    <>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                      Download
-                    </>
-                  ) : (
-                    <>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
-                        <line x1="20" y1="4" x2="8.12" y2="15.88" />
-                        <line x1="14.47" y1="14.48" x2="20" y2="20" />
-                        <line x1="8.12" y1="8.12" x2="12" y2="12" />
-                      </svg>
-                      Create clip
-                    </>
-                  )}
+                  {gone ? "Footage gone" : state?.status === "working" ? "Creating…" : state?.status === "ready" ? "Download" : "Create clip"}
                 </button>
               </div>
-
-              <p className="font-geist text-base font-semibold text-white mt-2 line-clamp-2">
-                {readClipEditDraft(clip).draft.title}
-              </p>
-              <p className="text-sm text-foreground-muted font-mono mt-1">
-                {fmtTime(readClipEditDraft(clip).draft.start_seconds)} – {fmtTime(readClipEditDraft(clip).draft.end_seconds)}
-              </p>
             </div>
           );
         })}

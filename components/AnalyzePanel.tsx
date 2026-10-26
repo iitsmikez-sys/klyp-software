@@ -781,21 +781,20 @@ export default function AnalyzePanel() {
       )}
 
       {/* VOD input — URL paste or file upload */}
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-7">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground-muted">New clips</p>
-        <h2 className="mb-1 font-geist text-2xl font-semibold tracking-tight text-white">Analyze a VOD</h2>
-        <p className="mb-6 text-[15px] text-foreground-muted">
+      <section className="rounded-xl border border-border bg-surface p-5 sm:p-6">
+        <h2 className="mb-1 font-geist text-xl font-semibold tracking-tight text-white sm:text-2xl">Analyze a VOD</h2>
+        <p className="mb-4 text-sm text-foreground-muted">
           Paste a video link or upload a file to find your best moments.
         </p>
         {/* Input mode toggle */}
-        <div className="flex rounded-lg border border-border overflow-hidden w-fit mb-3">
+        <div className="mb-3 flex w-fit overflow-hidden rounded-md border border-border">
           {([["url", "Paste URL"], ["file", "Upload file"]] as const).map(([mode, label]) => (
             <button
               key={mode}
               type="button"
               onClick={() => switchMode(mode)}
               disabled={loading}
-              className={`px-4 py-2.5 text-sm font-bold transition-colors disabled:opacity-50 ${
+              className={`px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
                 inputMode === mode
                   ? "bg-accent-glow text-accent"
                   : "bg-surface-2 text-foreground-muted hover:text-foreground"
@@ -812,16 +811,17 @@ export default function AnalyzePanel() {
               <input
                 type="url"
                 required
+                aria-label="VOD URL"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=… or https://www.twitch.tv/videos/…"
+                placeholder="Paste a YouTube or Twitch VOD link"
                 disabled={loading || outOfSparks}
-                className="flex-1 px-4 py-3 rounded-lg bg-surface-2 border border-border text-[15px] text-foreground placeholder:text-foreground-muted focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
+                className="min-h-12 flex-1 rounded-lg border border-border bg-surface-2 px-4 py-3 text-[15px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={busy || loading || !url || outOfSparks || cantAfford}
-                className="whitespace-nowrap rounded-lg bg-accent px-7 py-3 text-[15px] font-semibold text-background transition-colors hover:bg-accent-dim disabled:opacity-50"
+                className="min-h-12 whitespace-nowrap rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim disabled:opacity-50"
               >
                 {loading ? "Analyzing…" : "Find clips"}
               </button>
@@ -864,7 +864,7 @@ export default function AnalyzePanel() {
                     const f = e.dataTransfer.files?.[0];
                     if (f) handleFile(f);
                   }}
-                  className={`flex flex-col items-center justify-center gap-1.5 px-6 py-10 rounded-xl border-2 border-dashed transition-colors ${
+                  className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-6 py-7 transition-colors ${
                     dragActive
                       ? "border-accent bg-accent-glow"
                       : "border-border bg-surface-2/60 hover:border-accent/40 hover:bg-surface-2"
@@ -928,8 +928,14 @@ export default function AnalyzePanel() {
           )}
         </form>
 
+        <details className="group mt-4 border-t border-border pt-3">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm text-foreground-muted marker:content-none hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            <span className="font-medium text-foreground">Clip options <span className="ml-2 font-normal text-foreground-muted">{clipCount} clips · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · keyword added" : ""}</span></span>
+            <span aria-hidden="true" className="text-lg leading-none transition-transform group-open:rotate-45">+</span>
+          </summary>
+          <div className="pt-4">
         {/* Clip count selector */}
-        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-border pt-5">
+        <div className="flex flex-wrap items-center gap-2">
           <span
             className="text-sm text-foreground whitespace-nowrap cursor-help"
             title="We only return clips worth posting — if your VOD doesn't have 10 great moments you'll get fewer"
@@ -957,7 +963,7 @@ export default function AnalyzePanel() {
         </div>
 
         {/* Content type — changes which clip types MIDAS looks for */}
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <span
             className="text-sm text-foreground whitespace-nowrap cursor-help"
             title="Gaming picks from CLUTCH/EPIC/BIG_BRAIN etc; IRL swaps those for STORY_TIME/AWKWARD/PUBLIC_INTERACTION"
@@ -984,7 +990,7 @@ export default function AnalyzePanel() {
         </div>
 
         {/* Keyword or topic — weights matching transcript moments higher when picking clips */}
-        <div className="flex flex-wrap items-center gap-2 mt-3">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <label htmlFor="klyp-keyword" className="text-sm text-foreground whitespace-nowrap">
             Keyword or topic (optional)
           </label>
@@ -1005,6 +1011,8 @@ export default function AnalyzePanel() {
               : "Leave blank to find the best moments."}
           </span>
         </div>
+          </div>
+        </details>
 
         {/* Sparks cost preview */}
         {!outOfSparks && (estimating || estimatedSparks !== null) && (

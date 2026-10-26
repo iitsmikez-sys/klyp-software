@@ -143,16 +143,8 @@ function ClipsPageContent() {
       run: () => flash("TikTok publishing is coming soon."),
     },
     {
-      icon: "⬇️", label: "Download HD", pro: false,
-      run: (clip) => { createClip(clip).then((err) => err && flash(err)); },
-    },
-    {
       icon: "⬆️", label: "Upscale & Download", pro: true, hint: `${UPSCALE_COST}⚡`,
       run: (clip) => { createClip(clip, true).then((err) => err && flash(err)); },
-    },
-    {
-      icon: "✂️", label: "Edit Clip", pro: false,
-      run: (clip) => { window.location.href = `/dashboard/clips/${clip.id}/edit`; },
     },
     {
       icon: "🎤", label: "AI Hook", pro: true,
@@ -334,7 +326,7 @@ function ClipsPageContent() {
                 setPreviewId(clip.id);
                 setPreviewDetails(footageGone(clip));
               }}
-              className="bg-surface border border-border rounded-xl p-4 flex flex-col transition-colors group cursor-pointer hover:border-accent/30"
+              className="group flex min-w-0 cursor-pointer flex-col rounded-xl border border-border bg-surface p-3 transition-colors hover:border-subtle"
             >
               {/* 16:9 poster — play opens the centred preview dialog. */}
               <div className="mb-3">
@@ -343,8 +335,8 @@ function ClipsPageContent() {
 
               <div className="flex items-center justify-between gap-3 mb-2.5">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className={`px-2.5 py-1 rounded-md border text-[11px] font-bold font-syne tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
-                    {clip.clip_type}
+                  <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
+                    {clip.clip_type.replaceAll("_", " ")}
                   </span>
                   {clip.archive_status === "stored" && <span className="text-[11px] text-accent" title="A copy is saved in Klyp">Footage saved</span>}
                   {(clip.archive_status === "pending" || clip.archive_status === "processing") && <span className="text-[11px] text-foreground-muted">Saving footage…</span>}
@@ -360,9 +352,6 @@ function ClipsPageContent() {
                   >
                     {scoreBand(clip.viral_score).label}
                   </span>
-                  <span className={`font-syne text-xl font-bold ${clip.viral_score >= 85 ? "text-accent" : "text-foreground"}`}>
-                    {clip.viral_score}
-                  </span>
                   {/* ⋯ actions menu */}
                   <div className="relative">
                     <button
@@ -371,7 +360,7 @@ function ClipsPageContent() {
                         setMenuOpenId(menuOpenId === clip.id ? null : clip.id);
                       }}
                       title="Clip actions"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg border border-border text-foreground-muted hover:text-foreground hover:border-subtle transition-colors"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-2 hover:text-foreground"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                         <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
@@ -408,42 +397,30 @@ function ClipsPageContent() {
                 </div>
               </div>
 
-              <h3 className="font-syne text-lg font-bold text-white leading-snug mb-1.5">{readClipEditDraft(clip).draft.title}</h3>
-              <div className="flex items-center gap-2 mb-2 text-xs text-foreground-muted" onClick={(e) => e.stopPropagation()}>
-                <span>Useful moment?</span>
-                <button type="button" aria-label="Keep this kind of moment" aria-pressed={verdicts[clip.id] === "approved"}
-                  onClick={() => rateClip(clip.id, "approved")}
-                  className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "approved" ? "border-accent text-accent" : "border-border hover:text-accent"}`}>👍 Keep</button>
-                <button type="button" aria-label="Show fewer moments like this" aria-pressed={verdicts[clip.id] === "rejected"}
-                  onClick={() => rateClip(clip.id, "rejected")}
-                  className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "rejected" ? "border-amber-400 text-amber-400" : "border-border hover:text-amber-400"}`}>👎 Less like this</button>
-              </div>
-              {clip.caption && (
-                <p className="text-[15px] leading-relaxed text-foreground-muted mb-3 line-clamp-2">
-                  {clip.caption}
-                </p>
-              )}
+              <h3 className="mb-1 line-clamp-2 font-geist text-base font-semibold leading-6 text-white" title={readClipEditDraft(clip).draft.title}>{readClipEditDraft(clip).draft.title}</h3>
+              <p className="mb-3 text-xs text-foreground-muted">
+                {platformName(clip.url)} · {fmtTime(readClipEditDraft(clip).draft.end_seconds - readClipEditDraft(clip).draft.start_seconds)} clip · VOD {fmtTime(readClipEditDraft(clip).draft.start_seconds)}–{fmtTime(readClipEditDraft(clip).draft.end_seconds)}
+              </p>
+              <details className="mb-3 text-xs text-foreground-muted" onClick={(e) => e.stopPropagation()}>
+                <summary className="cursor-pointer font-medium hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Details &amp; feedback</summary>
+                <div className="mt-3 space-y-3 border-t border-border pt-3">
+                  <p>{fmtDate(clip.created_at)} · AI score {clip.viral_score}/100</p>
+                  {clip.caption && <p className="line-clamp-3 leading-relaxed">{clip.caption}</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>Useful moment?</span>
+                    <button type="button" aria-label="Keep this kind of moment" aria-pressed={verdicts[clip.id] === "approved"}
+                      onClick={() => rateClip(clip.id, "approved")}
+                      className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "approved" ? "border-accent text-accent" : "border-border hover:text-accent"}`}>👍 Keep</button>
+                    <button type="button" aria-label="Show fewer moments like this" aria-pressed={verdicts[clip.id] === "rejected"}
+                      onClick={() => rateClip(clip.id, "rejected")}
+                      className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "rejected" ? "border-amber-400 text-amber-400" : "border-border hover:text-amber-400"}`}>👎 Less like this</button>
+                  </div>
+                  <ScoreBreakdown clip={clip} />
+                </div>
+              </details>
 
-              {/* Push the action row to the bottom so buttons line up across the grid. */}
-              <div className="flex items-center justify-between gap-2 text-sm mb-3 mt-auto">
-                <span className="px-2 py-1 rounded bg-surface-2 border border-border text-foreground-muted font-mono whitespace-nowrap">
-                  {fmtTime(readClipEditDraft(clip).draft.start_seconds)} → {fmtTime(readClipEditDraft(clip).draft.end_seconds)}
-                </span>
-                <span className="text-foreground-muted whitespace-nowrap truncate">
-                  {platformName(clip.url)} · {fmtDate(clip.created_at)}
-                </span>
-              </div>
-
-              {/* What the score is actually made of. Renders nothing for
-                  clips saved before the breakdown was stored. */}
-              <div className="mt-2.5">
-                <ScoreBreakdown clip={clip} />
-              </div>
-
-              {/* Wraps on narrow cards: primary takes its own row, secondary
-                  shares the next one with delete — no squashed labels. */}
-              <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
-                <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => e.stopPropagation()} className="px-4 py-2.5 rounded-lg border border-accent/40 text-accent font-bold">Edit</Link>
+              <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => e.stopPropagation()} className="flex min-h-9 flex-1 items-center justify-center rounded-md bg-accent px-3 text-xs font-semibold text-background transition-colors hover:bg-accent-dim">Edit clip</Link>
                 {/* Clips are stored as VOD timestamps, not files — this renders
                     the MP4 on demand via /api/clip, hence "Create clip". */}
                 <button
@@ -455,12 +432,10 @@ function ClipsPageContent() {
                   title={footageGone(clip)
                     ? "The source VOD was deleted before this clip was backed up, so there is no footage to render"
                     : "Render this clip from the source VOD and download it"}
-                  className={`basis-full sm:basis-0 sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold font-syne transition-colors disabled:opacity-60 disabled:shadow-none ${
-                    // Neutral, not the accent: a bright primary button reads as
-                    // something to press, and there is nothing to press here.
+                  className={`flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition-colors disabled:opacity-60 ${
                     footageGone(clip)
-                      ? "bg-surface-2 text-muted border border-border cursor-not-allowed"
-                      : "bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm"
+                      ? "cursor-not-allowed border-border bg-surface-2 text-muted"
+                      : "border-border text-foreground hover:border-subtle"
                   }`}
                 >
                   {footageGone(clip) ? (
@@ -498,8 +473,9 @@ function ClipsPageContent() {
                     </>
                   )}
                 </button>
+                <div className="flex basis-full items-center justify-between gap-2">
                 {clip.url.startsWith("upload:") ? (
-                  <span className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-border text-foreground-muted text-sm font-bold font-syne whitespace-nowrap">
+                  <span className="text-xs text-foreground-muted">
                     Uploaded VOD
                   </span>
                 ) : (
@@ -508,7 +484,7 @@ function ClipsPageContent() {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-accent/40 text-accent text-sm font-bold font-syne whitespace-nowrap hover:bg-accent-glow transition-colors"
+                  className="flex items-center gap-1.5 text-xs font-medium text-foreground-muted transition-colors hover:text-foreground"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -522,7 +498,7 @@ function ClipsPageContent() {
                   onClick={(e) => { e.stopPropagation(); deleteClip(clip.id); }}
                   disabled={deletingId === clip.id}
                   title="Delete clip"
-                  className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg border border-border text-foreground-muted hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                  className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
                 >
                   {deletingId === clip.id ? (
                     <span className="w-3 h-3 rounded-full border border-foreground-muted border-t-transparent animate-spin" />
@@ -535,6 +511,7 @@ function ClipsPageContent() {
                     </svg>
                   )}
                 </button>
+                </div>
               </div>
               {readyExportWarning(exports[clip.id]) && (
                 <p role="status" className="text-xs text-amber-300 mt-2">{readyExportWarning(exports[clip.id])}</p>

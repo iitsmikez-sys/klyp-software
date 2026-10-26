@@ -18,7 +18,7 @@ export function SparkIcon({ size = 14, className = "" }: { size?: number; classN
   );
 }
 
-/** Premium Sparks balance pill — lives top-right of the dashboard header. */
+/** Current Sparks balance and refill timing in the dashboard header. */
 export default function SparksBalance() {
   const { balance, resetAt } = useSparks();
 
@@ -35,29 +35,29 @@ export default function SparksBalance() {
   return (
     <div
       title={title}
-      className="flex items-center gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2"
+      className="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-surface px-3.5 py-2"
     >
-      <span className="flex items-center justify-center w-7 h-7 rounded-md bg-accent-glow text-accent">
-        <SparkIcon size={14} />
+      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/10 text-accent">
+        <SparkIcon size={16} />
       </span>
-      <div className="flex items-baseline gap-1.5">
+      <div className="flex items-baseline gap-1.5 tabular-nums">
         {balance === null ? (
           <span className="w-8 h-5 rounded bg-surface-2 animate-pulse" />
         ) : (
           <span
-            className={`font-syne text-lg font-bold leading-none ${
+            className={`font-geist text-xl font-semibold leading-none ${
               balance === 0 ? "text-red-400" : "text-foreground"
             }`}
           >
             {balance}
           </span>
         )}
-        <span className="text-[11px] font-medium text-foreground-muted uppercase tracking-wider">
+        <span className="text-xs font-medium text-foreground-muted">
           Sparks
         </span>
       </div>
       {refill && balance !== null && (
-        <span className="hidden sm:inline text-[11px] text-foreground-muted border-l border-border pl-2.5 whitespace-nowrap">
+        <span className="hidden whitespace-nowrap border-l border-border pl-3 text-xs text-foreground-muted sm:inline">
           {refill}
         </span>
       )}
