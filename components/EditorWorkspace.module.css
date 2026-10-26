@@ -23,9 +23,9 @@
   margin: 12px;
 }
 .frame {
-  width: min(100cqw, calc(100cqh * var(--preview-aspect)));
+  width: min(100cqw, calc(100cqh * var(--preview-aspect)), calc(42dvh * var(--preview-aspect)), calc(420px * var(--preview-aspect)));
   max-width: 100%;
-  max-height: 100%;
+  max-height: min(100%, 42dvh, 420px);
   flex-shrink: 0;
 }
 .stage:fullscreen { width: 100vw; height: 100dvh; margin: 0; background: #050d12; }
@@ -72,3 +72,4 @@
 @media (prefers-reduced-motion: reduce) {
   .workspace *, .timeline * { scroll-behavior: auto !important; transition-duration: 0s !important; }
 }
+

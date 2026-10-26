@@ -193,13 +193,14 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
   window.legacyDraft={segments:[{start:1,end:2},{start:7,end:9}],media:[{id:'11111111-1111-4111-8111-111111111111',kind:'image',after:0,duration:.5,name:'Saved photo'}],captionColor:'YELLOW',captionPosition:'CENTER',format:'Original'};
   localStorage.setItem('klyp-editor-'+clip.id,JSON.stringify(legacyDraft));root.render(React.createElement(Entry,{clip}));
  });
- await page.getByRole('region',{name:'Saved device edits'}).waitFor();await page.getByRole('button',{name:'Open new timeline',exact:true}).waitFor();
+ await page.getByRole('region',{name:'Saved device edits'}).waitFor();await page.locator('.clip-editor').waitFor();
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Open original editor',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
  await page.getByRole('button',{name:'↑ Export',exact:true}).click();await page.waitForFunction(()=>exported?.legacy_editor===true);
  assert.deepEqual(await page.evaluate(()=>exported.segments),[{start:1,end:2},{start:7,end:9}]);assert.equal(await page.evaluate(()=>exported.media[0].id),'11111111-1111-4111-8111-111111111111');assert.equal(await page.evaluate(()=>exported.caption_color),'YELLOW');
  await page.evaluate(()=>releaseExport());await page.getByRole('button',{name:'↑ Export',exact:true}).waitFor();
- await page.getByRole('button',{name:'Open new timeline',exact:true}).click();await page.getByRole('button',{name:'Return to saved device edits',exact:true}).waitFor();
- page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Return to saved device edits',exact:true}).click();await page.getByRole('button',{name:'Open new timeline',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Open timeline editor',exact:true}).click();await page.getByRole('button',{name:'Open original editor',exact:true}).waitFor();
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Open original editor',exact:true}).click();await page.getByRole('button',{name:'Open timeline editor',exact:true}).waitFor();
  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('klyp-editor-'+clip.id)).segments),[{start:1,end:2},{start:7,end:9}]);
  await page.evaluate(()=>{
   window.resultSettings=null;window.keptResults=0;window.resultExportStates=[];window.closedResults=false;window.resultClip={...clip,id:''};
@@ -217,3 +218,4 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  assert.deepEqual(errors,[]);console.log('PASS mounted editor: photo/video picker, upload/probe stages, delayed media-list race, insertion, real canvas pixels, archived-source preview request, save/reload, remove/undo, muted video synchronization, volume/mute, source failure/retry, signed URL refresh/retry, fit/focal controls, trimmed media offsets, real SAR 2:1 MP4 geometry, Pro gate, split/delete/undo, export pending state, transcript seek, ruler drag, zoom, full-coverage photo source touch selection/split/pointer trims, responsive 44px header/screenshot checks, Free and downgrade original exports, and legacy device-draft restore/export/switch persistence, and new results customize/settings/keep/export callbacks.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
