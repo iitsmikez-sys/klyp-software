@@ -7,6 +7,13 @@ export function withinClipWindow(requested: Window, allowed: Window): boolean {
     requested.end_seconds <= allowed.end_seconds + 0.001;
 }
 
+/** A raw download is the detected moment, never a user-selected subrange. */
+export function sameClipWindow(requested: Window, allowed: Window): boolean {
+  return !!requested.source_key && requested.source_key === allowed.source_key &&
+    Math.abs(requested.start_seconds - allowed.start_seconds) <= 0.001 &&
+    Math.abs(requested.end_seconds - allowed.end_seconds) <= 0.001;
+}
+
 // Next builds each route as a separate module graph. Use the process global so
 // /clip, /preview, /thumbnail and /duration share one account budget.
 const shared = globalThis as typeof globalThis & { __klypInFlight?: Map<string, number> };

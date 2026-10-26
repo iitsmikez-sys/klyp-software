@@ -23,7 +23,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaptionStyle } from "@/lib/clips";
 import type { EditorExportSettings } from "@/lib/editor-export-settings";
-import SavedClipEditor from "./LegacySavedClipEditor";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
@@ -51,6 +50,10 @@ interface Props {
   exportState: ExportState | undefined;
   onCreateClip: () => void;
   onDownloadClip: () => void;
+  onEditClip?: () => void;
+  onDownloadRaw?: () => void;
+  rawWorking?: boolean;
+  rawSeconds?: number;
   /** Opened from a card's editor action with the controls already expanded. */
   initialDetailsOpen?: boolean;
   draftId?: string;
@@ -74,6 +77,7 @@ export default function ResultsClipPreviewModal({
   exportState,
   onCreateClip,
   onDownloadClip,
+  onEditClip, onDownloadRaw, rawWorking, rawSeconds = 0,
   initialDetailsOpen = false,
   draftId, initialCaptionStyle, onSettingsChange, onKeepClip, savingClip, saveError, initialSettings, onExportStateChange,
 }: Props) {
@@ -269,7 +273,7 @@ export default function ResultsClipPreviewModal({
       setPreviewUrl(null);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [clip.id, retryToken, detailsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clip.id, retryToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onBackdrop = useCallback(
     (e: React.MouseEvent) => { if (e.target === e.currentTarget) beginClose(); },
@@ -311,17 +315,13 @@ export default function ResultsClipPreviewModal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`${detailsOpen ? "Editor" : "Preview"}: ${clip.title}`}
+        aria-label={`Preview: ${clip.title}`}
         style={panelStyle}
-        className={detailsOpen
-          ? "w-full h-[100dvh] overflow-y-auto xl:overflow-hidden xl:flex xl:flex-col bg-[#080f13] border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
-          : "w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"}
+        className="w-full max-w-3xl max-h-[92dvh] overflow-y-auto scrollbar-thin rounded-2xl bg-surface border border-border shadow-[0_32px_80px_-16px_rgba(0,0,0,0.9)]"
       >
         {/* ── Header ── */}
-        <div className={detailsOpen
-          ? "absolute right-3 top-3 z-30"
-          : "flex items-start justify-between gap-4 px-6 pt-6 pb-4"}>
-          {!detailsOpen && <div className="min-w-0">
+        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
+          <div className="min-w-0">
             {/* Wraps rather than truncates — on a phone the tail of a title is
                 often the point of it ("…Then THIS Happened"). */}
             <h2 className="font-geist text-xl sm:text-2xl font-bold text-white leading-tight line-clamp-2">
@@ -340,7 +340,7 @@ export default function ResultsClipPreviewModal({
                 {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)}
               </span>
             </div>
-          </div>}
+          </div>
           <button
             ref={closeRef}
             onClick={beginClose}
@@ -354,7 +354,7 @@ export default function ResultsClipPreviewModal({
         </div>
 
         {/* ── Player ── object-contain keeps the source aspect ratio intact ── */}
-        {!detailsOpen && <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
+        <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
           <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
             {/* The clip's own frame, under the video and crossfaded out once
                 the first video frame has decoded. */}
@@ -409,69 +409,20 @@ export default function ResultsClipPreviewModal({
               />
             )}
           </div>
-        </div>}
+        </div>
 
-        {/* ── Actions ── */}
-        {!detailsOpen && <div className="px-6 pt-5 pb-2 flex flex-col sm:flex-row gap-3">
-          {ready ? (
-            <button
-              onClick={onDownloadClip}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Download clip
-            </button>
-          ) : (
-            <button
-              onClick={onCreateClip}
-              disabled={exporting}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-base font-bold hover:bg-accent-dim shadow-accent-glow-sm focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors disabled:opacity-60 disabled:shadow-none"
-            >
-              {exporting ? (
-                <>
-                  <span className="w-4 h-4 rounded-full border-2 border-background border-t-transparent animate-spin" />
-                  Creating clip…
-                </>
-              ) : (
-                <>
-                  {/* scissors */}
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
-                    <line x1="20" y1="4" x2="8.12" y2="15.88" />
-                    <line x1="14.47" y1="14.48" x2="20" y2="20" />
-                    <line x1="8.12" y1="8.12" x2="12" y2="12" />
-                  </svg>
-                  Create clip
-                </>
-              )}
-            </button>
-          )}
-
-          {isUpload ? (
-            <span className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-foreground-muted text-base font-bold">
-              Uploaded VOD
-            </span>
-          ) : (
-            <a
-              href={vodLinkAt(clip.url, clip.start_seconds)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-accent/40 text-accent text-base font-bold hover:bg-accent-glow focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-              Watch on {platform}
-            </a>
-          )}
-        </div>}
-
+        <div className="flex flex-wrap gap-2 px-6 pt-4 pb-2">
+          <button type="button" onClick={onEditClip} disabled={!onEditClip || savingClip}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-background hover:bg-accent-dim disabled:opacity-50">
+            {savingClip ? "Saving…" : "Edit Clip"}
+          </button>
+          <button type="button" onClick={onDownloadRaw} disabled={!onDownloadRaw || rawWorking}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:border-accent/50 disabled:opacity-50">
+            {rawWorking ? `Preparing raw ${rawSeconds}s…` : "Download Raw"}
+          </button>
+          {!isUpload && <a href={vodLinkAt(clip.url, clip.start_seconds)} target="_blank" rel="noopener noreferrer"
+            className="self-center px-2 py-2 text-sm text-foreground-muted hover:text-accent">Watch Original ↗</a>}
+        </div>
         {exportState?.status === "error" && (
           <p className="mx-6 mt-1 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
             {exportState.error}{" "}
@@ -481,27 +432,16 @@ export default function ResultsClipPreviewModal({
           </p>
         )}
 
-        {/* ── Editor: scene analysis, transcript and export controls ── */}
-        <div className={detailsOpen ? "xl:flex-1 xl:min-h-0 xl:overflow-hidden" : "px-6 pb-6 pt-3"}>
-          {!detailsOpen && (
-          <button
-            onClick={() => setDetailsOpen((v) => !v)}
-            aria-expanded={detailsOpen}
-            className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-foreground-muted hover:text-foreground hover:border-subtle focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
-          >
-            <svg
-              width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`transition-transform ${detailsOpen ? "rotate-180" : ""}`}
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-            {detailsOpen ? "Editor" : "Open editor"}
+        <div className="px-6 pb-6 pt-3">
+          <button type="button" onClick={() => setDetailsOpen(v => !v)} aria-expanded={detailsOpen}
+            className="w-full rounded-lg border border-border px-4 py-2 text-left text-sm text-foreground-muted hover:text-foreground">
+            {detailsOpen ? "Hide details" : "Details"}
           </button>
-          )}
-          {detailsOpen && (
-            <SavedClipEditor key={clip.id || draftId} clip={clip} workspace draftId={draftId} initialCaptionStyle={initialCaptionStyle} onSettingsChange={onSettingsChange} onKeepClip={onKeepClip} savingClip={savingClip} saveError={saveError} initialSettings={initialSettings} onExportStateChange={onExportStateChange} />
-          )}
+          {detailsOpen && <div className="pt-3 text-sm text-foreground-muted">
+            {clip.reason && <p className="mb-2"><span className="font-medium text-foreground">Why this moment:</span> {clip.reason}</p>}
+            {clip.caption && <p className="mb-2">{clip.caption}</p>}
+            <p>Original VOD: {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}</p>
+          </div>}
         </div>
       </div>
     </div>

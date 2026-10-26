@@ -193,6 +193,19 @@ test('V3 preserves bounded focus changes in saved drafts and exports', async () 
  assert.throws(()=>validateClipEditDraft({...current,focus_events:[{id:'bad',source_ms:99999,mode:'reaction'}]},clip), {name:'ClipEditDraftError'});
 });
 
+test('a fresh timeline starts from source footage with no Klyp captions or hook', async () => {
+ const { freshTimelineDraft } = await import('./clip-edit-draft.ts');
+ const withTranscript = {...clip,words:[{text:'hello',start:100000,end:100400}]};
+ const fresh = freshTimelineDraft(withTranscript);
+ assert.equal(fresh.aspect_ratio,'Original');
+ assert.equal(fresh.hook,'');
+ assert.deepEqual(fresh.caption_cues,[]);
+ assert.equal(fresh.audio_polish,'off');
+ assert.deepEqual(fresh.segments.map(s=>[s.start_seconds,s.end_seconds]),[[withTranscript.start_seconds,withTranscript.end_seconds]]);
+ assert.deepEqual(fresh.words,withTranscript.words);
+ assert.deepEqual(validateClipEditDraft(fresh,withTranscript),fresh);
+});
+
 test('legacy KLYP upgrade retains its green caption appearance', async () => {
  const {upgradeClipEditDraft}=await import("./clip-edit-draft.ts");
 

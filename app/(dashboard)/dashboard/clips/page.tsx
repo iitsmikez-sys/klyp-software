@@ -4,39 +4,22 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import ClipThumbnail from "@/components/ClipThumbnail";
-import ScoreBreakdown from "@/components/ScoreBreakdown";
+import CompactClipCard from "@/components/CompactClipCard";
+import { useRawClipDownloads } from "@/components/useRawClipDownloads";
 import ClipPreviewModal from "@/components/ClipPreviewModal";
-import ProGateModal from "@/components/ProGateModal";
 import { useSparks } from "@/components/SparksProvider";
-import { UPSCALE_COST } from "@/lib/sparks";
-import { processingFetch } from "@/lib/processing-api";
-import { downloadExport, readyExportWarning } from "@/lib/clip-export";
+import { downloadExport } from "@/lib/clip-export";
 import { useClipExports } from "@/components/useClipExports";
-import { getStoredHandle } from "@/lib/streamer-handle";
 import {
   type SavedClip,
   TYPE_STYLES,
   CLIP_TYPE_ORDER,
   fmtTime,
-  fmtDate,
-  platformName,
-  vodLinkAt,
   footageGone,
-  scoreBand,
 } from "@/lib/clip-ui";
 import { readClipEditDraft } from "@/lib/clip-edit-draft";
 
 type SortKey = "newest" | "score";
-
-type ClipAction = {
-  icon: string;
-  label: string;
-  pro: boolean;
-  /** Extra right-side hint, e.g. the upscale Sparks cost. */
-  hint?: string;
-  run: (clip: SavedClip) => void;
-};
 
 /**
  * Reads ?vod= via useSearchParams, which opts the route out of static
@@ -58,15 +41,14 @@ function ClipsPageContent() {
   /** Open the dialog straight to Details — the ⋯ menu's editing actions live there. */
   const [previewDetails, setPreviewDetails] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [proGateOpen, setProGateOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [verdicts, setVerdicts] = useState<Record<string, "approved" | "rejected">>({});
 
 
-  const { tier, refresh } = useSparks();
+  const { refresh } = useSparks();
   // Shared with the dashboard's Saved Clips so both behave identically.
-  const { exports, workingId, createClip, createOrDownload, invalidateClip } = useClipExports(refresh);
-  const isPro = tier === "pro";
+  const { exports, createClip, invalidateClip } = useClipExports(refresh);
+  const { rawDownloads, downloadRaw } = useRawClipDownloads();
 
   useEffect(() => {
     const supabase = createClient();
@@ -134,43 +116,6 @@ function ClipsPageContent() {
     }
     setClips((prev) => [data as SavedClip, ...prev]);
     flash("Clip duplicated.");
-  };
-
-  /** The ⋯ menu. Pro-gated actions swap to the upgrade modal for free users. */
-  const clipActions: ClipAction[] = [
-    {
-      icon: "📤", label: "Publish on Social", pro: true, hint: "TikTok",
-      run: () => flash("TikTok publishing is coming soon."),
-    },
-    {
-      icon: "⬆️", label: "Upscale & Download", pro: true, hint: `${UPSCALE_COST}⚡`,
-      run: (clip) => { createClip(clip, true).then((err) => err && flash(err)); },
-    },
-    {
-      icon: "🎤", label: "AI Hook", pro: true,
-      run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
-    },
-    {
-      icon: "📐", label: "Export Formats", pro: true,
-      run: (clip) => { setPreviewId(clip.id); setPreviewDetails(true); },
-    },
-    {
-      icon: "🗑️", label: "Remove Watermark", pro: true,
-      run: () => flash("You're on Pro — exports have no watermark."),
-    },
-    {
-      icon: "📋", label: "Duplicate", pro: false,
-      run: (clip) => { duplicateClip(clip); },
-    },
-  ];
-
-  const runAction = (action: ClipAction, clip: SavedClip) => {
-    setMenuOpenId(null);
-    if (action.pro && !isPro) {
-      setProGateOpen(true);
-      return;
-    }
-    action.run(clip);
   };
 
   const filtered = useMemo(() => {
@@ -316,212 +261,27 @@ function ClipsPageContent() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filtered.map((clip) => (
-            <div
-              key={clip.id}
-              onClick={() => {
-                // A clip with no footage left has nothing to show in the
-                // dialog, so the card opens its details rather than a player.
-                setPreviewId(clip.id);
-                setPreviewDetails(footageGone(clip));
-              }}
-              className="group flex min-w-0 cursor-pointer flex-col rounded-xl border border-border bg-surface p-3 transition-colors hover:border-subtle"
-            >
-              {/* 16:9 poster — play opens the centred preview dialog. */}
-              <div className="mb-3">
-                <ClipThumbnail clip={clip} onPlay={() => { setPreviewId(clip.id); setPreviewDetails(false); }} />
-              </div>
-
-              <div className="flex items-center justify-between gap-3 mb-2.5">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
-                    {clip.clip_type.replaceAll("_", " ")}
-                  </span>
-                  {clip.archive_status === "stored" && <span className="text-[11px] text-accent" title="A copy is saved in Klyp">Footage saved</span>}
-                  {(clip.archive_status === "pending" || clip.archive_status === "processing") && <span className="text-[11px] text-foreground-muted">Saving footage…</span>}
-                  {clip.archive_status === "failed" && <span className="text-[11px] text-amber-400">Footage not backed up</span>}
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* The band, not the bare number, is the honest headline:
-                      analysis never returns anything under 65, so a raw score
-                      read as a percentage understates every clip. */}
-                  <span
-                    title={`${scoreBand(clip.viral_score).blurb} Score ${clip.viral_score} of a 65-100 range.`}
-                    className={`px-2 py-0.5 rounded-md border text-[11px] font-bold font-syne tracking-wide ${scoreBand(clip.viral_score).className}`}
-                  >
-                    {scoreBand(clip.viral_score).label}
-                  </span>
-                  {/* ⋯ actions menu */}
-                  <div className="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMenuOpenId(menuOpenId === clip.id ? null : clip.id);
-                      }}
-                      title="Clip actions"
-                      className="flex h-8 w-8 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-2 hover:text-foreground"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
-                      </svg>
-                    </button>
-
-                    {menuOpenId === clip.id && (
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="absolute right-0 top-9 z-30 w-60 py-1.5 rounded-xl bg-surface border border-border shadow-[0_16px_48px_-12px_rgba(0,0,0,0.8)]"
-                      >
-                        {clipActions.map((action) => (
-                          <button
-                            key={action.label}
-                            onClick={() => runAction(action, clip)}
-                            disabled={workingId === clip.id}
-                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-xs text-foreground-muted hover:text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
-                          >
-                            <span className="text-sm leading-none">{action.icon}</span>
-                            <span className="flex-1">{action.label}</span>
-                            {action.hint && (
-                              <span className="text-[10px] text-subtle">{action.hint}</span>
-                            )}
-                            {action.pro && (
-                              <span className="px-1.5 py-0.5 rounded bg-accent-glow text-accent text-[9px] font-bold font-syne tracking-wide">
-                                PRO
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <h3 className="mb-1 line-clamp-2 font-geist text-base font-semibold leading-6 text-white" title={readClipEditDraft(clip).draft.title}>{readClipEditDraft(clip).draft.title}</h3>
-              <p className="mb-3 text-xs text-foreground-muted">
-                {clip.url.startsWith("upload:") ? "Uploaded VOD" : platformName(clip.url)} · {fmtTime(readClipEditDraft(clip).draft.end_seconds - readClipEditDraft(clip).draft.start_seconds)} clip · VOD {fmtTime(readClipEditDraft(clip).draft.start_seconds)}–{fmtTime(readClipEditDraft(clip).draft.end_seconds)}
-              </p>
-              <details className="mb-3 text-xs text-foreground-muted" onClick={(e) => e.stopPropagation()}>
-                <summary className="cursor-pointer font-medium hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Details &amp; feedback</summary>
-                <div className="mt-3 space-y-3 border-t border-border pt-3">
-                  <p>{fmtDate(clip.created_at)} · AI score {clip.viral_score}/100</p>
-                  {clip.caption && <p className="line-clamp-3 leading-relaxed">{clip.caption}</p>}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span>Useful moment?</span>
-                    <button type="button" aria-label="Keep this kind of moment" aria-pressed={verdicts[clip.id] === "approved"}
-                      onClick={() => rateClip(clip.id, "approved")}
-                      className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "approved" ? "border-accent text-accent" : "border-border hover:text-accent"}`}>👍 Keep</button>
-                    <button type="button" aria-label="Show fewer moments like this" aria-pressed={verdicts[clip.id] === "rejected"}
-                      onClick={() => rateClip(clip.id, "rejected")}
-                      className={`rounded-md border px-2 py-1 ${verdicts[clip.id] === "rejected" ? "border-amber-400 text-amber-400" : "border-border hover:text-amber-400"}`}>👎 Less like this</button>
-                  </div>
-                  <ScoreBreakdown clip={clip} />
-                </div>
-              </details>
-
-              <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-3">
-                <Link href={`/dashboard/clips/${clip.id}/edit`} onClick={e => e.stopPropagation()} className="flex min-h-9 flex-1 items-center justify-center rounded-md bg-accent px-3 text-xs font-semibold text-background transition-colors hover:bg-accent-dim">Edit clip</Link>
-                {/* Clips are stored as VOD timestamps, not files — this renders
-                    the MP4 on demand via /api/clip, hence "Create clip". */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    createOrDownload(clip).then((err) => err && flash(err));
-                  }}
-                  disabled={workingId === clip.id || footageGone(clip)}
-                  title={footageGone(clip)
-                    ? "The source VOD was deleted before this clip was backed up, so there is no footage to render"
-                    : "Render this clip from the source VOD and download it"}
-                  className={`flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition-colors disabled:opacity-60 ${
-                    footageGone(clip)
-                      ? "cursor-not-allowed border-border bg-surface-2 text-muted"
-                      : "border-border text-foreground hover:border-subtle"
-                  }`}
-                >
-                  {footageGone(clip) ? (
-                    <>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
-                      </svg>
-                      Footage gone
-                    </>
-                  ) : exports[clip.id]?.status === "working" ? (
-                    <>
-                      <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
-                      Creating…
-                    </>
-                  ) : exports[clip.id]?.status === "ready" ? (
-                    <>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                      Download clip
-                    </>
-                  ) : (
-                    <>
-                      {/* scissors */}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
-                        <line x1="20" y1="4" x2="8.12" y2="15.88" />
-                        <line x1="14.47" y1="14.48" x2="20" y2="20" />
-                        <line x1="8.12" y1="8.12" x2="12" y2="12" />
-                      </svg>
-                      Create clip
-                    </>
-                  )}
-                </button>
-                <div className="flex basis-full items-center justify-between gap-2">
-                {clip.url.startsWith("upload:") ? (
-                  <span className="text-xs text-foreground-muted">
-                    Uploaded VOD
-                  </span>
-                ) : (
-                <a
-                  href={vodLinkAt(clip.url, clip.start_seconds)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center gap-1.5 text-xs font-medium text-foreground-muted transition-colors hover:text-foreground"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <line x1="10" y1="14" x2="21" y2="3" />
-                  </svg>
-                  Watch on {platformName(clip.url)}
-                </a>
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteClip(clip.id); }}
-                  disabled={deletingId === clip.id}
-                  title="Delete clip"
-                  className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
-                >
-                  {deletingId === clip.id ? (
-                    <span className="w-3 h-3 rounded-full border border-foreground-muted border-t-transparent animate-spin" />
-                  ) : (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6l-1 14H6L5 6" />
-                      <path d="M10 11v6M14 11v6" />
-                      <path d="M9 6V4h6v2" />
-                    </svg>
-                  )}
-                </button>
-                </div>
-              </div>
-              {readyExportWarning(exports[clip.id]) && (
-                <p role="status" className="text-xs text-amber-300 mt-2">{readyExportWarning(exports[clip.id])}</p>
-              )}
-
-            </div>
-          ))}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map(clip => <CompactClipCard key={clip.id} clip={clip}
+            onPreview={() => { setPreviewId(clip.id); setPreviewDetails(false); }}
+            rawState={rawDownloads[clip.id]} onDownloadRaw={() => void downloadRaw(clip)}
+            more={<div className="relative">
+              <button type="button" aria-label={"More actions for " + clip.title} aria-expanded={menuOpenId === clip.id}
+                onClick={() => setMenuOpenId(menuOpenId === clip.id ? null : clip.id)}
+                className="rounded-md border border-border px-2 py-0.5 text-foreground-muted hover:text-foreground">•••</button>
+              {menuOpenId === clip.id && <div className="absolute right-0 top-8 z-30 w-52 rounded-lg border border-border bg-surface p-1 shadow-xl">
+                <button type="button" onClick={() => { setMenuOpenId(null); void rateClip(clip.id, "approved"); }}
+                  className="block w-full rounded px-3 py-2 text-left text-xs text-foreground-muted hover:bg-surface-2">More moments like this{verdicts[clip.id] === "approved" ? " ✓" : ""}</button>
+                <button type="button" onClick={() => { setMenuOpenId(null); void rateClip(clip.id, "rejected"); }}
+                  className="block w-full rounded px-3 py-2 text-left text-xs text-foreground-muted hover:bg-surface-2">Fewer moments like this{verdicts[clip.id] === "rejected" ? " ✓" : ""}</button>
+                <button type="button" onClick={() => { setMenuOpenId(null); void duplicateClip(clip); }}
+                  className="block w-full rounded px-3 py-2 text-left text-xs text-foreground-muted hover:bg-surface-2">Duplicate</button>
+                <button type="button" onClick={() => { setMenuOpenId(null); void deleteClip(clip.id); }}
+                  disabled={deletingId === clip.id} className="block w-full rounded px-3 py-2 text-left text-xs text-red-400 hover:bg-surface-2">Delete</button>
+              </div>}
+            </div>} />)}
         </div>
       )}
-
       {/* Click-away closes the actions menu */}
       {menuOpenId && (
         <div className="fixed inset-0 z-20" onClick={() => setMenuOpenId(null)} />
@@ -546,10 +306,11 @@ function ClipsPageContent() {
             const done = exports[previewClip.id];
             if (done) downloadExport(done);
           }}
+          rawState={rawDownloads[previewClip.id]}
+          onDownloadRaw={() => void downloadRaw(previewClip)}
         />
       )}
 
-      {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}
 
       {notice && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg bg-surface border border-accent/40 text-sm text-foreground shadow-accent-glow-sm animate-fade-in">

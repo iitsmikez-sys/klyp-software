@@ -49,7 +49,7 @@ import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { clipSeekRange, archivedClipTiming } from "@/lib/clip-trim";
 import { UPSCALE_COST } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
-import { canProcessClip, acquireUserProcessingSlot } from "@/lib/clip-access";
+import { canProcessClip, canDownloadRawMoment, acquireUserProcessingSlot } from "@/lib/clip-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -125,7 +125,7 @@ async function cutClip(
   );
 
   // Build video filter chain: framing → imported picture → captions → hook → handle → watermark.
-  // Raw mode (Pro-only, enforced in POST) skips the chain entirely: original
+  // Raw mode skips the chain entirely: original
   // framing and resolution, nothing burned in — for editing in CapCut/Premiere.
   // Upscale (Pro-only, 35⚡) doubles the output dimensions (e.g. 2160×3840).
   let vf: string;
@@ -281,7 +281,23 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // why the raw tier flag alone isn't trusted (it can drift from reality).
   const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
   const sparksBalance = profile.sparks;
-  const editorRequested = requestBody.edit_draft !== undefined || requestBody.editor_export === true || requestBody.segments !== undefined || requestBody.caption_cues !== undefined;
+  // Raw always means the detected source moment, never an edited draft.
+  const editorRequested = !raw && (requestBody.edit_draft !== undefined || requestBody.editor_export === true || requestBody.segments !== undefined || requestBody.caption_cues !== undefined);
+  if (raw && clipId) {
+    try {
+      const { data, error } = await createAdminClient().from("clips")
+        .select("id,url,title,start_seconds,end_seconds")
+        .eq("id", clipId).eq("user_id", profile.id).maybeSingle();
+      if (error) throw error;
+      if (!data) return NextResponse.json({ error: "Clip not found." }, { status: 404 });
+      url = data.url;
+      start = data.start_seconds;
+      end = data.end_seconds;
+      title = data.title;
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load this clip." }, { status: 500 });
+    }
+  }
   if (editorRequested) {
     if (!isPro) return NextResponse.json({ error: "Editing saved clips requires Pro." }, { status: 403 });
     try {
@@ -310,7 +326,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     }
   }
   try {
-    if (!await canProcessClip(profile.id, clipId, url, start, end)) {
+    if (raw ? (!clipId && !await canDownloadRawMoment(profile.id, url, start, end)) : !await canProcessClip(profile.id, clipId, url, start, end)) {
       return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
     }
   } catch (err) {
@@ -325,7 +341,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!editorDraft && end - start > 180) {
     return NextResponse.json({ error: "Clips are capped at 3 minutes." }, { status: 400 });
   }
-  format = resolveExportFormat(format, isPro);
+  format = raw ? "Original" : resolveExportFormat(format, isPro);
   let verticalLayout: VerticalLayoutV1 | null = null;
   let layoutWarning: string | null = null;
   if (!raw && format === "9:16") {
@@ -357,15 +373,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     }
   }
 
-  // Raw export (clean cut, nothing burned in) is Pro-only — enforced here, not
-  // in the UI, so free users can't get a watermark-free clip by crafting a request.
+  // Raw footage is already paid for by analysis. It has no Klyp effects or
+  // additional Sparks charge; ownership and exact-window checks apply above.
   if (raw) {
-    if (!isPro) {
-      return NextResponse.json(
-        { error: "Raw exports are a Pro feature — upgrade to download clean clips for editing." },
-        { status: 403 }
-      );
-    }
     style = undefined;
     words = undefined;
     hook = undefined;
@@ -467,7 +477,6 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
       }
       if (style && editorDraft && ownedEditorClip && !raw) {
-        assPath = path.join(assDir!, "captions.ass");
         const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.dest;
         const cues = resolveEditorCues(editorDraft, ownedEditorClip);
         const spans = editorDraft.version === 3 && focusPlans ? resolveFocusSpans(editorDraft.focus_events ?? [], editorDraft.segments) : null;
@@ -476,7 +485,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           const plan = focusPlans!.find(span => cue.start_ms >= span.start_ms && cue.start_ms < span.end_ms)?.plan;
           return plan?.mode === "composed" ? plan.textSafe : plan?.mode === "full_frame" ? plan.dest : { x: 0, y: 0, w: res.w, h: res.h };
         } : safe;
-        await writeFile(assPath, generateTimedCueAss(resolvedCues, style, captionAppearance(editorDraft), res, captionSafe, editorDraft.caption_font ?? "sans"), "utf-8");
+        if (resolvedCues.length) {
+          assPath = path.join(assDir!, "captions.ass");
+          await writeFile(assPath, generateTimedCueAss(resolvedCues, style, captionAppearance(editorDraft), res, captionSafe, editorDraft.caption_font ?? "sans"), "utf-8");
+        }
       } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
         const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.y - verticalPlan.textSafe.h

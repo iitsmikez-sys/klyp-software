@@ -25,8 +25,8 @@ import Link from "next/link";
 import { previewSourceStart } from '@/lib/editor-preview';
 import SavedClipEditor from "./SavedClipEditor";
 import { defaultClipEditDraft, readClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
-import { clipPreviewPlayback, clipPreviewActionBlocked } from "@/lib/clip-preview-state";
-import { buildCaptionCues, keywordAtTime } from "@/lib/captions";
+import { clipPreviewPlayback } from "@/lib/clip-preview-state";
+import type { RawDownloadState } from "./useRawClipDownloads";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
@@ -34,6 +34,7 @@ import {
   type SavedClip,
   TYPE_STYLES,
   fmtTime,
+  fmtDate,
   platformName,
   vodLinkAt,
 } from "@/lib/clip-ui";
@@ -53,6 +54,8 @@ interface Props {
   exportState: ExportState | undefined;
   onCreateClip: () => void;
   onDownloadClip: () => void;
+  rawState?: RawDownloadState;
+  onDownloadRaw?: () => void;
   /** Opened from an editing action in the card's ⋯ menu, which lives in Details. */
   initialDetailsOpen?: boolean;
   onClipSaved: (draft: ClipEditDraftV1 | null) => void;
@@ -69,6 +72,8 @@ export default function ClipPreviewModal({
   exportState,
   onCreateClip,
   onDownloadClip,
+  rawState,
+  onDownloadRaw,
   initialDetailsOpen = false,
   onClipSaved,
 }: Props) {
@@ -88,14 +93,8 @@ export default function ClipPreviewModal({
   const [pendingLayout, setPendingLayout] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
-  const trimStart = draft.start_seconds - sourceStart;
-  const trimEnd = draft.end_seconds - sourceStart;
-  const captionCues = useMemo(() => draft.words?.length
-    ? buildCaptionCues(draft.words, draft.start_seconds * 1000, draft.end_seconds * 1000,
-      draft.caption_style === "KLYP" ? 1 : 4)
-    : [], [draft.words, draft.start_seconds, draft.end_seconds, draft.caption_style]);
-  const editedTimeMs = (playerTime - trimStart) * 1000;
-  const activeCaption = captionCues.find((cue) => editedTimeMs >= cue.startMs && editedTimeMs < cue.endMs);
+  const trimStart = clip.start_seconds - sourceStart;
+  const trimEnd = clip.end_seconds - sourceStart;
 
   /** Drives the enter/exit transition: mounted → open → closing → unmounted. */
   const [entered, setEntered] = useState(false);
@@ -301,11 +300,9 @@ export default function ClipPreviewModal({
 
   const platform = platformName(clip.url);
   const isUpload = clip.url.startsWith("upload:");
-  const duration = Math.max(0, draft.end_seconds - draft.start_seconds);
-  const selectionReason = clip.reason?.trim();
   const exporting = exportState?.status === "working";
   const ready = exportState?.status === "ready";
-  const actionBlocked = clipPreviewActionBlocked(dirty || pendingLayout);
+  const actionBlocked = dirty || pendingLayout;
 
   /* Only opacity and transform animate; the backdrop's blur is static so it
      never triggers a per-frame filter repaint. */
@@ -347,19 +344,19 @@ export default function ClipPreviewModal({
             {/* Wraps rather than truncates — on a phone the tail of a title is
                 often the point of it ("…Then THIS Happened"). */}
             <h2 className="line-clamp-2 font-geist text-xl font-semibold leading-tight text-white sm:text-2xl">
-              {draft.title}
+              {clip.title}
             </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-muted sm:text-sm">
-              <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-sm text-foreground-muted">
+              <span className={`px-2 py-0.5 rounded border text-[11px] font-bold tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
                 {clip.clip_type}
               </span>
               <span className="text-subtle">•</span>
               <span>{isUpload ? "Uploaded VOD" : platform}</span>
               <span className="text-subtle">•</span>
-              <span>{fmtTime(duration)} clip</span>
+              <span>{fmtDate(clip.created_at)}</span>
               <span className="text-subtle">•</span>
-              <span className="tabular-nums">
-                VOD {fmtTime(draft.start_seconds)}–{fmtTime(draft.end_seconds)}
+              <span className="font-mono text-[13px]">
+                {fmtTime(clip.start_seconds)} → {fmtTime(clip.end_seconds)} · {fmtTime(clip.end_seconds - clip.start_seconds)} long
               </span>
             </div>
           </div>
@@ -394,7 +391,7 @@ export default function ClipPreviewModal({
             )}
 
             {showSpinner && !videoReady && !loadError && (
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-black/75 px-4 py-3">
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-t from-black/85 to-transparent">
                 <span className="w-4 h-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
                 <span className="text-sm text-white/90">
                   Loading preview{elapsed >= 20 ? " — downloading the source VOD" : ""}
@@ -444,53 +441,22 @@ export default function ClipPreviewModal({
                 }}
               />
             )}
-            {videoReady && draft.hook && editedTimeMs >= 0 && editedTimeMs < 3000 && (
-              <div aria-hidden className="pointer-events-none absolute inset-x-8 top-5 text-center text-white text-xl sm:text-2xl font-black uppercase drop-shadow-[0_2px_3px_black]">
-                {draft.hook}
-              </div>
-            )}
-            {videoReady && activeCaption && (
-              <div aria-hidden className={`pointer-events-none absolute inset-x-6 bottom-8 text-center font-black uppercase text-lg sm:text-2xl ${draft.caption_style === "COMIC" ? "italic text-[#ffdf00]" : draft.caption_style === "KLYP" ? "text-accent" : "text-white"}`}
-                style={{ textShadow: "-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000" }}>
-                {draft.caption_style === "KEYWORD" ? activeCaption.text.split(/\s+/).map((word, index, words) =>
-                  <span key={index} className={index === keywordAtTime(editedTimeMs - activeCaption.startMs, activeCaption.endMs - activeCaption.startMs, words.length) ? "text-[#00e5a0]" : ""}>{index > 0 ? " " : ""}{word}</span>) : activeCaption.text}
-              </div>
-            )}
           </div>
         </div>
 
-        {selectionReason && (
-          <div className="mx-4 mt-4 border-l-2 border-accent/60 pl-3 sm:mx-6">
-            <p className="text-xs font-semibold text-foreground">Why this moment?</p>
-            <p className="mt-1 line-clamp-2 text-sm leading-5 text-foreground-muted" title={selectionReason}>{selectionReason}</p>
-          </div>
-        )}
-
-        {/* Keep rendering separate from editing: Create clip still uses the existing export flow. */}
-        <div className="flex flex-col gap-2 px-4 pb-1 pt-4 sm:flex-row sm:items-center sm:px-6">
-          <Link
-            href={`/dashboard/clips/${clip.id}/edit`}
-            onClick={e => { if ((dirty || pendingLayout) && !window.confirm("Leave without saving your quick edits?")) e.preventDefault(); }}
-            className="flex min-h-11 items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:min-w-40"
-          >
-            Edit clip
-          </Link>
-          <button
-            type="button"
-            onClick={ready ? onDownloadClip : onCreateClip}
-            disabled={actionBlocked || (!ready && (draft.version !== 1 || exporting))}
-            className="min-h-11 rounded-lg border border-border px-5 text-sm font-semibold text-foreground transition-colors hover:border-subtle disabled:opacity-60 sm:min-w-36"
-          >
-            {exporting ? "Creating clip…" : ready ? "Download clip" : "Create clip"}
+        {/* The source preview and raw download always use the detected moment. */}
+        <div className="flex flex-wrap gap-2 px-4 pt-4 pb-2 sm:px-6">
+          <Link href={"/dashboard/clips/" + clip.id + "/edit"} className="flex min-h-11 items-center rounded-lg bg-accent px-4 text-sm font-semibold text-background hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Edit Clip</Link>
+          <button type="button" onClick={onDownloadRaw} disabled={!onDownloadRaw || rawState?.status === "working"}
+            className="min-h-11 rounded-lg border border-border px-4 text-sm font-medium text-foreground hover:border-accent/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
+            {rawState?.status === "working" ? (rawState.received !== undefined ? "Downloading " + rawState.received + "%" : "Preparing raw " + rawState.seconds + "s")
+              : rawState?.status === "ready" ? "Download Raw Again" : "Download Raw"}
           </button>
-          {!isUpload && (
-            <a href={vodLinkAt(clip.url, draft.start_seconds)} target="_blank" rel="noopener noreferrer"
-              className="flex min-h-11 items-center justify-center px-2 text-sm font-medium text-foreground-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:ml-auto">
-              Watch on {platform} ↗
-            </a>
-          )}
+          {!isUpload && <a href={vodLinkAt(clip.url, clip.start_seconds)} target="_blank" rel="noopener noreferrer"
+            className="self-center px-2 py-2 text-sm text-foreground-muted hover:text-accent">Watch Original ↗</a>}
         </div>
-        {dirty && <p className="mx-6 text-xs text-amber-300">Save your edits in Details to enable the main clip button, or export the current draft there.</p>}
+        {rawState?.status === "error" && <p role="alert" className="mx-6 mt-1 text-sm text-red-400">{rawState.error} <button type="button" onClick={onDownloadRaw} className="underline">Retry</button></p>}
+        {dirty && <p className="mx-6 text-xs text-amber-300">You have unsaved quick export settings. Save them before leaving this preview.</p>}
 
         {exportState?.status === "error" && (
           <p className="mx-6 mt-1 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
@@ -509,7 +475,7 @@ export default function ClipPreviewModal({
           <button
             onClick={() => setDetailsOpen((v) => !v)}
             aria-expanded={detailsOpen}
-            className="flex min-h-10 w-full items-center gap-2 border-t border-border px-1 pt-3 text-sm font-medium text-foreground-muted transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-foreground-muted hover:text-foreground hover:border-subtle focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
           >
             <svg
               width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -518,21 +484,25 @@ export default function ClipPreviewModal({
             >
               <polyline points="6 9 12 15 18 9" />
             </svg>
-            Quick edit options
+            Details
           </button>
           {detailsOpen && (
-            /* The editor renders its own 9:16 player for hook/caption placement;
-               the dialog already has one, so it's suppressed here. */
-            <>
-              {unsupportedDraft && <p role="alert" className="mt-3 text-xs text-amber-300">This clip has a newer or invalid saved draft. Original edit values are shown; use Reset to remove the stored draft.</p>}
-              {draft.version !== 1 ? <p role="status" className="mt-3 text-sm text-amber-300">This clip has timeline edits. Open the full timeline editor to change or export this draft.</p> : <SavedClipEditor clip={clip} draft={draft} onDraftChange={setDraft}
+            <div className="pt-3 text-sm text-foreground-muted">
+              {clip.reason && <p className="mb-2"><span className="font-medium text-foreground">Why this moment:</span> {clip.reason}</p>}
+              {clip.caption && <p className="mb-2">{clip.caption}</p>}
+              <p>Original VOD: {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}</p>
+              <details className="mt-3 border-t border-border pt-3">
+                <summary className="cursor-pointer text-foreground-muted hover:text-foreground">Quick export settings</summary>
+                {unsupportedDraft && <p role="alert" className="mt-3 text-xs text-amber-300">This clip has a newer or invalid saved draft. Original edit values are shown; use Reset to remove the stored draft.</p>}
+                {draft.version !== 1 ? <p role="status" className="mt-3 text-sm text-amber-300">This clip has timeline edits. Open the full timeline editor to change or export this draft.</p> : <SavedClipEditor clip={clip} draft={draft} onDraftChange={setDraft}
                 onPersisted={(value) => {
                   const persisted = value ?? defaultClipEditDraft(clip);
                   setSavedDraft(persisted);
                   setUnsupportedDraft(false);
                   onClipSaved(value);
                 }} dirty={dirty} hidePreview sourcePreviewUrl={previewUrl} sourcePreviewStart={sourceStart} onLayoutPendingChange={setPendingLayout} />}
-            </>
+              </details>
+            </div>
           )}
         </div>
       </div>

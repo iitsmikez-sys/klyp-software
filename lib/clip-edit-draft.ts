@@ -217,3 +217,9 @@ export function upgradeClipEditDraft(clip: ClipSource, draft: ClipEditDraft): Cl
  if (draft.version !== 1) return validateClipEditDraft({ ...draft, version: 3, cutaways: draft.version === 3 ? draft.cutaways : [] }, clip) as ClipEditDraftV3;
  return validateClipEditDraft({ ...draft, version: 3, segments: [{ id: "segment-1", start_seconds: draft.start_seconds, end_seconds: draft.end_seconds }], caption_cues: null, caption_color: draft.caption_style === "KLYP" ? "green" : "white", caption_position: "bottom", cutaways: [] }, clip) as ClipEditDraftV3;
 }
+
+/** Editing starts from the detected source, leaving all AI text opt-in. */
+export function freshTimelineDraft(clip: SavedClip): ClipEditDraftV3 {
+ const upgraded = upgradeClipEditDraft(clip, defaultClipEditDraft(clip));
+ return { ...upgraded, hook: "", caption_cues: [], aspect_ratio: "Original", audio_polish: "off" };
+}

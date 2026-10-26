@@ -150,7 +150,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.getByRole('button',{name:'Media',exact:true}).click();await page.getByRole('button',{name:'Add photo',exact:true}).click();await page.getByText('Upgrade to Pro',{exact:true}).waitFor();assert.equal(await page.getByLabel('Choose photo').isDisabled(),true);
  await page.getByLabel('Export aspect ratio').selectOption('Original');
  await page.getByRole('button',{name:'Export original',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();
- assert.equal(await page.evaluate(()=>exported.aspect_ratio),'Original');assert.equal(await page.evaluate(()=>'edit_draft' in exported),false);
+ assert.equal(await page.evaluate(()=>exported.raw),true);assert.equal(await page.evaluate(()=>exported.clip_id),'owned');assert.equal(await page.evaluate(()=>'edit_draft' in exported),false);
  await page.evaluate(()=>releaseExport());await page.getByRole('button',{name:'Export original',exact:true}).waitFor();
  // A richer, explicitly synthetic local fixture exercises the final layout with real
  // decoded frames/audio. It is never shipped as user footage or used by production.
@@ -186,7 +186,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  }
  await page.evaluate(()=>{window.pro=false;window.mountKey=99;window.savedSnapshot=JSON.stringify(saved);renderEditor();});
  await page.getByRole('button',{name:'Export original',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();
- assert.equal(await page.evaluate(()=>exported.start_seconds),100);assert.equal(await page.evaluate(()=>exported.end_seconds),118);assert.equal(await page.evaluate(()=>'edit_draft' in exported),false);assert.equal(await page.evaluate(()=>JSON.stringify(saved)===savedSnapshot),true);
+ assert.equal(await page.evaluate(()=>exported.raw),true);assert.equal(await page.evaluate(()=>exported.clip_id),'owned');assert.equal(await page.evaluate(()=>'edit_draft' in exported),false);assert.equal(await page.evaluate(()=>JSON.stringify(saved)===savedSnapshot),true);
  await page.evaluate(()=>releaseExport());await page.getByRole('button',{name:'Export original',exact:true}).waitFor();
  await page.evaluate(()=>{
   window.pro=false;const c=document.createElement('canvas');c.width=160;c.height=90;c.getContext('2d').fillRect(0,0,160,90);window.legacyPhoto=c.toDataURL();

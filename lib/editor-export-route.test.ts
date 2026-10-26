@@ -15,16 +15,16 @@ import { resolveEditorCues, captionAppearance, parseCaptionOptions } from './edi
 import { clipSeekRange, archivedClipTiming } from './clip-trim.ts';
 import { planClipComposition, validateVerticalLayout } from './vertical-layout.ts';
 import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_DIMENSIONS, resolveExportFormat } from './clips.ts';
-import { ClipEditDraftError } from './clip-edit-draft.ts';
+import { ClipEditDraftError, freshTimelineDraft } from './clip-edit-draft.ts';
 import { EditorAssetError } from './editor-assets.ts';
 import { resolveCutawaySpans } from './editor-timeline.ts';
 import { layoutForFocus, resolveFocusSpans, splitCuesForFocus } from './editor-focus.ts';
 import * as cutawayRenderer from './editor-cutaway-render.ts';
 const legacyCode=ts.transpileModule(readFileSync(new URL('./legacy-clip-export-route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
 const routeCode=ts.transpileModule(readFileSync(new URL('../app/api/clip/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
-const clip={id:'owned',url:'https://twitch.tv/videos/123',start_seconds:100,end_seconds:110,words:null,edit_draft:null};
+const clip={id:'owned',url:'https://twitch.tv/videos/123',title:'Original moment',start_seconds:100,end_seconds:110,words:null,edit_draft:null};
 const draft={version:2,start_seconds:101,end_seconds:109,title:'Unsaved',hook:'Hey',hook_style:'IMPACT',caption_style:'BOLD',aspect_ratio:'9:16',words:null,segments:[{id:'a',start_seconds:101,end_seconds:102},{id:'b',start_seconds:108,end_seconds:109}],caption_cues:[{id:'cue',start_ms:101500,end_ms:108500,text:'corrected'}],caption_color:'green',caption_position:'top'};
-async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart?:number;missingArchive?:boolean;owned?:boolean;pro?:boolean;body?:Record<string,unknown>;failRender?:boolean;profileLayout?:any;assetError?:EditorAssetError;failAssetDownload?:boolean}={}){
+async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart?:number;missingArchive?:boolean;owned?:boolean;exactMoment?:boolean;pro?:boolean;body?:Record<string,unknown>;failRender?:boolean;profileLayout?:any;assetError?:EditorAssetError;failAssetDownload?:boolean}={}){
  const calls:{name:string;args:any[]}[]=[];
  const record=(name:string,...args:any[])=>calls.push({name,args});
  const fs={mkdtemp:async()=>'/temp/editor',readFile:async()=>Buffer.from('mp4'),writeFile:async(...args:any[])=>record('write',...args),rm:async(...args:any[])=>record('rm',...args)};
@@ -48,7 +48,7 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/vertical-layout':{planClipComposition,validateVerticalLayout},'@/lib/vertical-layout-ffmpeg':{buildVerticalFilterGraph:(plan:any)=>{record('composition',plan);return {filter:'composed',videoLabel:'v'};},buildTimedVerticalFilterGraph:(spans:any,overlays:any)=>{record('timedComposition',spans,overlays);return {filter:'timed',videoLabel:'v'};}},
  '@/lib/clip-archive':{getArchivedClip:async()=>options.archive?{id:'owned',masterPath:'master',status:'stored',originalStartSeconds:options.archiveStart??100,originalEndSeconds:110}:null,readArchivedObject:async()=>options.missingArchive?null:Buffer.from('master')},
  '@/lib/clip-trim':{clipSeekRange,archivedClipTiming},'@/lib/sparks':{UPSCALE_COST:35},'@/lib/cors':{withCors:(r:Response)=>r,corsPreflight:()=>{}},
- '@/lib/clip-access':{canProcessClip:async()=>true,acquireUserProcessingSlot:()=>()=>record('releaseSlot')}
+ '@/lib/clip-access':{canProcessClip:async()=>true,canDownloadRawMoment:async(...args:any[])=>{record('exactRawAccess',...args);return options.exactMoment!==false;},acquireUserProcessingSlot:()=>()=>record('releaseSlot')}
  };
  const legacyExports:any={};
  Object.assign(modules,{'@/lib/editor-compatibility':{isLegacyEditorExport},'@/lib/edit-segments':legacySegments,'@/lib/editor-media':legacyMedia,'@/lib/editor-media-render':{buildEditorMediaFilter},'@/lib/editor-captions':{resolveEditorCues,captionAppearance,parseCaptionOptions,parseEditedWords}});
@@ -83,8 +83,38 @@ test('legacy requests keep their single-range word-caption path',async()=>{
 });
 
 
-test('raw V2 exports retain cuts without captions and preserve Pro enforcement',async()=>{
- const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:draft,raw:true}});assert.equal(response.status,200);assert.ok(calls.some(c=>c.name==='render'));assert.ok(!calls.some(c=>c.name==='cues'));const args=calls.find(c=>c.name==='encode')!.args[1];assert.ok(!args.includes('-filter_complex')&&!args.includes('-vf'));
+test('raw request with an edit draft still downloads the untouched detected moment',async()=>{
+ const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:draft,raw:true}});assert.equal(response.status,200);assert.ok(!calls.some(c=>c.name==='render'));assert.ok(!calls.some(c=>c.name==='cues'));const args=calls.find(c=>c.name==='encode')!.args[1];assert.ok(!args.includes('-filter_complex')&&!args.includes('-vf'));
+});
+
+test('Free raw download uses owned original moment and ignores saved editing effects without a Sparks charge',async()=>{
+ const {response,calls}=await exportRoute({pro:false,archive:true,body:{clip_id:'owned',url:'https://twitch.tv/videos/forged',start_seconds:101,end_seconds:102,raw:true,edit_draft:draft,aspect_ratio:'9:16',hook:'forged',style:'BOLD'}});
+ assert.equal(response.status,200,await response.clone().text());
+ assert.equal(calls.filter(c=>c.name==='download').length,0);
+ assert.ok(!calls.some(c=>['render','cues','composition','charge','verifyAssets'].includes(c.name)));
+ const args=Array.from(calls.find(c=>c.name==='encode')!.args[1]) as string[];
+ assert.deepEqual(args.slice(0,6),['-ss','0','-t','10','-i',path.join('/cache','master-owned.mp4')]);
+ assert.ok(!args.includes('-vf')&&!args.includes('-filter_complex'));
+ assert.ok(!args.some(arg=>String(arg).includes('watermark')||String(arg).includes('subtitles')||String(arg).includes('crop=')));
+ assert.deepEqual(args.slice(args.indexOf('-c:a'),args.indexOf('-c:a')+2),['-c:a','aac']);
+ assert.equal((response.headers.get('Content-Disposition')??'').includes('Unsaved'),false);
+});
+
+test('fresh timeline export has no captions, hook or forced crop',async()=>{
+ const clean=freshTimelineDraft(clip as any);
+ const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:clean}});
+ assert.equal(response.status,200,await response.clone().text());
+ assert.ok(!calls.some(c=>c.name==='cues'));
+ const args=Array.from(calls.find(c=>c.name==='encode')!.args[1]) as string[];
+ assert.equal(args[args.indexOf('-vf')+1],'null');
+});
+
+test('raw download rejects a missing saved clip and a forged unsaved moment before source work',async()=>{
+ for(const options of [{owned:false,body:{clip_id:'owned',raw:true}},{exactMoment:false,body:{url:clip.url,start_seconds:101,end_seconds:109,raw:true}}]){
+  const {response,calls}=await exportRoute(options);
+  assert.ok([403,404].includes(response.status));
+  assert.ok(!calls.some(c=>['download','encode','charge'].includes(c.name)));
+ }
 });
 
 test('P1 voice polish reaches normal export while raw export stays untouched',async()=>{
@@ -95,7 +125,7 @@ test('P1 voice polish reaches normal export while raw export stays untouched',as
  assert.equal(normal.calls.find(c=>c.name==='cues')?.args[5],'mono');
  const raw=await exportRoute({body:{clip_id:'owned',edit_draft:edited,raw:true}});
  assert.equal(raw.response.status,200);
- assert.equal(raw.calls.find(c=>c.name==='render')?.args[4],'off');
+ assert.ok(!raw.calls.some(c=>c.name==='render'));
 });
 
 const accountLayout = {version:1,gameplay:{x:0,y:0,w:1,h:1},facecam:{x:0,y:0,w:.2,h:.2}};
@@ -162,10 +192,10 @@ test('foreign, missing, and unavailable media fail with useful status before sou
  const failed=await exportRoute({failAssetDownload:true,body:{clip_id:'owned',edit_draft:imported}});
  assert.equal(failed.response.status,404);assert.ok(!failed.calls.some(c=>c.name==='encode'));assert.ok(failed.calls.some(c=>c.name==='rm'));
 });
-test('raw export containing cutaways rejects clearly instead of silently dropping imports',async()=>{
+test('raw export ignores cutaways and remains the original detected footage',async()=>{
  const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:imported,raw:true}});
- assert.equal(response.status,400);assert.match((await response.json()).error,/normal export/i);
- assert.ok(!calls.some(c=>['download','render','encode'].includes(c.name)));
+ assert.equal(response.status,200);
+ assert.ok(!calls.some(c=>['render','loadAssets','verifyAssets'].includes(c.name)));
 });
 
 

@@ -28,7 +28,7 @@ function Timing({ start, end, sourceStart, sourceEnd, onApply }: {
     };
     return <><div className="editor-times"><label>Start<input aria-label="Selected start seconds" type="number" step="0.1" value={a} onChange={e => setA(e.target.value)}/></label><label>End<input aria-label="Selected end seconds" type="number" step="0.1" value={b} onChange={e => setB(e.target.value)}/></label></div><button onClick={apply}>Apply timing</button>{error && <p role="alert">{error}</p>}</>;
 }
-export default function EditorInspector({ draft, segment, cue, hooks, sourceStart, sourceEnd, onChange, onTrim, onCue, disabled, clipId, video, layout, outputTime, peaks, onSeek }: {
+export default function EditorInspector({ draft, segment, cue, hooks, sourceStart, sourceEnd, onChange, onTrim, onCue, onAddCaptions, disabled, clipId, video, layout, outputTime, peaks, onSeek }: {
     draft: ClipEditDraftV3;
     sourceStart: number;
     sourceEnd: number;
@@ -38,6 +38,7 @@ export default function EditorInspector({ draft, segment, cue, hooks, sourceStar
     onChange: (change: Partial<Omit<ClipEditDraftV3, "version">>) => void;
     onTrim: (id: string, start: number, end: number) => void;
     onCue: (cue: CaptionCue) => void;
+    onAddCaptions: () => void;
     disabled: boolean;
     clipId: string;
     video: HTMLVideoElement | null;
@@ -48,7 +49,7 @@ export default function EditorInspector({ draft, segment, cue, hooks, sourceStar
 }) {
     const [tab, setTab] = useState<'edit' | 'style'>('edit');
     return <aside className="editor-inspector"><div className="editor-tabs"><button aria-pressed={tab === 'edit'} onClick={() => setTab('edit')}>Edit</button><button aria-pressed={tab === 'style'} onClick={() => setTab('style')}>Style</button></div><fieldset disabled={disabled}>
- {tab === 'edit' ? <>{cue && <section><h2>Caption</h2><label>Caption text<textarea aria-label="Caption text" value={cue.text} maxLength={1000} onChange={e => onCue({ ...cue, text: e.target.value })}/></label><p>Original source seconds</p><Timing sourceStart={sourceStart} sourceEnd={sourceEnd} key={`${cue.id}-${cue.start_ms}-${cue.end_ms}`} start={cue.start_ms / 1000} end={cue.end_ms / 1000} onApply={(a, b) => onCue({ ...cue, start_ms: a * 1000, end_ms: b * 1000 })}/></section>}<section><label>Hook text <span>{draft.hook.length}/80</span><textarea aria-label="Hook text" maxLength={80} value={draft.hook} onChange={e => onChange({ hook: e.target.value })}/></label><p>Shown for the first 3 seconds</p><div className="editor-suggestions" aria-label="Hook suggestions">{hooks.map(h => <button key={h} aria-pressed={draft.hook === h} onClick={() => onChange({ hook: h })}>{h}</button>)}{!hooks.length && <p>No suggestions saved.</p>}</div></section></> : null}
+ {tab === 'edit' ? <>{draft.caption_cues?.length === 0 && <section><h2>Captions</h2><p>No captions are applied to this clip.</p>{draft.words?.length ? <button type="button" onClick={onAddCaptions}>Add AI captions</button> : <p>Timed transcript is unavailable for this clip.</p>}</section>}{cue && <section><h2>Caption</h2><label>Caption text<textarea aria-label="Caption text" value={cue.text} maxLength={1000} onChange={e => onCue({ ...cue, text: e.target.value })}/></label><p>Original source seconds</p><Timing sourceStart={sourceStart} sourceEnd={sourceEnd} key={`${cue.id}-${cue.start_ms}-${cue.end_ms}`} start={cue.start_ms / 1000} end={cue.end_ms / 1000} onApply={(a, b) => onCue({ ...cue, start_ms: a * 1000, end_ms: b * 1000 })}/></section>}<section><label>Hook text <span>{draft.hook.length}/80</span><textarea aria-label="Hook text" maxLength={80} value={draft.hook} onChange={e => onChange({ hook: e.target.value })}/></label><p>Shown for the first 3 seconds</p><div className="editor-suggestions" aria-label="Hook suggestions">{hooks.map(h => <button key={h} aria-pressed={draft.hook === h} onClick={() => onChange({ hook: h })}>{h}</button>)}{!hooks.length && <p>No suggestions saved.</p>}</div></section></> : null}
  <section><h3>Hook style</h3><div className="editor-options">{HOOK_STYLES.map(s => <button key={s} aria-pressed={draft.hook_style === s} onClick={() => onChange({ hook_style: s })}><strong>Aa</strong>{s.toLowerCase()}</button>)}</div></section>
  <CaptionTemplatePicker value={draft.caption_style} onChange={caption_style => onChange({ caption_style })}/>
  <section><h3>Font</h3><div className="caption-font-choices">{CAPTION_FONTS.map(font => <button key={font} type="button" aria-label={`${font} caption font`} aria-pressed={(draft.caption_font ?? 'sans') === font} onClick={() => onChange({ caption_font: font })} data-font={font}><strong>Ag</strong><span>{font === 'sans' ? 'Modern' : font === 'serif' ? 'Editorial' : 'Mono'}</span></button>)}</div></section>
