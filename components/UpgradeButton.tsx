@@ -19,7 +19,7 @@ export default function UpgradeButton() {
     return (
       <Link
         href="/dashboard/upgrade"
-        className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm whitespace-nowrap"
+        className="flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground-muted transition-colors hover:border-accent/50 hover:text-foreground whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         <SparkIcon size={13} />
         Upgrade to Pro
