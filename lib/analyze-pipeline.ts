@@ -35,6 +35,7 @@ import {
 import { type ClipCount } from "@/lib/sparks";
 import { validateFinalistVisuals } from "@/lib/vision-validation";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
+import { recordProviderUsage } from "@/lib/provider-cost";
 
 /* ── Stage 2: download audio with yt-dlp ── */
 export async function downloadAudio(url: string, dir: string): Promise<string> {
@@ -155,11 +156,11 @@ async function mapWithConcurrency<T, R>(
  * timeline. Without the shift every clip would point at the wrong moment,
  * since each segment's transcript starts at zero.
  */
-async function transcribeWindows(paths: string[], windows: AudioWindow[]): Promise<TimedWord[]> {
+async function transcribeWindows(paths: string[], windows: AudioWindow[], costRunId?: string): Promise<TimedWord[]> {
   const perWindow = await mapWithConcurrency(paths, SEGMENT_CONCURRENCY, async (audioPath, i) => {
     const offsetMs = windows[i].start * 1000;
     try {
-      const { words } = await transcribe(audioPath);
+      const { words } = await transcribe(audioPath, costRunId);
       return words.map((w) => ({ ...w, start: w.start + offsetMs, end: w.end + offsetMs }));
     } catch (err) {
       // A silent window (transcribe throws on zero words) must not sink the
@@ -172,7 +173,7 @@ async function transcribeWindows(paths: string[], windows: AudioWindow[]): Promi
 }
 
 /* ── Stage 3: transcribe with AssemblyAI ── */
-export async function transcribe(audioPath: string): Promise<{ words: TimedWord[]; durationSeconds: number }> {
+export async function transcribe(audioPath: string, costRunId?: string): Promise<{ words: TimedWord[]; durationSeconds: number }> {
   const aai = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! });
 
   // The SDK uploads the local file and polls until the transcript is ready.
@@ -181,13 +182,17 @@ export async function transcribe(audioPath: string): Promise<{ words: TimedWord[
   if (transcript.status === "error") {
     throw new Error(`AssemblyAI transcription failed: ${transcript.error}`);
   }
+  const audioSeconds = Number(transcript.audio_duration ?? 0) || (transcript.words?.at(-1)?.end ?? 0) / 1000;
+  if (costRunId && audioSeconds > 0) recordProviderUsage({
+    runId: costRunId, provider: "assemblyai", model: transcript.speech_model_used ?? null, audioSeconds,
+  });
   if (!transcript.words || transcript.words.length === 0) {
     throw new Error("Transcription returned no words — the VOD may have no speech.");
   }
 
   return {
     words: transcript.words.map((w) => ({ text: w.text, start: w.start, end: w.end })),
-    durationSeconds: Math.round((transcript.audio_duration ?? 0) || transcript.words.at(-1)!.end / 1000),
+    durationSeconds: Math.round(audioSeconds),
   };
 }
 
@@ -344,7 +349,8 @@ export async function findClips(
   keyword?: string,
   keywordMatchSeconds: number[] = [],
   priorWindows: { start_seconds: number; end_seconds: number }[] = [],
-  creatorPreferences = ""
+  creatorPreferences = "",
+  costRunId?: string
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -490,6 +496,12 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
   }).withResponse();
 
   logAnthropicRateLimits(rawResponse.headers, "findClips");
+  if (costRunId) recordProviderUsage({
+    runId: costRunId, provider: "anthropic", model: "claude-opus-4-8",
+    inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
+    cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+    cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+  });
 
   // Lenient per-clip validation: messages.parse() rejects the WHOLE response if
   // any single clip is malformed (e.g. a signal name in the "type" field), which
@@ -632,6 +644,7 @@ export async function runAnalysisPipeline(opts: {
   priorWindows?: { start_seconds: number; end_seconds: number }[];
   creatorPreferences?: string;
   chatSpikesPromise?: Promise<ChatSpike[] | null> | null;
+  costRunId?: string;
   onProgress?: PipelineProgress;
 }): Promise<PipelineResult> {
   // Check before downloading or transcribing, both of which can incur costs.
@@ -676,7 +689,7 @@ export async function runAnalysisPipeline(opts: {
     progress("download", "done");
 
     progress("transcribe", "running", Math.max(20, Math.round(totalWindowS * 0.25)));
-    words = await withMem("transcribe", () => transcribeWindows(paths, windows));
+    words = await withMem("transcribe", () => transcribeWindows(paths, windows, opts.costRunId));
     if (words.length === 0) {
       throw new Error("Transcription returned no words — the VOD may have no speech.");
     }
@@ -690,10 +703,11 @@ export async function runAnalysisPipeline(opts: {
     progress("download", "done");
 
     progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
-    const result = await withMem("transcribe", () => transcribe(audioPath));
+    const result = await withMem("transcribe", () => transcribe(audioPath, opts.costRunId));
     words = result.words;
     durationSeconds = result.durationSeconds;
   }
+  if (opts.costRunId) console.log(`[analysis-usage] ${JSON.stringify({ runId: opts.costRunId, vodSeconds: durationSeconds, mode: windows.length ? "chat-sampled" : "full" })}`);
   console.log(`[mem] transcribe produced ${words.length} words`);
   progress("transcribe", "done");
 
@@ -718,10 +732,10 @@ export async function runAnalysisPipeline(opts: {
     console.log(`[analyze] keyword="${keyword}" matched ${keywordMatchSeconds.length} time(s) in transcript`);
   }
   const { clips, skipped } = await withMem("find-clips", () =>
-    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds, opts.priorWindows ?? [], opts.creatorPreferences ?? "")
+    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds, opts.priorWindows ?? [], opts.creatorPreferences ?? "", opts.costRunId)
   );
   const visuallyCheckedClips = await withMem("vision-check", () =>
-    validateFinalistVisuals(clips, uploadedPath ?? url, workDir, !!uploadedPath));
+    validateFinalistVisuals(clips, uploadedPath ?? url, workDir, !!uploadedPath, opts.costRunId));
   progress("analyze", "done");
 
   const clipsWithWords = visuallyCheckedClips.map((clip) => ({

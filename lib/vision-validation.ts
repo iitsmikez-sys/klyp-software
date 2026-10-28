@@ -7,11 +7,12 @@ import { resolveBin, run } from "@/lib/bin";
 import { resolveSourceSegment } from "@/lib/video-cache";
 import type { Clip } from "@/lib/clips";
 import { planVisualChecks, applyVisualCheck } from "@/lib/vision-plan";
+import { recordProviderUsage } from "@/lib/provider-cost";
 
 const visualResult = z.object({ adjustment: z.number().int().min(-4).max(4) });
 
 /** Best effort visual corroboration. Frame fetch/model failure leaves audio ranking intact. */
-export async function validateFinalistVisuals<T extends Clip>(clips: T[], source: string, workDir: string, isLocal = false): Promise<T[]> {
+export async function validateFinalistVisuals<T extends Clip>(clips: T[], source: string, workDir: string, isLocal = false, costRunId?: string): Promise<T[]> {
   if (!clips.length || !process.env.ANTHROPIC_API_KEY) return clips;
   const result = [...clips];
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
@@ -36,6 +37,12 @@ export async function validateFinalistVisuals<T extends Clip>(clips: T[], source
         ] }],
         output_config: { format: zodOutputFormat(visualResult) },
       }, { timeout: 30_000, maxRetries: 0 });
+      if (costRunId) recordProviderUsage({
+        runId: costRunId, provider: "anthropic", model: process.env.KLYP_VISION_MODEL || "claude-sonnet-4-6",
+        inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
+        cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+      });
       const body = response.content.find((block) => block.type === "text")?.text ?? "";
       const { adjustment } = visualResult.parse(JSON.parse(body));
       result[index] = applyVisualCheck(clip, adjustment) as T;
