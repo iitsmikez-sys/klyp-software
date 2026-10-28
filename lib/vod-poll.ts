@@ -116,6 +116,7 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
       url: job.url,
       durationHint: job.duration_seconds,
       clipCount,
+      costRunId: job.id,
       workDir,
       creatorPreferences,
     }));

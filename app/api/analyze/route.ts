@@ -210,6 +210,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               url,
               durationHint,
               clipCount,
+              costRunId: reqId,
               contentType,
               keyword,
               priorWindows,
