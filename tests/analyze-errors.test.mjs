@@ -29,3 +29,10 @@ test("recognizes the user-facing YouTube block so the page can offer file upload
   assert.equal(analyzeErrors.isYouTubeBotBlockError?.(message) ?? false, true);
   assert.equal(analyzeErrors.isYouTubeBotBlockError?.("Could not transcribe audio") ?? false, false);
 });
+test("explains exhausted Anthropic credits without exposing provider JSON", () => {
+  const liveError = '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_example"}';
+  const message = userFacingAnalysisError("analyze", "https://www.twitch.tv/videos/123", liveError);
+  assert.match(message, /temporarily unavailable/i);
+  assert.match(message, /No Sparks were charged/i);
+  assert.doesNotMatch(message, /request_id|Plans & Billing|400/);
+});

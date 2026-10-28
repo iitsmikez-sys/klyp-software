@@ -19,6 +19,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRecentVods, parseTwitchDuration } from "@/lib/twitch";
 import { unseenVods } from "@/lib/vod-discovery";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
+import { anthropicCreditGate, isAnthropicCreditBalanceError, pauseAutomaticClipping } from "@/lib/anthropic-credit";
 import { preferencesForUser } from "@/lib/creator-feedback-data";
 import { processClipArchiveJobs } from "@/lib/clip-archive-worker";
 import { runQueued } from "@/lib/job-queue";
@@ -167,8 +168,25 @@ async function processAutoVodJobs(): Promise<void> {
     try {
       await processJob(admin, job);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const exhaustedCredits = isAnthropicCreditBalanceError(err);
+      const message = exhaustedCredits ? "Anthropic API credit balance is empty" : err instanceof Error ? err.message : String(err);
       log("auto-clip FAILED", job.stream_id, job.video_id, message);
+      if (exhaustedCredits) {
+        anthropicCreditGate.blockOn(err);
+        // One shared Anthropic key serves every stream. Stop new provider work
+        // and cancel queued jobs instead of retrying after paid transcription.
+        try {
+          await pauseAutomaticClipping(admin);
+          log("automatic clipping paused for all streams until provider credit is restored");
+        } catch (pauseError) {
+          log("failed to pause automatic clipping", pauseError instanceof Error ? pauseError.message : pauseError);
+          const { error: failError } = await admin.rpc("fail_auto_vod_job", {
+            p_job_id: job.id, p_error: message, p_retry_seconds: 86400,
+          });
+          if (failError) throw failError;
+        }
+        return;
+      }
       const retrySeconds = Math.min(86400, 120 * 2 ** Math.min(job.attempts - 1, 10));
       const { data: status, error: failError } = await admin.rpc("fail_auto_vod_job", {
         p_job_id: job.id, p_error: message, p_retry_seconds: retrySeconds,
