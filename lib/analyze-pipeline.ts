@@ -34,6 +34,7 @@ import {
 } from "@/lib/twitch-chat";
 import { type ClipCount } from "@/lib/sparks";
 import { validateFinalistVisuals } from "@/lib/vision-validation";
+import { anthropicCreditGate } from "@/lib/anthropic-credit";
 
 /* ── Stage 2: download audio with yt-dlp ── */
 export async function downloadAudio(url: string, dir: string): Promise<string> {
@@ -633,6 +634,8 @@ export async function runAnalysisPipeline(opts: {
   chatSpikesPromise?: Promise<ChatSpike[] | null> | null;
   onProgress?: PipelineProgress;
 }): Promise<PipelineResult> {
+  // Check before downloading or transcribing, both of which can incur costs.
+  anthropicCreditGate.assertAvailable();
   const { uploadedPath, url, durationHint, clipCount, workDir, onProgress } = opts;
   const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
   const keyword = opts.keyword;

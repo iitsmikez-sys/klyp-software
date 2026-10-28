@@ -42,6 +42,7 @@ import { saveTranscript } from "@/lib/transcripts";
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
+import { anthropicCreditGate } from "@/lib/anthropic-credit";
 import { vodSourceKey } from "@/lib/vod-source";
 import { priorClipWindows, recordAndChargeClips } from "@/lib/analysis-history";
 import { preferencesForToken } from "@/lib/creator-feedback-data";
@@ -253,6 +254,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           sparksBalance: accounted.sparksBalance,
         });
       } catch (err) {
+        anthropicCreditGate.blockOn(err);
         let message = err instanceof Error ? err.message : "Pipeline failed.";
         if (err instanceof Anthropic.AuthenticationError) {
           message = "Invalid ANTHROPIC_API_KEY — check your key in .env.local.";
