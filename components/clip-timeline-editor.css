@@ -129,7 +129,10 @@
 .editor-source [role=status],.editor-source [role=alert] { background:#0d1822ed; padding:20px; border:1px solid #30434f; border-radius:10px; box-shadow:0 12px 40px #0007 }
 .editor-source video { position:absolute; width:1px; height:1px; clip-path:inset(50%); pointer-events:none }
 .editor-source button { display:block; color:var(--editor-mint); margin:8px auto 0; padding:0 12px }
-.editor-transport { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 16px; width:100%; min-height:64px; border-top:1px solid var(--editor-border); background:#0b141b; flex-shrink:0 }
+.editor-transport { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:10px; padding:8px 16px; width:100%; min-height:64px; border-top:1px solid var(--editor-border); background:#0b141b; flex-shrink:0 }
+.editor-transport-center { display:flex; align-items:center; justify-content:center; gap:16px; min-width:0 }
+.editor-transport .editor-volume { justify-self:start }
+.editor-transport select { justify-self:end }
 .editor-transport button { display:flex; align-items:center; justify-content:center; width:44px; border-radius:6px }
 .editor-volume,.editor-playback { display:flex; align-items:center; gap:2px }
 .editor-volume input { width:48px }
@@ -294,10 +297,11 @@
  .editor-player { order:-2; height:490px; flex-shrink:0; border-bottom:1px solid var(--editor-border) }
  .editor-stage { padding:12px }
  .editor-transport { padding:8px 12px; gap:6px }
+ .editor-transport-center { gap:8px }
  .editor-volume input { display:none }
  .editor-time { font-size:11px }
- .editor-playback button { width:44px }
- .editor-transport select { width:68px; padding:8px }
+ .editor-playback button { width:36px }
+ .editor-transport select { width:72px; padding:8px }
  .editor-rail { flex-direction:row; order:-1; padding:8px 12px; border-bottom:1px solid var(--editor-border) }
  .editor-rail button { height:44px; flex:1; flex-direction:row; font-size:13px; border-left:0; border-bottom:2px solid transparent }
  .editor-rail button[aria-pressed=true] { border-bottom-color:var(--editor-mint) }
@@ -317,5 +321,10 @@
  .editor-track-labels { width:60px; font-size:10px }
  .clip-editor .editor-scrubber { width:calc(100% - 60px); margin-left:60px }
 }
-@media(max-width:380px) { .editor-transport { padding:8px; gap:0 }.editor-transport select { width:64px } }
+@media(max-width:380px) {
+ .editor-transport { grid-template-rows:36px 18px; min-height:70px; padding:8px; gap:0 }
+ .editor-transport-center { grid-column:2; grid-row:1/3; flex-direction:column-reverse; gap:0 }
+ .editor-transport .editor-volume,.editor-transport select { grid-row:1 }
+ .editor-transport select { width:64px }
+}
 
