@@ -939,7 +939,7 @@ export default function AnalyzePanel() {
 
         <details className="group mt-4 border-t border-border pt-3">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm text-foreground-muted marker:content-none hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-            <span className="font-medium text-foreground">Clip options <span className="ml-2 font-normal text-foreground-muted">{clipCount} clips · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · keyword added" : ""}</span></span>
+            <span className="font-medium text-foreground">Clip Settings <span className="ml-2 font-normal text-foreground-muted">{clipCount} clips · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · keyword added" : ""}</span></span>
             <span aria-hidden="true" className="text-lg leading-none transition-transform group-open:rotate-45">+</span>
           </summary>
           <div className="pt-4">
