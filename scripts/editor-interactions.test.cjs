@@ -16,6 +16,8 @@ const editorPath = `/dashboard/clips/${clipId}/edit`;
 const write = (file, text) => { const dest = path.join(fixture, file); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, text); };
 const copy = (file, dest = file) => write(dest, fs.readFileSync(path.join(root, file)));
 const clip = { id: clipId, title: 'Synthetic geography clip', start_seconds: 100, end_seconds: 118, url: 'fixture', hooks: ['GEOGRAPHY LIVE'], words: Array.from({ length: 32 }, (_, i) => ({ text: ['Wait,', 'is', 'France', 'in', 'the', 'EU?', 'Chat', 'what?'][i % 8], start: 100000 + i * 500, end: 100400 + i * 500 })) };
+const audioOnly = process.env.EDITOR_AUDIO_ONLY === '1';
+const audibleVideo = audioOnly ? execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=15:duration=18','-f','lavfi','-i','sine=frequency=440:sample_rate=44100:duration=18','-c:v','libx264','-preset','ultrafast','-crf','35','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-movflags','frag_keyframe+empty_moov','-f','mp4','pipe:1'], { maxBuffer: 8 * 1024 * 1024, windowsHide: true }) : null;
 for (const dir of ['components', 'lib']) fs.cpSync(path.join(root, dir), path.join(fixture, dir), { recursive: true });
 
 write('package.json', JSON.stringify({ private: true, dependencies: { next: '14.2.35', react: '^18', 'react-dom': '^18' } }));
@@ -48,11 +50,39 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   let requests = 0, delaySave = false, releaseSave;
-  await page.route('**/api/preview', route => { requests++; return route.fulfill({ status: 200, contentType: 'video/mp4', body: 'not a decodable MP4' }); });
+  await page.route('**/api/preview', route => { requests++; return route.fulfill({ status: 200, contentType: 'video/mp4', body: audibleVideo ?? 'not a decodable MP4' }); });
   await page.route('**/api/vertical-layout', route => route.fulfill({ json: {} }));
   await page.route('**/api/clips/*/media', route => route.fulfill({ json: { assets: [] } }));
   await page.route('**/api/clips/*/edit-draft', async route => { const draft = route.request().postDataJSON().draft; if (delaySave) await new Promise(resolve => releaseSave = resolve); await route.fulfill({ json: { edit_draft: draft } }); });
   await page.goto(url); await page.getByRole('link', { name: 'Open fixture editor' }).click(); await page.getByLabel('Hook text').waitFor();
+  if (audioOnly) {
+    await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+    await page.evaluate(() => {
+      const video = document.querySelector('video');
+      window.audioProbe = { seeks: 0, times: [] };
+      video.addEventListener('seeking', () => window.audioProbe.seeks++);
+      const sample = () => { if (!video.paused) window.audioProbe.times.push(video.currentTime); requestAnimationFrame(sample); };
+      requestAnimationFrame(sample);
+    });
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.waitForTimeout(3000);
+    const playback = await page.evaluate(() => {
+      const times = window.audioProbe.times;
+      return { seeks: window.audioProbe.seeks, backwards: times.slice(1).filter((time, i) => time < times[i] - .05).length, advanced: times.at(-1) - times[0], audiblePlayers: [...document.querySelectorAll('video,audio')].filter(media => !media.muted && !media.paused).length };
+    });
+    assert(playback.advanced > 2, `Video stalled during continuous playback: ${JSON.stringify(playback)}`);
+    assert(playback.seeks <= 2 && playback.backwards === 0, `Video repeatedly sought during continuous playback: ${JSON.stringify(playback)}`);
+    assert.equal(playback.audiblePlayers, 1, 'exactly one audible preview should play');
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    const scrubber = page.getByLabel('Playhead position');
+    const bounds = await scrubber.boundingBox();
+    await page.mouse.click(bounds.x + bounds.width * 12 / 18, bounds.y + bounds.height / 2);
+    await page.waitForTimeout(300);
+    const seeked = await page.locator('video').evaluate(video => video.currentTime);
+    assert(seeked > 11 && seeked < 13, `Explicit timeline seek landed at ${seeked}s instead of 12s`);
+    console.log(`PASS: continuous audio playback and explicit seek: ${JSON.stringify({ ...playback, seeked })}`);
+    return;
+  }
   // A successful HTTP request can still fail decoding. Retry must be reachable.
   const retry = page.getByRole('button', { name: 'Retry preview' }); await retry.waitFor();
   const bounds = await retry.boundingBox(); assert(bounds && bounds.width > 20 && bounds.height > 10, 'decode Retry must not be clipped');

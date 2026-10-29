@@ -5,12 +5,13 @@ import { previewSourceStart, decodeEditedPeaks, nextPlaybackPosition, sampleVide
 import type { SourceSegment } from '@/lib/editor-timeline';
 import type { SavedClip } from '@/lib/clip-ui';
 export type EditorMediaData = { thumbnails: EditorThumbnail[]; peaks: number[] | null; loading: boolean };
+export type EditorSeekRequest = { seconds: number; id: number };
 export type EditorMediaProps = {
- clip: SavedClip; segments: SourceSegment[]; outputTime: number; playing: boolean;
+ clip: SavedClip; segments: SourceSegment[]; outputTime: number; seekRequest: EditorSeekRequest; playing: boolean;
  onTimeChange: (seconds: number) => void; onPlayingChange: (playing: boolean) => void;
  onVideo?: (video: HTMLVideoElement | null) => void; onMedia?: (data: EditorMediaData) => void;
 };
-export default function EditorMedia({ clip, segments, outputTime, playing, onTimeChange, onPlayingChange, onVideo, onMedia }: EditorMediaProps) {
+export default function EditorMedia({ clip, segments, outputTime, seekRequest, playing, onTimeChange, onPlayingChange, onVideo, onMedia }: EditorMediaProps) {
  const ref = useRef<HTMLVideoElement>(null);
  const [media, setMedia] = useState<{url:string; blob:Blob; sourceStart:number} | null>(null);
  const sourceStart = media?.sourceStart ?? clip.start_seconds;
@@ -19,6 +20,7 @@ export default function EditorMedia({ clip, segments, outputTime, playing, onTim
  const [attempt, setAttempt] = useState(0);
  const callbacks = useRef({onTimeChange,onPlayingChange,onVideo,onMedia}); callbacks.current={onTimeChange,onPlayingChange,onVideo,onMedia};
  const clock = useRef(outputTime);
+ const appliedSeekId = useRef(seekRequest.id);
  useEffect(() => {
   const controller = new AbortController(); let url: string | null = null; let active = true; let timedOut = false;
   const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 300000);
@@ -52,9 +54,14 @@ export default function EditorMedia({ clip, segments, outputTime, playing, onTim
   if(video.readyState>=1)ready();
   return ()=>{cancelAnimationFrame(frame);video.removeEventListener('loadedmetadata',ready);video.removeEventListener('ended',publish);video.removeEventListener('timeupdate',publish);callbacks.current.onVideo?.(null);};
  },[media,segments,sourceStart]);
- // A parent echoes published playback time through this controlled prop. Only a
- // different value requests a seek; pending loading values stay in clock for metadata.
- useEffect(()=>{const requested=outputTime!==clock.current;clock.current=outputTime;const video=ref.current;if(requested && video && video.readyState>=1)seekEditedVideo(video,segments,outputTime,sourceStart);},[outputTime,segments,sourceStart,media]);
+ // Playback progress is a report, not a seek. Seek only for an explicit user action.
+ useEffect(()=>{
+  if(appliedSeekId.current===seekRequest.id)return;
+  appliedSeekId.current=seekRequest.id;
+  clock.current=seekRequest.seconds;
+  const video=ref.current;
+  if(video && video.readyState>=1)seekEditedVideo(video,segments,seekRequest.seconds,sourceStart);
+ },[seekRequest,segments,sourceStart,media]);
  useEffect(()=>{const video=ref.current;if(!video || !media)return;if(playing)video.play().catch(()=>callbacks.current.onPlayingChange(false));else video.pause();},[playing,media]);
  return <div className="relative bg-black rounded-lg" aria-label="Source preview">
   {media && <video ref={ref} src={media.url} playsInline preload="auto" className="w-full max-h-[60vh]" onLoadedData={()=>setDecoded(true)} onError={()=>{setError('Preview cannot be decoded. Retry to load footage.');callbacks.current.onPlayingChange(false);callbacks.current.onVideo?.(null);}} />}
