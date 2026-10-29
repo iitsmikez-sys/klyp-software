@@ -8,7 +8,6 @@ import {
   CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
-  MAX_CLIP_COUNT,
   type ClipCount,
 } from "@/lib/sparks";
 import { useSparks } from "./SparksProvider";
@@ -131,7 +130,6 @@ export default function AnalyzePanel() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [clipCount, setClipCount] = useState<ClipCount>(DEFAULT_CLIP_COUNT);
-  const [confirmMaxOpen, setConfirmMaxOpen] = useState(false);
   const [analysisNote, setAnalysisNote] = useState<string | null>(null);
   // Background health poll — lets the UI notice the processing service going
   // down (or coming back) without the user having to reload the page.
@@ -409,13 +407,6 @@ export default function AnalyzePanel() {
     e.preventDefault();
     if (loading) return;
     if (inputMode === "file" ? !uploadedFile : !url) return;
-    // MAX mode is the priciest run — require explicit confirmation before
-    // anything fires. Nothing is charged at this point either way: the server
-    // deducts Sparks only after the analysis completes (see /api/analyze).
-    if (clipCount === MAX_CLIP_COUNT) {
-      setConfirmMaxOpen(true);
-      return;
-    }
     void runAnalysis();
   };
 
@@ -973,7 +964,7 @@ export default function AnalyzePanel() {
                     : "bg-surface-2 text-foreground-muted hover:text-foreground"
                 }`}
               >
-                {n === MAX_CLIP_COUNT ? `${n} MAX` : n}{" "}
+                {n}{" "}
                 <span className="font-normal opacity-90">· {CLIP_COUNT_COST[n]}⚡</span>
               </button>
             ))}
@@ -1216,44 +1207,6 @@ export default function AnalyzePanel() {
 
       {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}
 
-      {/* MAX clips confirmation — nothing runs (and nothing is charged) until confirmed. */}
-      {confirmMaxOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setConfirmMaxOpen(false); }}
-        >
-          <div className="w-full max-w-sm bg-surface border border-border rounded-2xl shadow-2xl p-5 space-y-3">
-            <p className="font-syne font-bold text-foreground">MAX clips analysis</p>
-            <p className="text-sm text-foreground-muted">
-              Are you sure? You are using{" "}
-              <span className="font-syne font-bold text-accent">
-                {totalEstimate ?? CLIP_COUNT_COST[clipCount]}⚡
-              </span>{" "}
-              for <span className="font-syne font-bold text-accent">{clipCount} clips</span>
-              {totalEstimate === null && <> (plus the VOD-length cost, added once the video is probed)</>}.
-            </p>
-            <p className="text-[11px] text-subtle">
-              Fewer clips may come back (quality floor) — you&apos;re only charged for what MIDAS
-              actually returns, and nothing is deducted until the analysis completes.
-            </p>
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                onClick={() => setConfirmMaxOpen(false)}
-                className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold font-syne text-foreground-muted hover:text-foreground transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { setConfirmMaxOpen(false); void runAnalysis(); }}
-                className="px-3 py-1.5 rounded-lg bg-accent text-background text-xs font-bold font-syne hover:bg-accent-dim transition-colors"
-              >
-                Yes, analyze
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Preview modal ── */}
       {previewIndex !== null && clips && (
         <ClipPreviewModal
@@ -1279,3 +1232,4 @@ export default function AnalyzePanel() {
     </section>
   );
 }
+
