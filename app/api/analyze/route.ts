@@ -20,13 +20,15 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { mkdtemp, rm } from "fs/promises";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "os";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveBin, runCapture, runYtDlpCaptureWithIpv6Fallback } from "@/lib/bin";
 import type { AnalyzeResponse, AnalyzeEvent, AnalyzeStage, ContentType } from "@/lib/clips";
 import { CONTENT_TYPES, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
 import { findUploadedVideo } from "@/lib/video-cache";
-import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
+import { bearerToken, getProfileFromToken, tokenClient } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
 import {
   estimateSparks,
@@ -38,13 +40,16 @@ import {
 } from "@/lib/sparks";
 import { detectChatSpikes, type ChatSpike } from "@/lib/twitch-chat";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
-import { saveTranscript } from "@/lib/transcripts";
+import { runDiscoveryPipeline } from "@/lib/vod-discovery-pipeline";
+import { saveTranscript, loadJobTranscript, findReusableFullTranscript } from "@/lib/transcripts";
+import { createSafeEventSender } from "@/lib/analysis-sse";
+import { createOrLoadAnalysisJob, getAnalysisJob, claimAnalysisJob, checkpointAnalysisJob, failAnalysisJob, accountAnalysisJob, isAnalysisJobStale } from "@/lib/analysis-jobs";
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
 import { vodSourceKey } from "@/lib/vod-source";
-import { priorClipWindows, recordAndChargeClips } from "@/lib/analysis-history";
+import { priorClipWindows } from "@/lib/analysis-history";
 import { preferencesForToken } from "@/lib/creator-feedback-data";
 
 export const runtime = "nodejs";
@@ -60,6 +65,30 @@ type FailStage = Extract<AnalyzeResponse, { ok: false }>["stage"];
 
 function fail(stage: FailStage, error: string, status = 500) {
   return NextResponse.json({ ok: false, error, stage } satisfies AnalyzeResponse, { status });
+}
+
+function observeRunningJob(userId: string, jobId: string): Response {
+  let disconnected = false;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const sender = createSafeEventSender(controller);
+      sender.send({ type: "job", jobId });
+      const deadline = Date.now() + 31 * 60_000;
+      try {
+        while (!disconnected && Date.now() < deadline) {
+          const current = await getAnalysisJob(userId, jobId);
+          if (current?.status === "completed" && current.result) { sender.send(current.result); break; }
+          if (current?.status === "failed") { sender.send({ type: "error", stage: current.stage, error: current.error ?? "Analysis failed." }); break; }
+          if (!sender.ping()) break;
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+      } catch (error) {
+        sender.send({ type: "error", stage: "analyze", error: error instanceof Error ? error.message : "Could not check analysis status." });
+      } finally { sender.close(); }
+    },
+    cancel() { disconnected = true; },
+  });
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" } });
 }
 
 /* ── Route handler ── */
@@ -81,8 +110,11 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let clipCount: ClipCount = DEFAULT_CLIP_COUNT;
   let contentType: ContentType = DEFAULT_CONTENT_TYPE;
   let keyword: string | undefined; // optional — weights matching transcript moments higher (see lib/analyze-pipeline.ts)
+  let requestedJobId: string | undefined;
   try {
     const body = await req.json();
+    if (typeof body.jobId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.jobId)) requestedJobId = body.jobId;
+    else if (body.jobId !== undefined) return fail("validate", "Invalid analysis job ID.", 400);
     url = String(body.url ?? "").trim();
     const rawUploadId = String(body.uploadId ?? "").trim();
     if (rawUploadId) uploadId = rawUploadId;
@@ -105,20 +137,6 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return fail("validate", "Please provide a valid YouTube video or Twitch VOD URL.", 400);
   }
 
-  let uploadedPath: string | null = null;
-  if (uploadId) {
-    uploadedPath = await findUploadedVideo(uploadId);
-    if (!uploadedPath) {
-      return fail("validate", "Uploaded file not found — upload your VOD again.", 400);
-    }
-  }
-  if (!process.env.ASSEMBLYAI_API_KEY) {
-    return fail("validate", "ASSEMBLYAI_API_KEY is not set. Add it to .env.local (see README).", 500);
-  }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return fail("validate", "ANTHROPIC_API_KEY is not set. Add it to .env.local (see README).", 500);
-  }
-
   // -- Sparks gate: must be logged in with enough balance for the cheapest analysis --
   // Verified via Bearer token, not cookies — this service is on a different
   // origin than the frontend that calls it.
@@ -132,6 +150,28 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!profile) {
     return fail("validate", "You must be signed in to analyze a VOD.", 401);
   }
+  const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null };
+  let job;
+  try {
+    job = await createOrLoadAnalysisJob(profile.id, requestedJobId ?? randomUUID(), sourceKey, intent);
+  } catch (error) {
+    return fail("validate", error instanceof Error ? error.message : "Could not create analysis job.", 503);
+  }
+  const jobId = job.id;
+  if (job.status === "completed" && job.result) return NextResponse.json({ jobId, ...job.result });
+  if (job.status === "running" && !isAnalysisJobStale(job)) return observeRunningJob(profile.id, jobId);
+
+  let uploadedPath: string | null = null;
+  if (uploadId) {
+    uploadedPath = await findUploadedVideo(uploadId);
+    if (!uploadedPath) return fail("validate", "Uploaded file not found — upload your VOD again.", 400);
+  }
+  if (!process.env.ASSEMBLYAI_API_KEY) {
+    return fail("validate", "ASSEMBLYAI_API_KEY is not set. Add it to .env.local (see README).", 500);
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return fail("validate", "ANTHROPIC_API_KEY is not set. Add it to .env.local (see README).", 500);
+  }
   let priorWindows;
   try {
     priorWindows = await priorClipWindows(token!, sourceKey);
@@ -139,23 +179,58 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return fail("validate", err instanceof Error ? err.message : "Could not check earlier clips.", 503);
   }
   const creatorPreferences = await preferencesForToken(token!);
-  const upfrontCost = durationHint
-    ? estimateSparks(durationHint) + CLIP_COUNT_COST[clipCount]
-    : MIN_ANALYZE_COST;
-  if (profile.sparks < upfrontCost) {
+  if (profile.sparks < MIN_ANALYZE_COST) {
     return fail(
       "validate",
-      `Not enough Sparks — this will cost ${upfrontCost}⚡ but you only have ${profile.sparks}⚡ remaining. Upgrade to Pro.`,
+      `Not enough Sparks — analysis starts at ${MIN_ANALYZE_COST}⚡ but you only have ${profile.sparks}⚡ remaining. Upgrade to Pro.`,
       402
     );
   }
 
   const releaseSlot = acquireUserProcessingSlot(profile.id);
   if (!releaseSlot) return fail("validate", "Too many requests are processing. Try again shortly.", 429);
+  // The browser's duration is only a display hint. Verify the source length
+  // before any paid transcription or AI call, then pass that length to the
+  // pipeline so long-VOD window planning cannot rely on a shortened hint.
+  let verifiedDuration: number;
+  try {
+    const output = await runQueued(`duration:${profile.id}`, () => uploadedPath
+      ? runCapture(resolveBin("ffprobe"), ["-v", "error", "-show_entries", "format=duration",
+          "-of", "default=noprint_wrappers=1:nokey=1", uploadedPath], { maxRunMs: 20_000 })
+      : runYtDlpCaptureWithIpv6Fallback(["--print", "duration", "--skip-download", "--no-playlist", url]));
+    verifiedDuration = Math.round(Number.parseFloat(output.trim()));
+    if (!Number.isFinite(verifiedDuration) || verifiedDuration <= 0) {
+      throw new Error("The VOD duration is unavailable.");
+    }
+  } catch (err) {
+    releaseSlot();
+    return fail("validate", err instanceof Error ? `Could not verify VOD duration: ${err.message}` : "Could not verify VOD duration.", 503);
+  }
+  if (verifiedDuration > 10 * 60 * 60) {
+    releaseSlot();
+    return fail("validate", "VODs over 10 hours are not supported during the limited launch.", 413);
+  }
+  const upfrontCost = estimateSparks(verifiedDuration) + CLIP_COUNT_COST[clipCount];
+  if (profile.sparks < upfrontCost) {
+    releaseSlot();
+    return fail("validate", `Not enough Sparks — this will cost ${upfrontCost}⚡ but you only have ${profile.sparks}⚡ remaining. Upgrade to Pro.`, 402);
+  }
+  durationHint = verifiedDuration;
+  let runToken: string | null;
+  try { runToken = await claimAnalysisJob(job); }
+  catch (error) {
+    releaseSlot();
+    return fail("validate", error instanceof Error ? error.message : "Could not start analysis job.", 503);
+  }
+  if (!runToken) {
+    releaseSlot();
+    return observeRunningJob(profile.id, jobId);
+  }
   let workDir: string;
   try { workDir = await mkdtemp(path.join(tmpdir(), "klyp-")); }
   catch (err) {
     releaseSlot();
+    await failAnalysisJob(jobId, runToken, "Could not prepare video processing.").catch(() => {});
     return fail("validate", err instanceof Error ? err.message : "Could not prepare video processing.", 500);
   }
 
@@ -170,21 +245,20 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     console.log(`[analyze ${reqId}]`, new Date().toISOString(), ...args);
   log("start", uploadId ? `upload:${uploadId}` : url, `clips=${clipCount}`, `content=${contentType}`, `keyword=${keyword ?? "-"}`, `hint=${durationHint ?? "-"}s`);
 
-  const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event: AnalyzeEvent) =>
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      const sender = createSafeEventSender(controller);
+      const send = (event: AnalyzeEvent) => sender.send(event);
+      sender.send({ type: "job", jobId });
 
       // SSE comment heartbeat every 10s — keeps proxies from buffering/closing
       // the idle stream and lets the client detect a dead connection.
       const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(`: ping\n\n`));
-        } catch {
-          clearInterval(heartbeat);
-        }
+        sender.ping();
       }, 10_000);
+      const leaseHeartbeat = setInterval(() => {
+        void checkpointAnalysisJob(jobId, runToken, {}).catch((error) => log("job heartbeat failed", error));
+      }, 60_000);
 
       let stage: AnalyzeStage = "download";
       let stageStarted = Date.now();
@@ -193,7 +267,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // Twitch chat spike detection runs in parallel with download+transcribe
         // (best-effort — null for YouTube, uploads, muted chat, or network failures).
         // Without a duration hint runAnalysisPipeline starts it after transcription instead.
-        const spikesPromise: Promise<ChatSpike[] | null> | null = !uploadedPath && durationHint
+        const useDiscoveryV2 = process.env.KLYP_DISCOVERY_V2 === "1" && !!durationHint && !!sourceKey;
+        const spikesPromise: Promise<ChatSpike[] | null> | null = !useDiscoveryV2 && !uploadedPath && durationHint
           ? detectChatSpikes(url, durationHint).catch(() => null)
           : null;
 
@@ -202,22 +277,37 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // /api/preview, so the container never runs more than
         // MAX_CONCURRENT_JOBS yt-dlp+ffmpeg pipelines at once regardless of
         // which route they came from.
-        const { clips: clipsWithWords, skipped, durationSeconds, transcriptChars, words } = await runQueued(
+        const cachedTranscript = job.analysis_clips || useDiscoveryV2 ? null
+          : await loadJobTranscript(token!, jobId) ?? await findReusableFullTranscript(token!, sourceKey);
+        const pipelineResult = job.analysis_clips ? {
+          clips: job.analysis_clips, skipped: 0, durationSeconds: job.analysis_duration_seconds!,
+          transcriptChars: job.transcript_chars ?? 0, words: [],
+        } : await runQueued(
           `analyze:${reqId}`,
-          () =>
-            runAnalysisPipeline({
+          () => {
+            const options = {
               uploadedPath,
               url,
               durationHint,
               clipCount,
-              costRunId: reqId,
+              costRunId: jobId,
               contentType,
               keyword,
               priorWindows,
               creatorPreferences,
               workDir,
               chatSpikesPromise: spikesPromise,
-              onProgress: (progressStage, status, etaSeconds) => {
+              cachedTranscript: cachedTranscript ?? undefined,
+              onTranscript: async ({ words, durationSeconds, coverageMode }: { words: import("@/lib/clips").TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" }) => {
+                await saveTranscript(token!, { userId: profile.id, jobId, sourceKey, coverageMode,
+                  url: uploadId ? `upload:${uploadId}` : url, durationSeconds, words });
+                await checkpointAnalysisJob(jobId, runToken, { stage: "analyze" });
+              },
+              onAnalysis: async ({ clips, durationSeconds, transcriptChars }: import("@/lib/analyze-pipeline").PipelineResult) => {
+                await checkpointAnalysisJob(jobId, runToken, { stage: "analyze", analysis_clips: clips,
+                  analysis_duration_seconds: durationSeconds, transcript_chars: transcriptChars });
+              },
+              onProgress: (progressStage: AnalyzeStage, status: "running" | "done", etaSeconds?: number) => {
                 if (status === "running") {
                   stage = progressStage;
                   stageStarted = Date.now();
@@ -225,9 +315,18 @@ async function handlePOST(req: NextRequest): Promise<Response> {
                   log(`${progressStage}: done in`, elapsed());
                 }
                 send({ type: "progress", stage: progressStage, status, etaSeconds });
+                if (status === "running") void checkpointAnalysisJob(jobId, runToken, { stage: progressStage }).catch((error) => log("progress checkpoint failed", error));
               },
-            })
+            };
+            return useDiscoveryV2
+              ? runDiscoveryPipeline({ ...options, sourceKey: sourceKey!, userId: profile.id,
+                  client: tokenClient(token!), durationHint: durationHint! })
+              : runAnalysisPipeline(options);
+          }
         );
+        const { clips: clipsWithWords, skipped, durationSeconds, transcriptChars, words } = pipelineResult;
+        if (!job.analysis_clips) await checkpointAnalysisJob(jobId, runToken, { stage: "analyze",
+          analysis_clips: clipsWithWords, analysis_duration_seconds: durationSeconds, transcript_chars: transcriptChars });
         log(
           "pipeline: done —",
           `${clipsWithWords.length}/${clipCount} clips${skipped > 0 ? ` (${skipped} malformed clip${skipped === 1 ? "" : "s"} skipped)` : ""}`
@@ -236,24 +335,15 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // Best-effort: persist the transcript for future keyword search.
         // Never blocks or fails the analysis response — the migration that
         // creates this table may not be applied yet (see migration 006).
-        saveTranscript(token!, { url: uploadId ? `upload:${uploadId}` : url, durationSeconds, words }).catch((err) =>
-          log("transcript save failed (non-fatal):", err instanceof Error ? err.message : String(err))
-        );
+        if (useDiscoveryV2) saveTranscript(token!, { userId: profile.id, url: uploadId ? `upload:${uploadId}` : url,
+          durationSeconds, words }).catch((err) => log("transcript search copy failed (non-fatal):", err));
 
         // A single database transaction filters clips sold in other requests,
         // records new windows, and charges only for the accepted result.
-        const accounted = await recordAndChargeClips(token!, sourceKey, clipsWithWords, durationSeconds, clipCount);
-        log("accounted", `${accounted.clips.length} new clips`, `${accounted.sparksSpent} Sparks`);
-
-        send({
-          type: "result",
-          clips: accounted.clips,
-          durationSeconds,
-          transcriptChars,
-          requestedClips: clipCount,
-          sparksSpent: accounted.sparksSpent,
-          sparksBalance: accounted.sparksBalance,
-        });
+        const result = await accountAnalysisJob(token!, jobId, runToken, clipsWithWords, durationSeconds, clipCount);
+        if (result.type !== "result") throw new Error("Accounting returned an invalid result.");
+        log("accounted", `${result.clips.length} new clips`, `${result.sparksSpent} Sparks`);
+        send(result);
       } catch (err) {
         anthropicCreditGate.blockOn(err);
         let message = err instanceof Error ? err.message : "Pipeline failed.";
@@ -263,12 +353,15 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           message = "Claude API rate limit hit — wait a moment and try again.";
         }
         console.error(`[analyze ${reqId}] FAILED at ${stage} after ${elapsed()}:`, err);
-        send({ type: "error", stage, error: userFacingAnalysisError(stage, url, message) });
+        const displayError = userFacingAnalysisError(stage, url, message);
+        await failAnalysisJob(jobId, runToken, displayError).catch((error) => log("job failure checkpoint failed", error));
+        send({ type: "error", stage, error: displayError });
       } finally {
         releaseSlot();
         clearInterval(heartbeat);
+        clearInterval(leaseHeartbeat);
         rm(workDir, { recursive: true, force: true }).catch(() => {});
-        controller.close();
+        sender.close();
       }
     },
   });

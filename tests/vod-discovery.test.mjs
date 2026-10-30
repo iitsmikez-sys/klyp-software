@@ -1,19 +1,21 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { unseenVods } from "../lib/vod-discovery.ts";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { chatSampleOffsets, selectChatSpikes } from '../lib/twitch-chat.ts';
 
-const videos = [
-  { id: "103", created_at: "2026-10-23T03:00:00Z" },
-  { id: "102", created_at: "2026-10-23T02:00:00Z" },
-  { id: "101", created_at: "2026-10-23T01:00:00Z" },
-];
-
-test("discovery queues every new VOD oldest first between sweeps", () => {
-  assert.deepEqual(unseenVods(videos, "100", "2026-10-22T00:00:00Z").map((v) => v.id), ["101", "102", "103"]);
-  assert.deepEqual(unseenVods(videos, "102", "2026-10-22T00:00:00Z").map((v) => v.id), ["103"]);
+test('chat samples cover the end of a ten-hour VOD without exceeding the request cap', () => {
+  const offsets = chatSampleOffsets(10 * 3600);
+  assert.equal(offsets.length, 400);
+  assert.equal(offsets[0], 0);
+  assert.ok(offsets.at(-1) >= 10 * 3600 - 60);
+  assert.ok(offsets.every((value, index) => index === 0 || value > offsets[index - 1]));
 });
 
-test("first connection skips old VODs but includes those published afterward", () => {
-  assert.deepEqual(unseenVods(videos, null, "2026-10-23T01:30:00Z").map((v) => v.id), ["102", "103"]);
-  assert.deepEqual(unseenVods(videos, null, "2026-10-23T04:00:00Z"), []);
+test('short VODs retain one chat sample per minute', () => {
+  assert.deepEqual(chatSampleOffsets(5 * 60), [0, 60, 120, 180, 240]);
+});
+
+test('chat spike ranking retains a late-hour spike even when early activity dominates', () => {
+  const points = Array.from({ length: 20 }, (_, i) => ({ seconds: i * 60, intensity: 20 - i }));
+  points.push({ seconds: 9 * 3600, intensity: 1 });
+  assert.ok(selectChatSpikes(points).some(p => p.seconds === 9 * 3600));
 });

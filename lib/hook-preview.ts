@@ -4,7 +4,8 @@
  * user sees in the player matches what FFmpeg burns on export: top-center,
  * uppercase, visible for the first HOOK_DURATION_MS of the clip.
  */
-import { HOOK_DURATION_MS, type HookStyle } from "./captions";
+import { HOOK_DURATION_MS, HOOK_TOP_MARGIN_REF, hookTextLayout, type HookStyle } from "./captions.ts";
+import type { TextPlacement } from "./text-placement.ts";
 
 type PreviewParams = {
   font: string;
@@ -53,7 +54,8 @@ export function drawHookPreview(
   hook: string,
   style: HookStyle,
   W: number,
-  H: number
+  H: number,
+  placement?: TextPlacement,
 ) {
   if (tSeconds * 1000 > HOOK_DURATION_MS) return;
   const text = hook.toUpperCase().trim();
@@ -61,21 +63,22 @@ export function drawHookPreview(
 
   const p = PREVIEW_PARAMS[style];
   const scale = H / 1920;
-  const fs = Math.max(10, Math.round(p.fontSize * scale));
-  const lineHeight = Math.round(fs * 1.25);
-  const marginTop = Math.round(160 * scale);
-  const maxWidth = W - Math.round(80 * scale);
-  const cx = W / 2;
+  const custom=placement?hookTextLayout(hook,{w:W,h:H},style,placement):null;
+  const fs = custom?.fontSize ?? Math.max(10, Math.round(p.fontSize * scale));
+  const lineHeight = custom?.lineHeight ?? Math.round(fs * 1.25);
+  const cx = custom?.x ?? W / 2;
+  const maxWidth = W-Math.round(80*scale);
 
   ctx.save();
   ctx.font = `${p.bold ? "bold " : ""}${fs}px ${p.font}, Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
 
-  const lines = wrapLines(ctx, text, maxWidth);
+  const lines = custom?.lines ?? wrapLines(ctx, text, maxWidth);
+  const firstY = custom?.firstY ?? Math.round(HOOK_TOP_MARGIN_REF*scale);
 
   lines.forEach((line, i) => {
-    const y = marginTop + i * lineHeight;
+    const y = firstY + i * lineHeight;
     if (p.boxed) {
       const w = ctx.measureText(line).width;
       const padX = Math.round(18 * scale);

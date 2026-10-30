@@ -3,7 +3,51 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { buildKeptSegmentsFilter, renderKeptSegments, validateEditorExportRequest } from './editor-render.ts';
+import { buildKeptSegmentsFilter, buildKeptSegmentsWithInsertsFilter, renderKeptSegments, validateEditorExportRequest } from './editor-render.ts';
+
+test('insert graph uses imported video audio unless muted and gives still images silence',()=>{
+ const segments=[{id:'a',start_seconds:100,end_seconds:102},{id:'b',start_seconds:102,end_seconds:104}];
+ const inserts=[{id:'video',asset_id:'v',after_segment_id:'a',duration_ms:1000,asset_in_ms:500,muted:false},{id:'photo',asset_id:'p',after_segment_id:'a',duration_ms:1000,asset_in_ms:0,muted:false}];
+ const assets=[{id:'v',kind:'video' as const,localPath:'C:/v.mp4',mime_type:'video/mp4',width:640,height:360,duration_ms:3000},{id:'p',kind:'photo' as const,localPath:'C:/p.png',mime_type:'image/png',width:640,height:360,duration_ms:null}];
+ const graph=buildKeptSegmentsWithInsertsFilter(100,segments,inserts,assets,true,[true,false],{w:640,h:360});
+ assert.match(graph,/\[1:a:0\]atrim=start=0\.5:end=1\.5/);
+ assert.match(graph,/concat=n=4:v=1:a=1/);
+ assert.match(graph,/anullsrc/);
+ assert.doesNotMatch(buildKeptSegmentsWithInsertsFilter(100,segments,[{...inserts[0],muted:true}],assets,true,[true,false],{w:640,h:360}),/\[1:a:0\]/);
+});
+test('real FFmpeg places an imported video and its audio between source sections',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'editor-insert-test-'));
+ try{
+  const source=path.join(dir,'source.mp4'),media=path.join(dir,'media.mp4'),output=path.join(dir,'output.mp4');
+  await run(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i','color=c=red:s=64x64:r=30:d=2','-f','lavfi','-i','sine=frequency=440:duration=2','-shortest','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-y',source]);
+  await run(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i','color=c=blue:s=64x64:r=30:d=1','-f','lavfi','-i','sine=frequency=880:duration=1','-shortest','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-y',media]);
+  const parts=[{id:'a',start_seconds:100,end_seconds:101},{id:'b',start_seconds:101,end_seconds:102}];
+  const items=[{id:'insert',asset_id:'asset',after_segment_id:'a',duration_ms:1000,asset_in_ms:0,muted:false}];
+  const assets=[{id:'asset',localPath:media,kind:'video' as const,mime_type:'video/mp4',width:64,height:64,duration_ms:1000}];
+  const result=await renderKeptSegments(source,100,parts,output,'off',{items,assets});
+  assert.equal(result.duration,3);
+  const info=JSON.parse(await runCapture(resolveBin('ffprobe'),['-v','error','-show_entries','format=duration','-of','json',output]));
+  assert.ok(Math.abs(Number(info.format.duration)-3)<.15);
+  for(const [time,color] of [[.5,'red'],[1.5,'blue'],[2.5,'red']] as const){
+   const frame=path.join(dir,`${time}.rgb`);await run(resolveBin('ffmpeg'),['-v','error','-ss',String(time),'-i',output,'-frames:v','1','-vf','scale=1:1','-pix_fmt','rgb24','-f','rawvideo','-y',frame]);
+   const pixel=await readFile(frame);assert.ok(color==='red'?pixel[0]>pixel[2]+100:pixel[2]>pixel[0]+100);
+  }
+  const pcm=path.join(dir,'audio.pcm');await run(resolveBin('ffmpeg'),['-v','error','-i',output,'-vn','-ar','48000','-ac','1','-f','s16le','-y',pcm]);const samples=await readFile(pcm);
+  for(const [begin,frequency] of [[.2,440],[1.2,880],[2.2,440]]){let crossings=0,previous=0;for(let sample=Math.round(begin*48000);sample<Math.round((begin+.2)*48000);sample++){const value=samples.readInt16LE(sample*2);if(value>=0&&previous<0)crossings++;previous=value;}assert.ok(Math.abs(crossings/.2-frequency)<25,`Expected ${frequency} Hz at ${begin}s, got ${crossings/.2}`);}
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('real FFmpeg holds an inserted photo with silent audio when source has none',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'editor-photo-insert-'));try{
+  const source=path.join(dir,'source.mp4'),photo=path.join(dir,'photo.png'),output=path.join(dir,'output.mp4');
+  await run(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i','color=c=red:s=64x64:r=30:d=2','-c:v','libx264','-pix_fmt','yuv420p','-y',source]);
+  await run(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i','color=c=yellow:s=64x64','-frames:v','1','-y',photo]);
+  const parts=[{id:'a',start_seconds:100,end_seconds:101},{id:'b',start_seconds:101,end_seconds:102}];
+  const items=[{id:'insert',asset_id:'asset',after_segment_id:'a',duration_ms:1000,asset_in_ms:0,muted:false}];
+  await renderKeptSegments(source,100,parts,output,'off',{items,assets:[{id:'asset',localPath:photo,kind:'photo',mime_type:'image/png',width:64,height:64,duration_ms:null}]});
+  const frame=path.join(dir,'frame.rgb');await run(resolveBin('ffmpeg'),['-v','error','-ss','1.5','-i',output,'-frames:v','1','-vf','scale=1:1','-pix_fmt','rgb24','-f','rawvideo','-y',frame]);
+  const pixel=await readFile(frame);assert.ok(pixel[0]>150&&pixel[1]>150&&pixel[2]<80);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
 import { resolveBin, run, runCapture } from './bin.ts';
 const segments = [{id:'a',start_seconds:101,end_seconds:101.5},{id:'b',start_seconds:103,end_seconds:103.5}];
 const clip = {id:'owned',url:'https://twitch.tv/videos/1',start_seconds:100,end_seconds:104,words:null,edit_draft:null};

@@ -11,26 +11,39 @@ const source = { w: 1920, h: 1080 };
 const output = { w: 1080, h: 1920 };
 const gameplay = { x: 0.2, y: 0, w: 0.6, h: 1 };
 
-test("full-frame fallback pads instead of cropping a 16:9 source", () => {
+test("full-frame fallback keeps uncropped source over a filled background", () => {
   const result = buildVerticalFilterGraph(planVerticalLayout(source, null, output), []);
   assert.match(result.filter, /scale=1080:1920:force_original_aspect_ratio=decrease/);
-  assert.match(result.filter, /pad=1080:1920:\(ow-iw\)\/2:\(oh-ih\)\/2/);
+  assert.match(result.filter, /boxblur=8:1:3:1/);
   assert.equal(result.videoLabel, "outv");
 });
 
-test("resized full stream export uses the same placement as the preview", (t) => {
-  const plan = planVerticalLayout({ w: 320, h: 180 }, { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, fit: { zoom: 1.5, x: 0.1, y: -0.1 } }, { w: 90, h: 160 });
-  assert.equal(plan.mode, "full_frame");
-  if (plan.mode !== "full_frame") return;
-  const result = buildVerticalFilterGraph(plan, []);
-  assert.match(result.filter, new RegExp(`scale=${plan.dest.w}:${plan.dest.h}`));
-  assert.match(result.filter, new RegExp(`overlay=${plan.dest.x}:${plan.dest.y}`));
-  if (spawnSync('ffmpeg', ['-version']).error) { t.skip('FFmpeg is unavailable'); return; }
-  const run = spawnSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=320x180:r=1:d=1', '-filter_complex', result.filter, '-map', `[${result.videoLabel}]`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 100_000 });
+test("foreground zoom uses the same pixel geometry as preview", () => {
+  const plan = planVerticalLayout(source, { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, foreground: { scale: 2, x: .25, y: .75 } }, output);
+  const graph = buildVerticalFilterGraph(plan, []);
+  assert.match(graph.filter, /scale=2160:1216/);
+  assert.match(graph.filter, /overlay=-270:528:shortest=1/);
+});
+
+test("FFmpeg renders enlarged foreground in the selected vertical position", (t) => {
+  if (spawnSync("ffmpeg", ["-version"]).error) { t.skip("FFmpeg is unavailable"); return; }
+  const plan = planVerticalLayout({ w: 320, h: 180 }, { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, foreground: { scale: 2, x: .5, y: .5 } }, { w: 90, h: 160 });
+  const graph = buildVerticalFilterGraph(plan, []);
+  const run = spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:r=1:d=1,drawbox=x=160:y=0:w=160:h=180:color=blue:t=fill", "-filter_complex", graph.filter, "-map", `[${graph.videoLabel}]`, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 100000 });
   assert.equal(run.status, 0, run.stderr?.toString());
   const pixel = (x: number, y: number) => Array.from(run.stdout.subarray((y * 90 + x) * 3, (y * 90 + x) * 3 + 3));
-  assert.ok(pixel(45, 10)[0] < 80, `top background ${pixel(45, 10)}`);
-  assert.ok(pixel(45, 50)[0] > 150, `enlarged video ${pixel(45, 50)}`);
+  const left = pixel(5, 80), right = pixel(85, 80);
+  assert.ok(left[0] > 100 && left[2] < 100, `left ${left}`);
+  assert.ok(right[2] > 100 && right[0] < 100, `right ${right}`);
+});
+
+test("saved full-stream fit uses the same pixel placement in export", () => {
+  const plan = planVerticalLayout({ w: 320, h: 180 }, { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, fit: { zoom: 1.5, x: .1, y: -.1 } }, { w: 90, h: 160 });
+  assert.equal(plan.mode, "full_frame");
+  if (plan.mode !== "full_frame") return;
+  const graph = buildVerticalFilterGraph(plan, []);
+  assert.match(graph.filter, new RegExp(`scale=${plan.dest.w}:${plan.dest.h}`));
+  assert.match(graph.filter, new RegExp(`overlay=${plan.dest.x}:${plan.dest.y}`));
 });
 
 test("composed graph crops gameplay, facecam and chat then fills vertical output", () => {
@@ -125,4 +138,21 @@ test('timed export switches gameplay and reaction focus while retaining audio', 
   const probe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type','-of','json',file],{encoding:'utf8'});
   assert.ok(JSON.parse(probe.stdout).streams.some((s:{codec_type:string})=>s.codec_type==='audio'));
  } finally {rmSync(dir,{recursive:true,force:true});}
+});
+
+test('default vertical export fills the side bands while retaining complete source in foreground', (t) => {
+  if (spawnSync('ffmpeg', ['-version']).error) { t.skip('FFmpeg unavailable'); return; }
+  const plan = planVerticalLayout({ w: 320, h: 180 }, null, { w: 90, h: 160 });
+  const graph = buildVerticalFilterGraph(plan, []);
+  assert.match(graph.filter, /boxblur=/);
+  const run = spawnSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i',
+    'color=c=red:s=320x180:r=1:d=1,drawbox=x=0:y=0:w=60:h=180:color=blue:t=fill',
+    '-filter_complex', graph.filter, '-map', `[${graph.videoLabel}]`, '-frames:v', '1',
+    '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 2_000_000 });
+  assert.equal(run.status, 0, run.stderr?.toString());
+  const pixel = (x: number, y: number) => Array.from(run.stdout.subarray((y * 90 + x) * 3, (y * 90 + x) * 3 + 3));
+  const top = pixel(45, 10), bottom = pixel(45, 150), facecam = pixel(10, 80);
+  assert.ok(top[0] > 90, `top has source-derived color: ${top}`);
+  assert.ok(bottom[0] > 90, `bottom has source-derived color: ${bottom}`);
+  assert.ok(facecam[2] > 100, `foreground retains the left source edge: ${facecam}`);
 });

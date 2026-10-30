@@ -32,6 +32,15 @@ export function twitchVideoId(url: string): string | null {
 
 type Sample = { offset: number; rate: number };
 
+/** Spread the capped chat requests across the entire VOD, including its end. */
+export function chatSampleOffsets(durationSeconds: number): number[] {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return [];
+  const count = Math.min(MAX_SAMPLES, Math.ceil(durationSeconds / SAMPLE_INTERVAL_S));
+  if (count === 1) return [0];
+  if (count < MAX_SAMPLES) return Array.from({ length: count }, (_, i) => i * SAMPLE_INTERVAL_S);
+  const last = Math.max(0, Math.floor(durationSeconds - 1));
+  return Array.from({ length: count }, (_, i) => Math.floor(i * last / (count - 1)));
+}
 /** Fetch one chat-replay page at a VOD offset and estimate messages/sec. */
 async function sampleAt(videoId: string, offset: number): Promise<Sample | null> {
   const res = await fetch(GQL_URL, {
@@ -67,15 +76,13 @@ async function sampleAt(videoId: string, offset: number): Promise<Sample | null>
  */
 export async function detectChatSpikes(
   url: string,
-  durationSeconds: number
+  durationSeconds: number,
+  fullCoverage = false
 ): Promise<ChatSpike[] | null> {
   const videoId = twitchVideoId(url);
   if (!videoId || durationSeconds < SAMPLE_INTERVAL_S * 3) return null;
 
-  const offsets: number[] = [];
-  for (let t = 0; t < durationSeconds && offsets.length < MAX_SAMPLES; t += SAMPLE_INTERVAL_S) {
-    offsets.push(t);
-  }
+  const offsets = fullCoverage ? chatSampleOffsets(durationSeconds) : Array.from({ length: Math.min(MAX_SAMPLES, Math.ceil(durationSeconds / SAMPLE_INTERVAL_S)) }, (_, i) => i * SAMPLE_INTERVAL_S);
 
   const samples: Sample[] = [];
   try {
@@ -99,12 +106,21 @@ export async function detectChatSpikes(
   const spikes = samples
     .filter((s) => s.rate >= threshold)
     .map((s) => ({ seconds: s.offset, intensity: s.rate / mean }))
-    .sort((a, b) => b.intensity - a.intensity)
-    .slice(0, 10);
+    .sort((a, b) => b.intensity - a.intensity);
 
-  return spikes.length > 0 ? spikes : null;
+  return spikes.length > 0 ? (fullCoverage ? selectChatSpikes(spikes) : spikes.slice(0, 10)) : null;
 }
 
+/** Keep the strongest spikes plus one from each hour to avoid early-hour bias. */
+export function selectChatSpikes(points: ChatSpike[]): ChatSpike[] {
+  const ordered = [...points].sort((a, b) => b.intensity - a.intensity);
+  const hourly = new Map<number, ChatSpike>();
+  for (const point of ordered) {
+    const hour = Math.floor(point.seconds / 3600);
+    if (!hourly.has(hour)) hourly.set(hour, point);
+  }
+  return [...new Set([...ordered.slice(0, 10), ...hourly.values()])];
+}
 /** Render spikes as a prompt block for the Claude analysis call. */
 export function formatSpikesForPrompt(spikes: ChatSpike[]): string {
   const stamp = (s: number) => {

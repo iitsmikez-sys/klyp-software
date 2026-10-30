@@ -23,6 +23,20 @@ export default function SavedClips() {
       .then(({ data }) => { if (active) { setClips(data ?? []); setLoading(false); } });
     return () => { active = false; };
   }, []);
+  const pendingIds = clips.filter(c => c.archive_status !== 'stored' && c.archive_status !== 'unavailable').map(c => c.id).join(',');
+  useEffect(() => {
+    if (!pendingIds) return;
+    let active = true;
+    const refresh = async () => {
+      const { data } = await createClient().from('clips').select('id,archive_status').in('id', pendingIds.split(','));
+      if (!active || !data) return;
+      const statuses = new Map(data.map(row => [row.id, row.archive_status]));
+      setClips(previous => previous.map(clip => statuses.has(clip.id)
+        ? { ...clip, archive_status: statuses.get(clip.id) } : clip));
+    };
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [pendingIds]);
   const previewClip = useMemo(() => clips.find(c => c.id === previewId), [clips, previewId]);
   return <section>
     <div className="mb-3 flex items-center justify-between gap-4">

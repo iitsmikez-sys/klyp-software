@@ -6,7 +6,9 @@ The frontend runs on Vercel. The processing service runs the same Next.js app on
 
 ## Database first
 
-Apply the numbered SQL migrations in `supabase/migrations/` in order **before** deploying either service. Verify the earlier `006_transcripts.sql` and `013_clip_edit_draft.sql` migrations are present, then apply `016_auto_vod_jobs.sql` through `023_editor_media.sql`. Migration 017 creates the private `clip-media` storage bucket and queues saved clips that have not been archived. Migration 018 adds versioned editor drafts; 019 adds private creator feedback; 020 supplies the transcript owner default; 021 matches the numeric clip timestamps in the existing production schema; 022 stores a profile layout; and 023 adds the separate private `editor-media` bucket and cleanup queue. These migrations do not delete existing clips. If migrations are applied through the SQL Editor, reconcile the migration history before subsequently using the Supabase CLI.
+For this consolidated branch, apply `028_analysis_jobs.sql` after existing `024_vod_analysis_cache.sql` through `027_archive_confirmation_guard.sql`. Do not substitute the earlier worktree's conflicting `024_analysis_jobs.sql`. Set `KLYP_UPLOAD_DIR` to a persistent processing volume; a container-local upload directory will not survive replacement.
+
+Apply the numbered SQL migrations in `supabase/migrations/` in order **before** deploying either service. Verify the earlier `006_transcripts.sql` and `013_clip_edit_draft.sql` migrations are present, then apply `016_auto_vod_jobs.sql` through `027_archive_confirmation_guard.sql`. Migration 017 creates the private `clip-media` storage bucket and queues saved clips that have not been archived. Migration 018 adds versioned editor drafts; 019 adds private creator feedback; 020 supplies the transcript owner default; 021 matches the numeric clip timestamps in the existing production schema; 022 stores a profile layout; 023 adds the separate private `editor-media` bucket and cleanup queue; 024 adds the VOD analysis cache; 025 prevents an expired Pro profile read from granting paid Sparks; 026 makes local table grants explicit; and 027 prevents a clip from being marked stored until its private master, proxy, and poster objects exist. These migrations do not delete existing clips. If migrations are applied through the SQL Editor, reconcile the migration history before subsequently using the Supabase CLI. See [production-release-checklist.md](docs/production-release-checklist.md) for preflight, hosted verification, and rollback steps.
 
 The processing service needs `SUPABASE_SERVICE_ROLE_KEY` for claimed jobs and private media uploads. Keep this key server-side. The frontend needs the normal public Supabase URL and anon key. Both deployments must use the same Supabase project.
 
@@ -16,9 +18,11 @@ An archive is durable only when the clip shows **Footage saved**. New clips show
 
 Set the variables in `.env.example` that match your enabled sources and AI pipeline: AssemblyAI, Anthropic, Twitch app credentials, and the Twitch EventSub signing secret. Set the Twitch OAuth callback URL for the frontend and route EventSub deliveries to the processing service. The processing service needs sufficient disk space for temporary video segments and FFmpeg outputs. Configure `FFMPEG_PATH` and `YTDLP_PATH` if the executables are not on `PATH`.
 
+During the limited launch, manual analysis verifies VOD duration on the server and rejects sources longer than 10 hours before paid transcription or AI work. Automatic clipping skips longer VODs without a Sparks debit and notifies the creator. The browser's duration estimate does not authorize processing.
+
 ## Stripe
 
-Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` on the frontend. `STRIPE_PRICE_PRO` is optional. If configured, the Stripe Price must be active, $28 USD, and monthly; checkout now rejects any mismatch with the advertised price. Route `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted` to `/api/stripe/webhook`.
+Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` on the frontend. `STRIPE_PRICE_PRO` is optional. If configured, the Stripe Price must be active, $28 USD, and monthly; checkout rejects any mismatch with the advertised price. Route `checkout.session.completed`, `invoice.paid`, `customer.subscription.updated`, and `customer.subscription.deleted` to `/api/stripe/webhook`. The paid invoice event is required for both first-payment and renewal Sparks grants. Use a separate test-mode webhook secret and Stripe test key for an isolated test deployment.
 
 ## Release checks
 

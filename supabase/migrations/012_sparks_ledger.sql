@@ -66,7 +66,8 @@ begin
   end if;
   insert into public.profiles (id) values (auth.uid()) on conflict do nothing;
   select * into p from public.profiles where id = auth.uid() for update;
-  if p.sparks_reset_at <= now() then
+  -- Paid tiers refill only from a verified Stripe invoice.paid grant.
+  if p.tier = 'free' and p.sparks_reset_at <= now() then
     previous_balance := p.sparks;
     update public.profiles
        set sparks = tier_allowance(tier),
@@ -88,7 +89,8 @@ declare
 begin
   insert into public.profiles (id) values (target_user) on conflict do nothing;
   select * into p from public.profiles where id = target_user for update;
-  if p.sparks_reset_at <= now() then
+  -- Background workers must not create a Pro refill without an invoice either.
+  if p.tier = 'free' and p.sparks_reset_at <= now() then
     previous_balance := p.sparks;
     update public.profiles
        set sparks = tier_allowance(tier),

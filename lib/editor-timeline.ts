@@ -1,4 +1,4 @@
-import type { ClipEditDraftV3, VisualCutaway } from "./clip-edit-draft.ts";
+import type { ClipEditDraftV3, VisualCutaway, TimelineInsert } from "./clip-edit-draft.ts";
 export type SourceSegment = { id: string; start_seconds: number; end_seconds: number };
 export type CaptionCue = { id: string; start_ms: number; end_ms: number; text: string };
 const EPSILON = 1e-9;
@@ -21,6 +21,46 @@ export function validateSegments(input: unknown, start = 0, end = Infinity): Sou
 export function outputDuration(segments: readonly SourceSegment[]): number {
   return segments.reduce((sum, s) => sum + s.end_seconds - s.start_seconds, 0);
 }
+export type ResolvedInsertSpan = TimelineInsert & {start_ms:number;end_ms:number};
+export function composedDuration(draft: Pick<ClipEditDraftV3,'segments'|'inserts'>): number {
+ return outputDuration(draft.segments)+(draft.inserts??[]).reduce((sum,item)=>sum+item.duration_ms/1000,0);
+}
+export function resolveInsertSpans(draft: Pick<ClipEditDraftV3,'segments'|'inserts'>): ResolvedInsertSpan[] {
+ let offset=0;const spans:ResolvedInsertSpan[]=[];
+ for(const segment of draft.segments){
+  offset+=(segment.end_seconds-segment.start_seconds)*1000;
+  for(const insert of draft.inserts??[]){if(insert.after_segment_id===segment.id){spans.push({...insert,start_ms:offset,end_ms:offset+insert.duration_ms});offset+=insert.duration_ms;}}
+ }
+ return spans;
+}
+export function composedAtOutputTime(draft: Pick<ClipEditDraftV3,'segments'|'inserts'>,seconds:number): {kind:'source';sourceSeconds:number;segment:SourceSegment}|{kind:'insert';span:ResolvedInsertSpan;assetSeconds:number} {
+ if(!Number.isFinite(seconds))throw new Error('Invalid output position.');
+ let offset=0;
+ for(const segment of draft.segments){
+  const duration=segment.end_seconds-segment.start_seconds;
+  if(seconds<offset+duration)return {kind:'source',sourceSeconds:segment.start_seconds+Math.max(0,seconds-offset),segment};
+  offset+=duration;
+  for(const insert of draft.inserts??[]){if(insert.after_segment_id!==segment.id)continue;
+   if(seconds<offset+insert.duration_ms/1000)return {kind:'insert',span:{...insert,start_ms:Math.round(offset*1000),end_ms:Math.round(offset*1000)+insert.duration_ms},assetSeconds:insert.asset_in_ms/1000+Math.max(0,seconds-offset)};
+   offset+=insert.duration_ms/1000;
+  }
+ }
+ const last=draft.segments.at(-1);if(!last)throw new Error('Empty output.');
+ return {kind:'source',sourceSeconds:last.end_seconds,segment:last};
+}
+export function sourceOnlyOutputForSourceSeconds(segments:readonly SourceSegment[],sourceSeconds:number):number {
+ let offset=0;for(const segment of segments){if(sourceSeconds<segment.end_seconds)return offset+Math.max(0,sourceSeconds-segment.start_seconds);offset+=segment.end_seconds-segment.start_seconds;}
+ return offset;
+}
+export function composedOutputForSourceOnlyTime(draft:Pick<ClipEditDraftV3,'segments'|'inserts'>,seconds:number):number {
+ let sourceOffset=0,composedOffset=0;
+ for(const segment of draft.segments){const length=segment.end_seconds-segment.start_seconds;
+  if(seconds<sourceOffset+length-.000001)return composedOffset+Math.max(0,seconds-sourceOffset);
+  sourceOffset+=length;composedOffset+=length;
+  for(const insert of draft.inserts??[])if(insert.after_segment_id===segment.id)composedOffset+=insert.duration_ms/1000;
+ }
+ return composedOffset;
+}
 /** Output milliseconds and the imported-media offset at this fragment's start. */
 export type ResolvedCutawaySpan = VisualCutaway & { start_ms: number; end_ms: number };
 /** Resolve each surviving source intersection without changing persisted anchors or IDs. */
@@ -36,6 +76,7 @@ export function resolveCutawaySpans(draft: ClipEditDraftV3): ResolvedCutawaySpan
    if (end > start) spans.push({ ...cutaway, focal_point: { ...cutaway.focal_point }, start_ms: outputOffset + start - sourceStart, end_ms: outputOffset + end - sourceStart, asset_in_ms: cutaway.asset_in_ms + start - cutaway.source_start_ms });
   }
   outputOffset += sourceEnd - sourceStart;
+  for(const insert of draft.inserts??[])if(insert.after_segment_id===segment.id)outputOffset+=insert.duration_ms;
  }
  return spans.sort((a, b) => a.start_ms - b.start_ms);
 }
@@ -55,7 +96,7 @@ export function sourceAtOutputTime(segments: readonly SourceSegment[], seconds: 
   }
   return segments[segments.length - 1].end_seconds;
 }
-export function outputSpansForSourceCue(segments: readonly SourceSegment[], cue: Pick<CaptionCue, "start_ms" | "end_ms">): { start_ms: number; end_ms: number }[] {
+export function outputSpansForSourceCue(segments: readonly SourceSegment[], cue: Pick<CaptionCue, "start_ms" | "end_ms">, inserts:readonly TimelineInsert[]=[]): { start_ms: number; end_ms: number }[] {
   let offset = 0;
   const spans = [];
   for (const s of segments) {
@@ -63,6 +104,7 @@ export function outputSpansForSourceCue(segments: readonly SourceSegment[], cue:
     const end = Math.min(s.end_seconds * 1000, cue.end_ms);
     if (end > start) spans.push({ start_ms: offset + start - s.start_seconds * 1000, end_ms: offset + end - s.start_seconds * 1000 });
     offset += (s.end_seconds - s.start_seconds) * 1000;
+    for(const insert of inserts)if(insert.after_segment_id===s.id)offset+=insert.duration_ms;
   }
   return spans;
 }

@@ -107,6 +107,9 @@ const clips = [
     console.log(`${label} dashboard browser check passed at ${viewports.map(v => `${v.width}×${v.height}`).join(', ')}`);
   } finally {
     await browser.close();
-    if (!captureOnly) fs.rmSync(routeDir, { recursive: true, force: true });
+    if (!captureOnly) {
+      fs.rmSync(routeDir, { recursive: true, force: true });
+      fs.rmSync(path.join(root, '.next', 'dev', 'types', 'app', 'dashboard-visual-local'), { recursive: true, force: true });
+    }
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

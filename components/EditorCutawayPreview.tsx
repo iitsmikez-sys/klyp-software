@@ -5,11 +5,11 @@ import type { ResolvedCutawaySpan } from '@/lib/editor-timeline';
 import { mediaResponse } from '@/lib/editor-media-client';
 export type CutawayPicture = {assetId:string;element:HTMLImageElement|HTMLVideoElement};
 type Preview = {asset:EditorAsset;url:string;expires:number};
-export default function EditorCutawayPreview({clipId,active,outputTime,playing,sourceVideo,onPicture}: {clipId:string;active:ResolvedCutawaySpan|null;outputTime:number;playing:boolean;sourceVideo:HTMLVideoElement|null;onPicture:(picture:CutawayPicture|null)=>void}) {
+export default function EditorCutawayPreview({clipId,active,outputTime,playing,sourceVideo,muted=false,volume=1,onPicture}: {clipId:string;active:ResolvedCutawaySpan|null;outputTime:number;playing:boolean;sourceVideo:HTMLVideoElement|null;muted?:boolean;volume?:number;onPicture:(picture:CutawayPicture|null)=>void}) {
  const cache=useRef(new Map<string,Preview>()),video=useRef<HTMLVideoElement>(null);
  const lastSeek=useRef<{video:HTMLVideoElement;target:number;running:boolean}|null>(null);
  const [preview,setPreview]=useState<Preview|null>(null),[error,setError]=useState<string|null>(null),[ready,setReady]=useState(false),[attempt,setAttempt]=useState(0);
- const state=useRef({active,outputTime,playing,sourceVideo,onPicture});state.current={active,outputTime,playing,sourceVideo,onPicture};
+ const state=useRef({active,outputTime,playing,sourceVideo,muted,volume,onPicture});state.current={active,outputTime,playing,sourceVideo,muted,volume,onPicture};
  const assetId=active?.asset_id;
  useEffect(()=>{cache.current.clear();},[clipId]);
  useEffect(()=>{
@@ -24,7 +24,8 @@ export default function EditorCutawayPreview({clipId,active,outputTime,playing,s
   void load();return()=>{live=false;controller.abort();clearTimeout(timer);state.current.onPicture(null);};
  },[assetId,clipId,attempt]);
  const sync=()=>{
-  const v=video.current,{active,outputTime,playing,sourceVideo}=state.current;if(!v||!active||v.readyState<1)return;
+  const v=video.current,{active,outputTime,playing,sourceVideo,muted,volume}=state.current;if(!v||!active||v.readyState<1)return;
+  v.muted=muted||active.muted!==false;v.volume=volume;
   const desired=(active.asset_in_ms+outputTime*1000-active.start_ms)/1000;
   const running=playing&&!!sourceVideo&&!sourceVideo.paused&&!sourceVideo.seeking&&sourceVideo.readyState>=3;
   // Some containers cannot land exactly at zero (their first presentation frame
@@ -41,7 +42,7 @@ export default function EditorCutawayPreview({clipId,active,outputTime,playing,s
  const fail=()=>{setReady(false);state.current.onPicture(null);setError('Imported media could not be decoded or its link expired. Retry, or choose a browser-compatible file.');};
  const loaded=(element:HTMLImageElement|HTMLVideoElement)=>{sync();setReady(true);setError(null);onPicture({assetId:active.asset_id,element});};
  return <div className="editor-cutaway-preview">
-  {preview&&preview.asset.id===assetId&&(preview.asset.kind==='photo'?<img hidden src={preview.url} alt="" onLoad={e=>loaded(e.currentTarget)} onError={fail}/>:<video ref={video} aria-label="Imported video" className="editor-cutaway-video" src={preview.url} muted playsInline preload="auto" onLoadedMetadata={sync} onLoadedData={e=>loaded(e.currentTarget)} onError={fail}/>)}
+  {preview&&preview.asset.id===assetId&&(preview.asset.kind==='photo'?<img hidden src={preview.url} alt="" onLoad={e=>loaded(e.currentTarget)} onError={fail}/>:<video ref={video} aria-label="Imported video" className="editor-cutaway-video" src={preview.url} muted={muted||active.muted!==false} playsInline preload="auto" onLoadedMetadata={sync} onLoadedData={e=>loaded(e.currentTarget)} onError={fail}/>)}
   {error?<div className="editor-cutaway-status" role="alert">{error}<button type="button" onClick={()=>{cache.current.delete(active.asset_id);setAttempt(n=>n+1);}}>Retry imported media</button></div>:!ready&&<p className="editor-cutaway-status" role="status">Loading imported media…</p>}
  </div>;
 }

@@ -38,7 +38,7 @@ export async function validateFinalistVisuals<T extends Clip>(clips: T[], source
         output_config: { format: zodOutputFormat(visualResult) },
       }, { timeout: 30_000, maxRetries: 0 });
       if (costRunId) recordProviderUsage({
-        runId: costRunId, provider: "anthropic", model: process.env.KLYP_VISION_MODEL || "claude-sonnet-4-6",
+        runId: costRunId, stage: "visual-check", provider: "anthropic", model: process.env.KLYP_VISION_MODEL || "claude-sonnet-4-6",
         inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
         cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
         cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,

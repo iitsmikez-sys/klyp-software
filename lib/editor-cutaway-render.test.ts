@@ -27,6 +27,54 @@ test('photo cover uses the chosen focal position and contain creates an opaque f
  assert.match(contain.filter,/pad=64:64/);
  assert.doesNotMatch(cover.filter,/\[1:a/);
 });
+test('foreground overlay keeps the source picture visible and uses a bounded rectangle',()=>{
+ const overlay={...span,placement:'overlay',rect:{x:.25,y:.25,w:.5,h:.5}};
+ const graph=build('framed',[overlay],[asset],size);
+ assert.match(graph.filter,/overlay=x=16:y=16/);
+ assert.doesNotMatch(graph.filter,/cutbg/);
+ assert.match(graph.filter,/scale=w='if\(gte\(dar,32\/32\)/);
+});
+test('overlay audio is mixed only when explicitly enabled and present',()=>{
+ const clip={...span,placement:'overlay' as const,rect:{x:.2,y:.2,w:.4,h:.4},muted:false};
+ const video={...asset,id:'photo',kind:'video' as const,mime_type:'video/mp4',duration_ms:3000};
+ const graph=renderer.buildOverlayAudioGraph([clip],[video],[true],true,2);
+ assert.match(graph.filter,/atrim=start=0:end=0.5/);
+ assert.match(graph.filter,/adelay=delays=500:all=1/);
+ assert.match(graph.filter,/amix=inputs=2/);
+ assert.equal(graph.audioLabel,'exportaudio');
+ assert.equal(renderer.buildOverlayAudioGraph([{...clip,muted:true}],[video],[true],true,2).audioLabel,null);
+ assert.equal(renderer.buildOverlayAudioGraph([clip],[video],[false],true,2).audioLabel,null);
+});
+test('real FFmpeg overlay keeps source sound and adds imported video sound only in its window',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'editor-overlay-audio-'));try{
+  const source=path.join(dir,'source.mp4'),imported=path.join(dir,'imported.mp4'),output=path.join(dir,'output.mp4'),pcm=path.join(dir,'audio.pcm');
+  for(const [file,color,tone,duration] of [[source,'red','440','2'],[imported,'blue','880','1']] as const)
+   await run(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i',`color=c=${color}:s=64x64:r=30:d=${duration}`,'-f','lavfi','-i',`sine=frequency=${tone}:sample_rate=48000:duration=${duration}`,'-c:v','libx264','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-y',file]);
+  const overlay={...span,placement:'overlay' as const,rect:{x:.25,y:.25,w:.5,h:.5},muted:false,start_ms:500,end_ms:1500,asset_in_ms:0};
+  const media={...asset,kind:'video' as const,mime_type:'video/mp4',duration_ms:1000,localPath:imported};
+  const picture=build('base',[overlay],[media],size),audio=renderer.buildOverlayAudioGraph([overlay],[media],[true],true,2);
+  await run(resolveBin('ffmpeg'),['-v','error','-i',source,...renderer.cutawayInputArgs([media]),'-filter_complex',`[0:v]format=yuv420p[base];${picture.filter};${audio.filter}`,'-map',`[${picture.videoLabel}]`,'-map',`[${audio.audioLabel}]`,'-c:v','libx264','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-y',output]);
+  await run(resolveBin('ffmpeg'),['-v','error','-i',output,'-vn','-ar','48000','-ac','1','-f','s16le','-y',pcm]);const samples=await readFile(pcm);
+  const tone=(at:number,hz:number)=>{let real=0,imag=0;const start=Math.round(at*48000),count=4800;for(let n=0;n<count;n++){const sample=samples.readInt16LE((start+n)*2),phase=2*Math.PI*hz*n/48000;real+=sample*Math.cos(phase);imag+=sample*Math.sin(phase);}return Math.hypot(real,imag)/count;};
+  assert.ok(tone(.2,440)>tone(.2,880)*3,'source audio remains before overlay');
+  assert.ok(tone(.8,880)>tone(.2,880)*5,'imported audio begins with overlay');
+  assert.ok(tone(.8,440)>tone(.2,880)*5,'source audio continues under overlay');
+  assert.ok(tone(1.7,440)>tone(1.7,880)*3,'source audio remains afterward');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('real MP4 foreground photo covers only its rectangle',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'editor-overlay-pixels-'));try{
+  const source=path.join(dir,'source.mp4'),photo=path.join(dir,'blue.png'),output=path.join(dir,'output.mp4'),frame=path.join(dir,'frame.rgb');
+  await run(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i','color=c=red:s=64x64:r=30:d=1','-c:v','libx264','-pix_fmt','yuv420p','-y',source]);
+  await run(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i','color=c=blue:s=32x32','-frames:v','1','-y',photo]);
+  const overlay={...visual,placement:'overlay' as const,rect:{x:.25,y:.25,w:.5,h:.5},start_ms:0,end_ms:1000,source_end_ms:101500};
+  const uploaded={...asset,kind:'photo' as const,localPath:photo,width:32,height:32};const graph=build('base',[overlay],[uploaded],size);
+  await run(resolveBin('ffmpeg'),['-v','error','-i',source,...cutawayRender.cutawayInputArgs([uploaded]),'-filter_complex',`[0:v]format=yuv420p[base];${graph.filter};[${graph.videoLabel}]format=yuv420p[out]`,'-map','[out]','-c:v','libx264','-pix_fmt','yuv420p','-y',output]);
+  await run(resolveBin('ffmpeg'),['-v','error','-ss','0.5','-i',output,'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-y',frame]);
+  const pixels=await readFile(frame),pixel=(x:number,y:number)=>pixels.subarray((y*64+x)*3,(y*64+x)*3+3);
+  const outside=pixel(4,4),inside=pixel(32,32);assert.ok(outside[0]>outside[2]+100);assert.ok(inside[2]>inside[0]+100);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('video spans use surviving source offsets and never reference imported audio', () => {
  const spans=resolveCutawaySpans({version:3,cutaways:[{...visual,asset_id:'video',asset_in_ms:500}],segments:[{id:'a',start_seconds:100,end_seconds:101},{id:'b',start_seconds:103,end_seconds:104}]} as any);
  const graph=build('framed',spans,[{...asset,id:'video',kind:'video',mime_type:'video/mp4',duration_ms:4000}],size);

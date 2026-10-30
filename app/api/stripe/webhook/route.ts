@@ -1,12 +1,10 @@
 /**
  * POST /api/stripe/webhook — keeps Supabase profiles in sync with Stripe.
  *
- *   checkout.session.completed      → tier=pro, grant a full Sparks allotment (new subscription)
- *   invoice.paid                    → grant a full Sparks allotment (billing-cycle renewal)
- *   customer.subscription.updated   → sync tier pro/free while active/trialing/past_due — does NOT
- *                                      touch Sparks (a card update or status flicker shouldn't refill
- *                                      the user outside their actual billing cycle)
- *   customer.subscription.deleted   → tier=free, grant the Free allotment
+ *   checkout.session.completed      → acknowledged; waits for paid invoice
+ *   invoice.paid                    → grant a full Sparks allotment (first payment or renewal)
+ *   customer.subscription.updated   → revoke Pro on unpaid/inactive status; never grant Pro
+ *   customer.subscription.deleted   → revoke Pro without refilling Sparks
  *
  * Local dev: stripe listen --forward-to localhost:3000/api/stripe/webhook
  * (copy the printed whsec_… into STRIPE_WEBHOOK_SECRET).
@@ -26,10 +24,8 @@ export const runtime = "nodejs";
  * (verified in test mode: a replayed checkout.session.completed took a profile
  * from 100 back to 500).
  *
- * Returns false when the event has already been applied. If the table is
- * missing (migration 007 not yet run) this logs and lets the event through:
- * losing idempotency is bad, but silently refusing to grant Pro to a paying
- * customer would be worse.
+ * Returns false when already applied. A missing claim table fails with 500 so
+ * Stripe can retry after migration 007 is installed.
  */
 async function claimEvent(event: Stripe.Event): Promise<boolean> {
   const admin = createAdminClient();
@@ -41,14 +37,8 @@ async function claimEvent(event: Stripe.Event): Promise<boolean> {
   // 23505 = unique_violation — this event has been handled already.
   if (error.code === "23505") return false;
 
-  // 42P01 = undefined_table, plus PostgREST's schema-cache miss for the same.
-  if (error.code === "42P01" || error.code === "PGRST205") {
-    console.warn(
-      "[stripe webhook] public.stripe_events is missing — processing without " +
-        "idempotency. Apply supabase/migrations/007_stripe_event_idempotency.sql."
-    );
-    return true;
-  }
+  // Do not process without the unique event claim. A 500 makes Stripe retry
+  // after the required migration is applied, instead of refilling twice.
   throw new Error(`Could not record Stripe event: ${error.message}`);
 }
 
@@ -102,6 +92,7 @@ async function grantTier(
     p_subscription_id: extra.stripe_subscription_id ?? null,
     p_set_subscription: Object.prototype.hasOwnProperty.call(extra, "stripe_subscription_id"),
   });
+  if (error?.code === "23505" && reason === "invoice_grant") return;
   if (error) throw new Error(`Supabase Sparks grant failed: ${error.message}`);
 }
 
@@ -109,16 +100,18 @@ async function grantTier(
 async function syncTierOnly(
   match: { userId?: string; customerId?: string },
   tier: Tier,
-  extra: Partial<{ stripe_subscription_id: string | null }> = {}
+  extra: Partial<{ stripe_subscription_id: string | null }> = {},
+  expectedSubscriptionId?: string
 ) {
   const admin = createAdminClient();
   const update = { tier, ...extra };
-  const query = admin.from("profiles").update(update).select("id");
+  let query = admin.from("profiles").update(update).select("id");
+  if (expectedSubscriptionId) query = query.eq("stripe_subscription_id", expectedSubscriptionId);
   const { data, error } = match.userId
     ? await query.eq("id", match.userId)
     : await query.eq("stripe_customer_id", match.customerId!);
   if (error) throw new Error(`Supabase profile update failed: ${error.message}`);
-  if (!data || data.length === 0) {
+  if ((!data || data.length === 0) && !expectedSubscriptionId) {
     throw new Error(
       `No profile matched ${match.userId ? `user ${match.userId}` : `customer ${match.customerId}`} — tier not synced.`
     );
@@ -146,61 +139,65 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let claimed = false;
   try {
     // Duplicate deliveries stop here, before anything is granted.
     if (!(await claimEvent(event))) {
       return NextResponse.json({ received: true, duplicate: true });
     }
+    claimed = true;
 
     switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object;
-        const userId = session.metadata?.user_id ?? session.client_reference_id;
-        if (userId && session.mode === "subscription") {
-          await grantTier({ userId }, "pro", event.id, "checkout_grant", {
-            stripe_customer_id: idOf(session.customer),
-            stripe_subscription_id: idOf(session.subscription),
-          });
-        }
-        break;
-      }
       case "invoice.paid": {
-        // Billing-cycle renewal (and, redundantly-but-harmlessly, the first
-        // invoice of a brand-new subscription — checkout.session.completed
-        // already grants the same allotment for that case). Only invoices
-        // generated by a subscription represent a Sparks-relevant cycle.
+        // The first paid invoice and each paid renewal are the single sources
+        // of Sparks grants. Checkout may complete before delayed payment clears.
         const invoice = event.data.object;
         const subDetails = invoice.parent?.subscription_details;
         const subscriptionId = idOf(subDetails?.subscription);
-        if (subscriptionId) {
+        if (subscriptionId && (invoice.billing_reason === "subscription_create" ||
+            invoice.billing_reason === "subscription_cycle")) {
+          // A delayed invoice event must not reactivate a subscription that
+          // has since become unpaid or been cancelled, or refill a later cycle.
+          const current = await getStripe().subscriptions.retrieve(subscriptionId);
+          if (current.status !== "active" && current.status !== "trialing") break;
+          const latestInvoiceId = idOf(current.latest_invoice);
+          if (!latestInvoiceId) throw new Error(`Subscription ${subscriptionId} has no latest invoice yet.`);
+          if (latestInvoiceId !== invoice.id) break;
           await grantTier(
             { userId: subDetails?.metadata?.user_id, customerId: idOf(invoice.customer) },
             "pro",
-            event.id,
+            invoice.id,
             "invoice_grant",
-            { stripe_subscription_id: subscriptionId }
+            { stripe_customer_id: idOf(invoice.customer), stripe_subscription_id: subscriptionId }
           );
         }
         break;
       }
       case "customer.subscription.updated": {
         const sub = event.data.object;
-        const active = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
-        await syncTierOnly(
-          { userId: sub.metadata?.user_id, customerId: idOf(sub.customer) },
-          active ? "pro" : "free",
-          { stripe_subscription_id: active ? sub.id : null }
-        );
+        // A status update is not proof of payment. Only invoice.paid may
+        // activate Pro, including after a failed payment is recovered.
+        if (sub.status !== "active" && sub.status !== "trialing") {
+          // Webhooks can arrive out of order. A stale past_due event must not
+          // undo a newer paid invoice that restored this subscription.
+          const current = await getStripe().subscriptions.retrieve(sub.id);
+          if (current.status === "active" || current.status === "trialing") break;
+          await syncTierOnly(
+            { userId: sub.metadata?.user_id, customerId: idOf(sub.customer) },
+            "free",
+            { stripe_subscription_id: null },
+            sub.id
+          );
+        }
         break;
       }
       case "customer.subscription.deleted": {
         const sub = event.data.object;
-        await grantTier(
+        await syncTierOnly(
           { userId: sub.metadata?.user_id, customerId: idOf(sub.customer) },
           "free",
-          event.id,
-          "subscription_deleted",
-          { stripe_subscription_id: null }
+          { stripe_subscription_id: null },
+          sub.id
         );
         break;
       }
@@ -209,7 +206,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     // Non-2xx makes Stripe retry the event — right call for transient DB errors.
     // The claim has to go back first, or that retry is a no-op.
-    await releaseEvent(event.id);
+    if (claimed) await releaseEvent(event.id);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Webhook handling failed." },
       { status: 500 }

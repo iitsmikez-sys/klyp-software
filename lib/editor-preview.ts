@@ -3,6 +3,7 @@ export function previewSourceStart(savedStart: number, source: string | null): n
  return source === 'archive' ? archivedClipTiming(savedStart).sourceStart : savedStart;
 }
 import { outputDuration, sourceAtOutputTime, type SourceSegment } from './editor-timeline.ts';
+import type { TimelineInsert } from './clip-edit-draft.ts';
 export function seekEditedVideo(video: { currentTime: number }, segments: readonly SourceSegment[], seconds: number, previewStart = segments[0]?.start_seconds ?? 0) {
  video.currentTime = sourceAtOutputTime(segments, seconds) - previewStart;
 }
@@ -16,6 +17,22 @@ export function nextPlaybackPosition(segments: readonly SourceSegment[], sourceS
   output += segment.end_seconds - segment.start_seconds;
  }
  return { sourceSeconds: segments.at(-1)?.end_seconds ?? 0, outputSeconds: output, ended: true };
+}
+export function nextComposedPlaybackPosition(draft:{segments:readonly SourceSegment[];inserts?:readonly TimelineInsert[]},sourceSeconds:number,previousOutputSeconds:number){
+ let output=0;
+ for(const segment of draft.segments){
+  const duration=segment.end_seconds-segment.start_seconds;
+  if(sourceSeconds<segment.end_seconds){
+   const source=Math.max(sourceSeconds,segment.start_seconds);
+   return {sourceSeconds:source,outputSeconds:output+source-segment.start_seconds,insertId:null,ended:false};
+  }
+  output+=duration;
+  for(const insert of draft.inserts??[]){if(insert.after_segment_id!==segment.id)continue;
+   if(previousOutputSeconds<output+insert.duration_ms/1000-.001)return {sourceSeconds:segment.end_seconds,outputSeconds:output,insertId:insert.id,ended:false};
+   output+=insert.duration_ms/1000;
+  }
+ }
+ return {sourceSeconds:draft.segments.at(-1)?.end_seconds??0,outputSeconds:output,insertId:null,ended:true};
 }
 export function thumbnailTimes(segments: readonly SourceSegment[], count: number) {
  const duration = outputDuration(segments);

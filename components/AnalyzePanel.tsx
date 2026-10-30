@@ -8,6 +8,7 @@ import {
   CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
+  MAX_CLIP_COUNT,
   type ClipCount,
 } from "@/lib/sparks";
 import { useSparks } from "./SparksProvider";
@@ -105,11 +106,13 @@ export default function AnalyzePanel() {
   /** Result drafts exist locally until the user explicitly keeps a clip. */
   const [runId, setRunId] = useState("");
   const [savedIds, setSavedIds] = useState<Record<number, string>>({});
+  const [archiveStatuses, setArchiveStatuses] = useState<Record<number, string>>({});
   const rawCache = useRef<Record<number, Blob>>({});
   const [saving, setSaving] = useState<number | "all" | null>(null);
   const savingRef = useRef(false);
   const exportLock = useRef(false);
   const submittedEstimate = useRef<number | null>(null);
+  const recoveringSource = useRef<string | null>(null);
   const [editorSettings, setEditorSettings] = useState<Partial<Record<number, EditorExportSettings>>>({});
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadWarning, setDownloadWarning] = useState<string | null>(null);
@@ -133,6 +136,7 @@ export default function AnalyzePanel() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [clipCount, setClipCount] = useState<ClipCount>(DEFAULT_CLIP_COUNT);
+  const [confirmMaxOpen, setConfirmMaxOpen] = useState(false);
   const [analysisNote, setAnalysisNote] = useState<string | null>(null);
   // Background health poll — lets the UI notice the processing service going
   // down (or coming back) without the user having to reload the page.
@@ -157,7 +161,29 @@ export default function AnalyzePanel() {
     viral_score: clip.viral_score, caption: clip.caption, reason: clip.reason,
     start_seconds: clip.start_seconds, end_seconds: clip.end_seconds,
     hooks: clip.hooks, words: clip.words, created_at: new Date(0).toISOString(),
-  })), [clips, savedIds, analyzedUrl]);
+    archive_status: archiveStatuses[index] ?? null,
+  })), [clips, savedIds, analyzedUrl, archiveStatuses]);
+  useEffect(() => {
+    const entries = Object.entries(savedIds);
+    if (!entries.length) return;
+    let active = true;
+    const refresh = async () => {
+      const { data } = await createClient().from('clips').select('id,archive_status').in('id', entries.map(([, id]) => id));
+      if (!active || !data) return;
+      const byId = new Map(data.map(row => [row.id, row.archive_status]));
+      setArchiveStatuses(previous => {
+        const next = { ...previous };
+        let changed = false;
+        for (const [index, id] of entries) {
+          const status = byId.get(id);
+          if (status && next[Number(index)] !== status) { next[Number(index)] = status; changed = true; }
+        }
+        return changed ? next : previous;
+      });
+    };
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [savedIds]);
   const draftId = (index: number) => `result-${runId}-${index}`;
   const updateEditorSettings = useCallback((settings: EditorExportSettings) => {
     if (previewIndex === null) return;
@@ -355,18 +381,28 @@ export default function AnalyzePanel() {
       dim_comedy: clip.dimensions?.comedy ?? null,
       dim_storyline: clip.dimensions?.storyline ?? null,
     }));
-    let { data, error } = await supabase.from("clips").insert(rows).select("id");
+    let { data, error } = await supabase.from("clips").insert(rows).select("id,archive_status");
     if (error && ["PGRST204", "42703"].includes(error.code) && /hooks|words|dim_/.test(error.message)) {
-      const fallback = await supabase.from("clips").insert(rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)).select("id");
+      const fallback = await supabase.from("clips").insert(rows.map(({ hooks, words, dim_hype, dim_emotion, dim_skill, dim_comedy, dim_storyline, ...rest }) => rest)).select("id,archive_status");
       data = fallback.data;
       error = fallback.error;
     }
     if (error) throw new Error(error.message || "Could not save clips. Please try again.");
-    if (!data || data.length !== rows.length) throw new Error("Could not confirm saved clips. Refresh your library before retrying.");
-    return data.map((row) => row.id as string);
+    if (!data || data.length !== rows.length) throw new Error("Could not confirm clips were added. Refresh your library before retrying.");
+    return data.map((row) => ({ id: row.id as string, archiveStatus: row.archive_status as string }));
   };
 
   const handleEvent = (event: AnalyzeEvent) => {
+    if (event.type === "job") {
+      const saved = localStorage.getItem("klyp-active-analysis-job");
+      if (saved) {
+        try {
+          const draft = JSON.parse(saved);
+          localStorage.setItem("klyp-active-analysis-job", JSON.stringify({ ...draft, id: event.jobId, body: { ...draft.body, jobId: event.jobId } }));
+        } catch { /* invalid draft */ }
+      }
+      return;
+    }
     if (event.type === "progress") {
       // Real forward motion — the only thing that should reset the stall watchdog.
       rearmProgressWatchdog.current?.();
@@ -379,6 +415,7 @@ export default function AnalyzePanel() {
       return;
     }
     if (event.type === "result") {
+      localStorage.removeItem("klyp-active-analysis-job");
       setStages((prev) => ({ ...prev, done: "done" }));
       setEtaRemaining(null);
       setStageStartedAt(null);
@@ -398,6 +435,7 @@ export default function AnalyzePanel() {
       setRunId(crypto.randomUUID());
       rawCache.current = {};
       setSavedIds({});
+      setArchiveStatuses({});
       setEditorSettings({});
       setClipHooks(Object.fromEntries(event.clips.map((c, i) => [i, c.hooks?.[0] ?? null])));
       setClipFormats(Object.fromEntries(event.clips.map((_, i) => [i, "9:16" as ExportFormat])));
@@ -407,7 +445,8 @@ export default function AnalyzePanel() {
       setAnalysisNote(event.clips.length === 0
         ? `No new moments cleared the quality floor. ${charge} Try another VOD or adjust your topic.`
         : charge);
-      setAnalyzedUrl(sourceRef);
+      setAnalyzedUrl(recoveringSource.current ?? sourceRef);
+      recoveringSource.current = null;
       // The server already deducted — mirror its authoritative balance.
       sync(event.sparksBalance);
       return;
@@ -420,9 +459,63 @@ export default function AnalyzePanel() {
   // the VOD URL, or "upload:<id>" for uploaded files.
   const sourceRef = inputMode === "file" && uploadedFile ? `upload:${uploadedFile.id}` : url;
 
+  const recoverJob = async (id: string, source: string, body: Record<string, unknown> | undefined, cancelled: () => boolean) => {
+    recoveringSource.current = source;
+    let lastResumeAttempt = 0;
+    for (let attempt = 0; attempt < 620 && !cancelled(); attempt++) {
+      try {
+        const response = await processingFetch(`/api/analyze/jobs/${id}`);
+        if (response.ok) {
+          const status = await response.json();
+          if (status.status === "completed" && status.result) { handleEvent(status.result as AnalyzeEvent); return; }
+          if (status.status === "failed") {
+            handleEvent({ type: "error", stage: status.stage ?? "analyze", error: status.error ?? "Analysis failed." });
+            return;
+          }
+          const stale = status.status === "running" && status.updatedAt && Date.now() - Date.parse(status.updatedAt) > 4 * 60_000;
+          if (body && (status.status === "queued" || stale) && Date.now() - lastResumeAttempt > 30_000) {
+            lastResumeAttempt = Date.now();
+            void processingFetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+              .then((res) => res.body?.cancel()).catch(() => {});
+          }
+          setStages((prev) => ({ ...prev, [status.stage as AnalyzeStage]: "running" }));
+        } else if (response.status === 404) {
+          localStorage.removeItem("klyp-active-analysis-job");
+          setError("Could not find the previous analysis job. You can start again.");
+          return;
+        } else if (response.status === 401 || response.status === 403) {
+          setError("Sign in to check your saved analysis job.");
+          return;
+        }
+      } catch { /* transient connection loss; keep polling the durable job */ }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  };
+
+  useEffect(() => {
+    const raw = localStorage.getItem("klyp-active-analysis-job");
+    if (!raw) return;
+    let saved: { id: string; source: string; body?: Record<string, unknown> };
+    try { saved = JSON.parse(raw); } catch { localStorage.removeItem("klyp-active-analysis-job"); return; }
+    if (!saved.id || !saved.source) return;
+    let cancelled = false;
+    setLoading(true);
+    void recoverJob(saved.id, saved.source, saved.body, () => cancelled).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+    // Recovery intentionally reads the saved job once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const analyze = (e: FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    // MAX mode is the priciest run — require explicit confirmation before
+    // anything fires. Nothing is charged at this point either way: the server
+    // deducts Sparks only after the analysis completes (see /api/analyze).
+    if (clipCount === MAX_CLIP_COUNT) {
+      setConfirmMaxOpen(true);
+      return;
+    }
     void runAnalysis();
   };
 
@@ -438,17 +531,22 @@ export default function AnalyzePanel() {
     setStageStartedAt(null);
     setStageElapsed(0);
     setReconnectAttempt(null);
-    let retriedConnect = false;
+    const requestBody = inputMode === "file" && uploadedFile
+      ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType, keyword: keyword.trim() || undefined }
+      : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined };
+    let jobId = crypto.randomUUID();
+    try {
+      const saved = JSON.parse(localStorage.getItem("klyp-active-analysis-job") ?? "null");
+      if (saved?.source === sourceRef && JSON.stringify({ ...saved.body, jobId: undefined }) === JSON.stringify({ ...requestBody, jobId: undefined })) jobId = saved.id;
+    } catch { /* invalid previous draft */ }
+    const body = { ...requestBody, jobId };
+    localStorage.setItem("klyp-active-analysis-job", JSON.stringify({ id: jobId, source: sourceRef, body }));
 
     try {
       const requestInit: RequestInit = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          inputMode === "file" && uploadedFile
-            ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType, keyword: keyword.trim() || undefined }
-            : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined }
-        ),
+        body: JSON.stringify(body),
       };
 
       // A network-level failure here (fetch() throwing, not an HTTP error
@@ -463,7 +561,6 @@ export default function AnalyzePanel() {
           break;
         } catch (err) {
           if (attempt >= ANALYZE_RETRY_DELAYS_MS.length) throw err;
-          retriedConnect = true;
           setReconnectAttempt(attempt + 1);
           await new Promise((r) => setTimeout(r, ANALYZE_RETRY_DELAYS_MS[attempt]));
         }
@@ -472,6 +569,8 @@ export default function AnalyzePanel() {
       // Validation failures come back as plain JSON before the stream starts.
       if (!res.headers.get("content-type")?.includes("text/event-stream")) {
         const data = await res.json().catch(() => null);
+        if (data?.type === "result") { handleEvent(data as AnalyzeEvent); return; }
+        localStorage.removeItem("klyp-active-analysis-job");
         setError(data?.error ?? `Request failed (HTTP ${res.status}).`);
         return;
       }
@@ -491,21 +590,18 @@ export default function AnalyzePanel() {
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let watchdogFired = false;
-      let stalledFired = false;
+      let terminalEvent = false;
       let watchdog: ReturnType<typeof setTimeout> | undefined;
       let progressWatchdog: ReturnType<typeof setTimeout> | undefined;
       const armWatchdog = () => {
         clearTimeout(watchdog);
         watchdog = setTimeout(() => {
-          watchdogFired = true;
           reader.cancel().catch(() => {});
         }, WATCHDOG_MS);
       };
       const armProgressWatchdog = () => {
         clearTimeout(progressWatchdog);
         progressWatchdog = setTimeout(() => {
-          stalledFired = true;
           reader.cancel().catch(() => {});
         }, NO_PROGRESS_MS);
       };
@@ -526,7 +622,9 @@ export default function AnalyzePanel() {
           buffer = buffer.slice(frameEnd + 2);
           const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
           if (dataLine) {
-            handleEvent(JSON.parse(dataLine.slice(6)) as AnalyzeEvent);
+            const event = JSON.parse(dataLine.slice(6)) as AnalyzeEvent;
+            if (event.type === "result" || event.type === "error") terminalEvent = true;
+            handleEvent(event);
           }
         }
       }
@@ -535,21 +633,10 @@ export default function AnalyzePanel() {
         clearTimeout(progressWatchdog);
         rearmProgressWatchdog.current = null;
       }
-      if (watchdogFired) {
-        setError(
-          "Analysis timed out — no response from the server for 45 seconds. Check the dev server terminal for [analyze] logs and try again."
-        );
-      } else if (stalledFired) {
-        setError(
-          "Analysis stalled — the server stayed connected but stopped making progress for 30 minutes, so it was almost certainly stuck. Nothing was lost; try again."
-        );
-      }
+      if (!terminalEvent) await recoverJob(jobId, sourceRef, body, () => false);
     } catch {
-      setError(
-        retriedConnect
-          ? "Connection lost — the dev server didn't come back after a few reconnect attempts. Check the dev server terminal for [analyze] logs."
-          : "Connection lost — is the dev server still running?"
-      );
+      setAnalysisNote("Connection interrupted. Checking your saved analysis job…");
+      await recoverJob(jobId, sourceRef, body, () => false);
     } finally {
       setReconnectAttempt(null);
       // Brief pause so the final "Done!" check is visible before closing.
@@ -636,15 +723,16 @@ export default function AnalyzePanel() {
     setDownloadError(null);
     try {
       const ids = await saveClipsToSupabase(analyzedUrl, indices.map((index) => clips[index]));
-      setSavedIds((previous) => ({ ...previous, ...Object.fromEntries(indices.map((index, n) => [index, ids[n]])) }));
+      setSavedIds((previous) => ({ ...previous, ...Object.fromEntries(indices.map((index, n) => [index, ids[n].id])) }));
+      setArchiveStatuses((previous) => ({ ...previous, ...Object.fromEntries(indices.map((index, n) => [index, ids[n].archiveStatus])) }));
       setClipStatus((previous) => ({ ...previous, ...Object.fromEntries(indices.map((index) => [index, "kept" as const])) }));
       indices.forEach((index, n) => {
         try {
           const draft = localStorage.getItem(`klyp-editor-${draftId(index)}`);
-          if (draft) localStorage.setItem(`klyp-editor-${ids[n]}`, draft);
+          if (draft) localStorage.setItem(`klyp-editor-${ids[n].id}`, draft);
         } catch { /* Local draft storage is optional. */ }
       });
-      return ids;
+      return ids.map(row => row.id);
     } catch (error) {
       setDownloadError(error instanceof Error ? error.message : "Could not save clips. Try again.");
     } finally { savingRef.current = false; setSaving(null); }
@@ -985,7 +1073,7 @@ export default function AnalyzePanel() {
                     : "border-border bg-surface-2 text-foreground-muted hover:border-subtle hover:text-foreground"
                 }`}
               >
-                <span className="block">{n} clips</span>
+                <span className="block">{n === MAX_CLIP_COUNT ? `${n} MAX clips` : `${n} clips`}</span>
                 <span className="mt-0.5 block font-normal opacity-85">{CLIP_COUNT_COST[n]} Sparks <span aria-hidden="true" className="ml-0.5 text-[11px] text-amber-400">⚡</span></span>
               </button>
             ))}
@@ -1199,6 +1287,44 @@ export default function AnalyzePanel() {
 
       {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}
 
+      {/* MAX clips confirmation — nothing runs (and nothing is charged) until confirmed. */}
+      {confirmMaxOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmMaxOpen(false); }}
+        >
+          <div className="w-full max-w-sm bg-surface border border-border rounded-2xl shadow-2xl p-5 space-y-3">
+            <p className="font-syne font-bold text-foreground">MAX clips analysis</p>
+            <p className="text-sm text-foreground-muted">
+              Are you sure? You are using{" "}
+              <span className="font-syne font-bold text-accent">
+                {totalEstimate ?? CLIP_COUNT_COST[clipCount]}⚡
+              </span>{" "}
+              for <span className="font-syne font-bold text-accent">{clipCount} clips</span>
+              {totalEstimate === null && <> (plus the VOD-length cost, added once the video is probed)</>}.
+            </p>
+            <p className="text-[11px] text-subtle">
+              Fewer clips may come back (quality floor) — you&apos;re only charged for what MIDAS
+              actually returns, and nothing is deducted until the analysis completes.
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => setConfirmMaxOpen(false)}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold font-syne text-foreground-muted hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setConfirmMaxOpen(false); void runAnalysis(); }}
+                className="px-3 py-1.5 rounded-lg bg-accent text-background text-xs font-bold font-syne hover:bg-accent-dim transition-colors"
+              >
+                Yes, analyze
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Preview modal ── */}
       {previewIndex !== null && clips && (
         <ClipPreviewModal
@@ -1224,4 +1350,3 @@ export default function AnalyzePanel() {
     </section>
   );
 }
-

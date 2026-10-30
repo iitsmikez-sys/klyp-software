@@ -1,12 +1,11 @@
 export type NormalizedRect = { x: number; y: number; w: number; h: number };
 export type PixelRect = { x: number; y: number; w: number; h: number };
 export function visibleFrameRect(rect: PixelRect, output: { w: number; h: number }): PixelRect {
-  const x = Math.max(0, rect.x);
-  const y = Math.max(0, rect.y);
-  const right = Math.min(output.w, rect.x + rect.w);
-  const bottom = Math.min(output.h, rect.y + rect.h);
+  const x = Math.max(0, rect.x), y = Math.max(0, rect.y);
+  const right = Math.min(output.w, rect.x + rect.w), bottom = Math.min(output.h, rect.y + rect.h);
   return right > x && bottom > y ? { x, y, w: right - x, h: bottom - y } : { x: 0, y: 0, w: output.w, h: output.h };
 }
+export type ForegroundTransform = { scale: number; x: number; y: number };
 export type VerticalLayoutV1 = {
   version: 1;
   gameplay: NormalizedRect;
@@ -14,11 +13,12 @@ export type VerticalLayoutV1 = {
   chat?: NormalizedRect;
   arrangement?: "gameplay_top" | "facecam_top";
   focus?: "reaction";
+  foreground?: ForegroundTransform;
   mainShare?: number;
   fit?: { zoom: number; x: number; y: number };
 };
 export type VerticalLayoutPlan =
-  | { mode: "full_frame"; source: PixelRect; dest: PixelRect; output: { w: number; h: number } }
+  | { mode: "full_frame"; source: PixelRect; dest: PixelRect; output: { w: number; h: number }; textSafe: PixelRect; transformed?: boolean }
   | { mode: "composed"; panels: { name: "gameplay" | "facecam" | "chat"; source: PixelRect; dest: PixelRect }[]; output: { w: number; h: number }; textSafe: PixelRect };
 
 export function clampSourceRect(rect: NormalizedRect): NormalizedRect {
@@ -41,6 +41,15 @@ function validRect(input: unknown): input is NormalizedRect {
     (r.y as number) + (r.h as number) <= 1.000001;
 }
 
+function validForeground(input: unknown): input is ForegroundTransform {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const value = input as Record<string, unknown>;
+  return [value.scale, value.x, value.y].every(n => typeof n === "number" && Number.isFinite(n)) &&
+    (value.scale as number) >= 1 && (value.scale as number) <= 4 &&
+    (value.x as number) >= 0 && (value.x as number) <= 1 &&
+    (value.y as number) >= 0 && (value.y as number) <= 1;
+}
+
 export function validateVerticalLayout(input: unknown): VerticalLayoutV1 {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid vertical layout.");
   const value = input as Record<string, unknown>;
@@ -53,7 +62,10 @@ export function validateVerticalLayout(input: unknown): VerticalLayoutV1 {
         (value.fit as { zoom: number }).zoom < 1 || (value.fit as { zoom: number }).zoom > 4 ||
         Math.abs((value.fit as { x: number }).x) > 1 || Math.abs((value.fit as { y: number }).y) > 1)) ||
       (value.arrangement != null && value.arrangement !== "gameplay_top" && value.arrangement !== "facecam_top") ||
-      (value.focus != null && value.focus !== "reaction")) throw new Error("Invalid vertical layout.");
+      (value.focus != null && value.focus !== "reaction") ||
+      (value.foreground != null && (!validForeground(value.foreground) || !!value.fit || !!value.facecam || !!value.chat ||
+        (value.gameplay as NormalizedRect).x !== 0 || (value.gameplay as NormalizedRect).y !== 0 ||
+        (value.gameplay as NormalizedRect).w !== 1 || (value.gameplay as NormalizedRect).h !== 1))) throw new Error("Invalid vertical layout.");
   return {
     version: 1,
     gameplay: { ...value.gameplay },
@@ -61,6 +73,7 @@ export function validateVerticalLayout(input: unknown): VerticalLayoutV1 {
     ...(value.chat ? { chat: { ...(value.chat as NormalizedRect) } } : {}),
     ...(value.arrangement ? { arrangement: value.arrangement as VerticalLayoutV1["arrangement"] } : {}),
     ...(value.focus ? { focus: "reaction" as const } : {}),
+    ...(value.foreground ? { foreground: { ...(value.foreground as ForegroundTransform) } } : {}),
     ...(value.mainShare != null ? { mainShare: value.mainShare as number } : {}),
     ...(value.fit ? { fit: { ...(value.fit as { zoom: number; x: number; y: number }) } } : {}),
   };
@@ -91,8 +104,22 @@ export function planVerticalLayout(source: { w: number; h: number }, layout: Ver
     const scale = Math.min(output.w / source.w, output.h / source.h) * fit.zoom;
     const w = even(source.w * scale);
     const h = even(source.h * scale);
-    return { mode: "full_frame", source: { x: 0, y: 0, w: source.w, h: source.h },
-      dest: { x: even((output.w - w) / 2 + fit.x * output.w), y: even((output.h - h) / 2 + fit.y * output.h), w, h }, output };
+    const dest = { x: even((output.w - w) / 2 + fit.x * output.w), y: even((output.h - h) / 2 + fit.y * output.h), w, h };
+    return { mode: "full_frame", source: { x: 0, y: 0, w: source.w, h: source.h }, dest, output, textSafe: visibleFrameRect(dest, output), transformed: !!valid?.fit };
+  }
+  // A full-source gameplay box is not permission to discard its side content.
+  // A narrower user-marked box still opts into the composed crop.
+  if (output.h > output.w && !valid.facecam && !valid.chat && valid.gameplay.x === 0 && valid.gameplay.y === 0 && valid.gameplay.w === 1 && valid.gameplay.h === 1) {
+    const fit = planVerticalLayout(source, null, output);
+    if (fit.mode !== "full_frame" || !valid.foreground) return fit;
+    const transform = valid.foreground;
+    const w = Math.max(2, even(fit.dest.w * transform.scale));
+    const h = Math.max(2, even(fit.dest.h * transform.scale));
+    const x = even((output.w - w) * transform.x);
+    const y = even((output.h - h) * transform.y);
+    const visibleX = Math.max(0, x), visibleY = Math.max(0, y);
+    return { ...fit, dest: { x, y, w, h }, transformed: true,
+      textSafe: { x: visibleX, y: visibleY, w: Math.min(output.w, x + w) - visibleX, h: Math.min(output.h, y + h) - visibleY } };
   }
   if (valid.focus === "reaction" && valid.facecam) {
     const faceHeight = even(output.h * 0.7);
@@ -104,8 +131,9 @@ export function planVerticalLayout(source: { w: number; h: number }, layout: Ver
     ], textSafe: gameDest };
   }
   const optional = (["facecam", "chat"] as const).filter((name) => valid[name]);
-  const topHeight = optional.length ? even(output.h * (valid.mainShare ?? 0.7)) : output.h;
   const facecamFirst = valid.arrangement === "facecam_top" && !!valid.facecam;
+  // A marked facecam gets more space while gameplay keeps the majority.
+  const topHeight = optional.length ? even(output.h * (valid.mainShare ?? (facecamFirst ? 0.6 : 0.7))) : output.h;
   const smallBandY = facecamFirst ? 0 : topHeight;
   const mainY = facecamFirst ? output.h - topHeight : 0;
   const destinations: { name: "gameplay" | "facecam" | "chat"; rect: NormalizedRect; dest: PixelRect }[] = [

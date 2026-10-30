@@ -1,6 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCutawayAtPlayhead, updateCutawayInterval, cutawayDrawRect, uploadEditorFile } from './editor-media-client.ts';
+import { createCutawayAtPlayhead, createOverlayAtPlayhead, createTimelineInsert, updateCutawayInterval, cutawayDrawRect, uploadEditorFile } from './editor-media-client.ts';
+
+test('new overlay is a movable foreground layer while old cutaways remain replacement shots',()=>{
+ const overlay=createOverlayAtPlayhead(draft(),asset,2,'overlay');
+ assert.equal(overlay.placement,'overlay');assert.deepEqual(overlay.rect,{x:.3,y:.3,w:.4,h:.4});
+ assert.equal(createCutawayAtPlayhead(draft(),asset,2,'old').placement,undefined);
+ const saved=validateClipEditDraft({...draft(),cutaways:[overlay]},clip);
+ assert.equal(saved.version,3);
+ assert.deepEqual(saved.cutaways[0].rect,overlay.rect);
+});
+test('overlay timing after an inserted section maps back to its source anchor',()=>{
+ const base=draft();const split={...base,segments:[{id:'a',start_seconds:100,end_seconds:110},{id:'b',start_seconds:110,end_seconds:120}],inserts:[{id:'media',asset_id:'video',after_segment_id:'a',duration_ms:3000,asset_in_ms:0,muted:false}]};
+ const overlay=createOverlayAtPlayhead(split,asset,14,'overlay');
+ const shifted=updateCutawayInterval({...split,cutaways:[overlay]},overlay,asset,14,16,0);
+ assert.equal(shifted.source_start_ms,111000);assert.equal(shifted.source_end_ms,113000);
+});
+
+test('an imported video inserted after a split section plays its own audio by default',()=>{
+ const value=createTimelineInsert(draft(),{...asset,id:'video',kind:'video',duration_ms:5000},'segment-1','new');
+ assert.equal(value.after_segment_id,'segment-1');assert.equal(value.duration_ms,5000);assert.equal(value.muted,false);
+ assert.throws(()=>createTimelineInsert(draft(),asset,'missing','new'));
+});
 import { defaultClipEditDraft, upgradeClipEditDraft, validateClipEditDraft } from './clip-edit-draft.ts';
 import { resolveCutawaySpans } from './editor-timeline.ts';
 import { apply, reset, undo } from './editor-history.ts';

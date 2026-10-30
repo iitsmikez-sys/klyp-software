@@ -14,7 +14,7 @@
  *   5. Stream the MP4 back as a file download
  */
 import { NextRequest, NextResponse } from "next/server";
-import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
@@ -388,6 +388,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
           const bytes = await readArchivedObject(archived.masterPath);
           if (bytes) {
             archivedMaster = path.join(CACHE_DIR, `master-${archived.id}.mp4`);
+            await mkdir(CACHE_DIR, { recursive: true });
             await writeFile(archivedMaster, bytes);
             log("using archived master", archived.masterPath, `${(bytes.byteLength / 1e6).toFixed(1)}MB`);
           } else {

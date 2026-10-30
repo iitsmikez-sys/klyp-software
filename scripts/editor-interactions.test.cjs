@@ -110,17 +110,17 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   await page.getByRole('button', { name: 'mono caption font' }).click();
   assert.equal(await page.getByRole('button', { name: 'mono caption font' }).getAttribute('aria-pressed'), 'true');
   await page.screenshot({ path: path.join(root, '.tmp-smoke', 'p1-caption-studio.png') });
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
   // Confirm normalization and pending edits in the actual mounted editor.
   await page.getByLabel('Clip title').fill('  Normalized title  '); await page.getByLabel('Hook text').fill('  Normalized hook  ');
-  await page.locator('[aria-label="Caption lane"] button').first().click(); await page.getByLabel('Caption text', { exact: true }).fill('  Normalized caption  ');
+  await page.getByRole('button', { name: 'Generate captions from transcript' }).click(); await page.locator('[aria-label="Caption lane"] button').first().click(); await page.getByLabel('Caption text', { exact: true }).fill('  Normalized caption  ');
   await page.getByRole('button', { name: 'Save', exact: true }).click(); await page.getByText('Saved to Klyp', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('Clip title').inputValue(), 'Normalized title'); assert.equal(await page.getByLabel('Hook text').inputValue(), 'Normalized hook'); assert.equal(await page.getByLabel('Caption text', { exact: true }).inputValue(), 'Normalized caption');
   delaySave = true; await page.getByLabel('Clip title').fill('  Server title  '); await page.getByRole('button', { name: 'Save', exact: true }).click(); await page.getByText('Saving…', { exact: true }).waitFor();
   await page.getByLabel('Hook text').fill('new hook while saving'); while (!releaseSave) await wait(10); releaseSave(); await page.getByText('Unsaved changes', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('Clip title').inputValue(), 'Server title'); assert.equal(await page.getByLabel('Hook text').inputValue(), 'new hook while saving');
   // Route has no background dashboard UI, and every keyboard stop stays inside.
-  assert.equal(await page.locator('nav:not(.editor-rail)').count(), 0);
+  assert.equal(await page.locator('nav:not(.editor-rail):not(.editor-inspector-tabs)').count(), 0);
   await page.getByRole('button', { name: 'Back to clips' }).focus();
   for (let i = 0; i < 70; i++) { await page.keyboard.press('Tab'); const focus=await page.evaluate(() => ({inside:document.activeElement === document.body || !!document.activeElement.closest('.clip-editor') || document.activeElement.tagName.toLowerCase()==='nextjs-portal',html:document.activeElement.outerHTML.slice(0,300)})); assert(focus.inside,`Tab must not reach dashboard controls: ${focus.html}`); }
   assert.deepEqual(errors, []);

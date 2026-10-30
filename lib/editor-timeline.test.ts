@@ -74,3 +74,13 @@ test("resolved spans sort by output time even when cutaways were inserted out of
  draft.cutaways.reverse();
  assert.deepEqual(timeline.resolveCutawaySpans(draft).map(s => s.id), ["earlier", "photo"]);
 });
+test('inserted media adds time between split sections and shifts source effects', () => {
+ const draft=visualDraft([{id:'a',start_seconds:100,end_seconds:115},{id:'b',start_seconds:115,end_seconds:130}]);
+ draft.inserts=[{id:'insert',asset_id:'video',after_segment_id:'a',duration_ms:4000,asset_in_ms:0,muted:false}];
+ assert.equal(timeline.composedDuration(draft),34);
+ assert.deepEqual(timeline.resolveInsertSpans(draft).map(s=>[s.start_ms,s.end_ms]),[[15000,19000]]);
+ assert.equal(timeline.composedAtOutputTime(draft,15).kind,'insert');
+ assert.equal(timeline.composedAtOutputTime(draft,19).kind,'source');
+ assert.equal(timeline.resolveCutawaySpans({...draft,cutaways:[{...draft.cutaways[0],source_start_ms:120000,source_end_ms:123000}]}).at(0)?.start_ms,24000);
+ assert.deepEqual(timeline.outputSpansForSourceCue(draft.segments,{start_ms:120000,end_ms:121000},draft.inserts),[{start_ms:24000,end_ms:25000}]);
+});

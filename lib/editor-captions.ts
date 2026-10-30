@@ -9,7 +9,7 @@ export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip
  const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === "KLYP" || draft.caption_style === "SPARK" ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
  const usedIds = new Set(source.map(cue => cue.id));
  return normalizeTimedCues(source.flatMap(cue => {
-  const spans = outputSpansForSourceCue(draft.segments, cue);
+  const spans = outputSpansForSourceCue(draft.segments, cue, draft.version===3?draft.inserts:undefined);
   return spans.map((span, index) => {
    let id = cue.id;
    if (spans.length > 1) {
@@ -24,7 +24,7 @@ export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip
 
 /** The preview player passes edited output seconds, including after source skips. */
 export function editorOverlayAtTime(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip, seconds: number) {
- const within = Number.isFinite(seconds) && seconds >= 0 && seconds < outputDuration(draft.segments);
+ const within = Number.isFinite(seconds) && seconds >= 0 && seconds < outputDuration(draft.segments)+(draft.version===3?(draft.inserts??[]).reduce((sum,item)=>sum+item.duration_ms/1000,0):0);
  return { hook: within && seconds * 1000 < HOOK_DURATION_MS && draft.hook ? draft.hook : null,
  caption: within ? resolveEditorCues(draft, clip).find(cue => seconds * 1000 >= cue.start_ms && seconds * 1000 < cue.end_ms) ?? null : null };
 }

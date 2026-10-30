@@ -8,6 +8,8 @@ import { resolveSourceSegment } from "@/lib/video-cache";
 import { archiveScaleFilter } from "@/lib/archive-video";
 import { CLIP_BUCKET } from "@/lib/clip-archive";
 import { runQueued } from "@/lib/job-queue";
+import { archiveUsageEvent } from "@/lib/analysis-meter";
+import { vodSourceKey } from "@/lib/vod-source";
 
 const MAX_OBJECT_BYTES = 50 * 1024 * 1024;
 type ArchiveJob = {
@@ -48,6 +50,7 @@ async function makeAssets(job: ArchiveJob, dir: string) {
 }
 
 async function archiveOne(job: ArchiveJob): Promise<void> {
+  const startedAt = Date.now();
   const admin = createAdminClient();
   const dir = await mkdtemp(path.join(tmpdir(), "klyp-archive-"));
   try {
@@ -73,6 +76,7 @@ async function archiveOne(job: ArchiveJob): Promise<void> {
     });
     if (error) throw error;
     console.log("[clip-archive] stored", job.clip_id, bytes);
+    console.log(`[analysis-archive] ${JSON.stringify(archiveUsageEvent(vodSourceKey(job.url), job.clip_id, bytes, Date.now() - startedAt))}`);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

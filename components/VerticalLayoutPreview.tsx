@@ -10,21 +10,22 @@ import { captionMotion } from "@/lib/caption-template-motion";
 import type { ClipEditDraftV2, ClipEditDraftV3 } from "@/lib/clip-edit-draft";
 import type { SavedClip } from "@/lib/clip-ui";
 import type { CaptionStyle, TimedWord } from "@/lib/clips";
-import { cutawayAtOutputTime, resolveCutawaySpans } from '@/lib/editor-timeline';
+import { cutawayAtOutputTime, resolveCutawaySpans, type ResolvedInsertSpan } from '@/lib/editor-timeline';
 import { focusAtOutputTime, layoutForFocus, resolveFocusSpans, splitCuesForFocus } from '@/lib/editor-focus';
 import { cutawayDrawRect } from '@/lib/editor-media-client';
 import type { CutawayPicture } from './EditorCutawayPreview';
 
-export default function VerticalLayoutPreview({ video, layout, text, editor, picture, format = "9:16" }: { picture?: CutawayPicture|null; format?: "9:16" | "16:9" | "1:1" | "Original"; editor?: { draft: ClipEditDraftV2 | ClipEditDraftV3; clip: SavedClip; outputTime: () => number }; video: HTMLVideoElement | null; layout: VerticalLayoutV1 | null; text?: { hook: string; hookStyle: HookStyle; captionStyle: CaptionStyle; words: TimedWord[] | null; videoTrimStart: number; vodStart: number; vodEnd: number } }) {
+export default function VerticalLayoutPreview({ video, layout, text, editor, picture, inserted, format = "9:16" }: { picture?: CutawayPicture|null;inserted?:ResolvedInsertSpan|null; format?: "9:16" | "16:9" | "1:1" | "Original"; editor?: { draft: ClipEditDraftV2 | ClipEditDraftV3; clip: SavedClip; outputTime: () => number }; video: HTMLVideoElement | null; layout: VerticalLayoutV1 | null; text?: { hook: string; hookStyle: HookStyle; captionStyle: CaptionStyle; words: TimedWord[] | null; videoTrimStart: number; vodStart: number; vodEnd: number } }) {
   const [renderError, setRenderError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const insertedFrame=document.createElement('canvas');
     if (!video) { canvas.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height); return; }
     const cutaways=editor?.draft.version===3?resolveCutawaySpans(editor.draft):[];
     const focusSpans=editor?.draft.version===3 && editor.draft.focus_events?.length && layout?.facecam && format==='9:16'
-      ? resolveFocusSpans(editor.draft.focus_events,editor.draft.segments) : null;
+      ? resolveFocusSpans(editor.draft.focus_events,editor.draft.segments,editor.draft.inserts) : null;
     let frame = 0;
     setRenderError(null);
     const draw = () => {
@@ -32,6 +33,18 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
         const ctx = canvas.getContext("2d");
         if (ctx && video.readyState >= 2 && video.videoWidth && video.videoHeight) {
           const source = { w: video.videoWidth, h: video.videoHeight };
+          let frame:CanvasImageSource=video;
+          if(inserted){
+            if(insertedFrame.width!==source.w)insertedFrame.width=source.w;
+            if(insertedFrame.height!==source.h)insertedFrame.height=source.h;
+            const frameCtx=insertedFrame.getContext('2d');
+            if(frameCtx){frameCtx.fillStyle='black';frameCtx.fillRect(0,0,source.w,source.h);
+              if(picture?.assetId===inserted.asset_id){const element=picture.element,isVideo=element instanceof HTMLVideoElement;
+                const sw=isVideo?element.videoWidth:element.naturalWidth,sh=isVideo?element.videoHeight:element.naturalHeight;
+                if(sw&&sh&&(!isVideo||element.readyState>=2)){const rect=cutawayDrawRect(sw,sh,source.w,source.h,'contain',{x:.5,y:.5});frameCtx.drawImage(element,rect.x,rect.y,rect.w,rect.h);}}
+            }
+            frame=insertedFrame;
+          }
           const dimensions = previewDimensions(source, format);
           if (canvas.height !== dimensions.h) canvas.height = dimensions.h;
           const activeLayout=focusSpans ? layoutForFocus(layout,focusAtOutputTime(focusSpans,editor!.outputTime())) : layout;
@@ -40,37 +53,46 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           if (plan.mode === "full_frame") {
             const d = plan.dest;
-            ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, d.x, d.y, d.w, d.h);
+            const cover = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight) * 1.05;
+            const backgroundW = video.videoWidth * cover, backgroundH = video.videoHeight * cover;
+            ctx.save();
+            // Match the export's blur, which is applied before its background is enlarged.
+            ctx.filter = "blur(16px)";
+            ctx.drawImage(frame, (canvas.width - backgroundW) / 2, (canvas.height - backgroundH) / 2, backgroundW, backgroundH);
+            ctx.restore();
+            ctx.drawImage(frame, 0, 0, video.videoWidth, video.videoHeight, d.x, d.y, d.w, d.h);
           } else {
             for (const panel of plan.panels) {
               const s = panel.source;
               const d = panel.dest;
-              ctx.drawImage(video, s.x, s.y, s.w, s.h, d.x, d.y, d.w, d.h);
+              ctx.drawImage(frame, s.x, s.y, s.w, s.h, d.x, d.y, d.w, d.h);
             }
           }
           if (editor) {
             const outputTime = editor.outputTime();
             const cutaway=cutawayAtOutputTime(cutaways,outputTime);
-            if(cutaway) {
-              ctx.fillStyle='black';ctx.fillRect(0,0,canvas.width,canvas.height);
-              if(picture?.assetId===cutaway.asset_id) {
+            if(cutaway&&!inserted) {
+              if(!cutaway.placement){ctx.fillStyle='black';ctx.fillRect(0,0,canvas.width,canvas.height);}
+              if(picture&&picture.assetId===cutaway.asset_id) {
                 const element=picture.element;
                 const isVideo=element instanceof HTMLVideoElement;
                 const sw=isVideo?element.videoWidth:element.naturalWidth,sh=isVideo?element.videoHeight:element.naturalHeight;
                 if(sw&&sh&&(!isVideo||element.readyState>=2)) {
-                  const d=cutawayDrawRect(sw,sh,canvas.width,canvas.height,cutaway.fit,cutaway.focal_point);
-                  ctx.drawImage(element,d.x,d.y,d.w,d.h);
+                  const rect=cutaway.placement==='overlay'?cutaway.rect!:{x:0,y:0,w:1,h:1};
+                  const box={x:rect.x*canvas.width,y:rect.y*canvas.height,w:rect.w*canvas.width,h:rect.h*canvas.height};
+                  const d=cutawayDrawRect(sw,sh,box.w,box.h,cutaway.fit,cutaway.focal_point);
+                  ctx.save();ctx.beginPath();ctx.rect(box.x,box.y,box.w,box.h);ctx.clip();ctx.drawImage(element,box.x+d.x,box.y+d.y,d.w,d.h);ctx.restore();
                 }
               }
             }
             const overlay = editorOverlayAtTime(editor.draft, editor.clip, outputTime);
-            if (overlay.hook) drawHookPreview(ctx, outputTime, overlay.hook, editor.draft.hook_style, canvas.width, canvas.height);
+            if (overlay.hook) drawHookPreview(ctx, outputTime, overlay.hook, editor.draft.hook_style, canvas.width, canvas.height, editor.draft.hook_placement);
             const activeCaption = overlay.caption && focusSpans
               ? splitCuesForFocus([overlay.caption], focusSpans).find(cue => outputTime * 1000 >= cue.start_ms && outputTime * 1000 < cue.end_ms)
               : overlay.caption;
             if (activeCaption) {
               const appearance = captionAppearance(editor.draft);
-              const safe = plan.mode === "composed" ? plan.textSafe : visibleFrameRect(plan.dest, dimensions);
+              const safe = plan.textSafe;
               const style = editor.draft.caption_style;
               const caption = layoutTimedCaption(activeCaption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe, editor.draft.caption_font ?? 'sans');
               const motion = captionMotion(style, outputTime * 1000 - activeCaption.start_ms);
@@ -101,8 +123,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const cues = buildCaptionCues(text.words, text.vodStart * 1000, text.vodEnd * 1000, text.captionStyle === "KLYP" ? 1 : 4);
               const active = cues.find((cue) => clipTime * 1000 >= cue.startMs && clipTime * 1000 < cue.endMs);
               if (active) {
-                const visible = plan.mode === "composed" ? plan.textSafe : visibleFrameRect(plan.dest, dimensions);
-                const safeBottom = visible.y + visible.h;
+                const safeBottom = plan.textSafe.y + plan.textSafe.h;
                 ctx.font = `${text.captionStyle === "COMIC" ? "italic " : ""}${text.captionStyle === "CLEAN" ? "normal 29" : "bold 41"}px Arial`;
                 ctx.textAlign = "center";
                 ctx.lineWidth = 5;
@@ -131,6 +152,6 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [video, layout, text, editor, picture, format]);
+  }, [video, layout, text, editor, picture, inserted, format]);
   return <><canvas ref={canvasRef} width={540} height={format === "16:9" ? 304 : format === "1:1" ? 540 : 960} className="w-full max-w-[220px] h-auto rounded-lg border border-border bg-black" aria-label="Vertical clip preview" />{renderError && <p role="alert">{renderError}</p>}</>;
 }

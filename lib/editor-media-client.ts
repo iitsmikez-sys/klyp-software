@@ -1,6 +1,6 @@
 import type { EditorAsset } from './editor-assets.ts';
-import type { ClipEditDraftV3, VisualCutaway } from './clip-edit-draft.ts';
-import { outputDuration, sourceAtOutputTime } from './editor-timeline.ts';
+import type { ClipEditDraftV3, VisualCutaway, TimelineInsert } from './clip-edit-draft.ts';
+import { composedAtOutputTime, composedDuration, outputDuration, sourceOnlyOutputForSourceSeconds, sourceAtOutputTime } from './editor-timeline.ts';
 
 export type UploadPhase = 'preparing' | 'uploading' | 'verifying';
 type UploadDependencies = {
@@ -28,16 +28,12 @@ export async function uploadEditorFile(clipId:string,file:File,kind:'photo'|'vid
  if(result.asset.status!=='verified')throw new Error('Media verification did not finish. Please retry.');
  return result.asset;
 }
-// End positions are exclusive: at a ripple boundary use the preceding segment's end.
-function sourceAtOutputEnd(draft:ClipEditDraftV3,seconds:number):number {
- let remaining=seconds;
- for(const s of draft.segments){const length=s.end_seconds-s.start_seconds;if(remaining<=length)return s.start_seconds+remaining;remaining-=length;}
- return draft.segments.at(-1)!.end_seconds;
-}
 export function updateCutawayInterval(draft:ClipEditDraftV3,cutaway:VisualCutaway,asset:EditorAsset,start:number,end:number,assetIn:number):VisualCutaway {
  if(asset.status!=='verified')throw new Error('Choose verified media.');
- if(![start,end,assetIn].every(Number.isFinite)||start<0||end>outputDuration(draft.segments)+1e-7||end-start<.1-1e-7||assetIn<0)throw new Error('Keep the cutaway inside the clip with at least 0.1 seconds of duration.');
- const next={...cutaway,source_start_ms:Math.round(sourceAtOutputTime(draft.segments,start)*1000),source_end_ms:Math.round(sourceAtOutputEnd(draft,end)*1000),asset_in_ms:asset.kind==='photo'?0:Math.round(assetIn*1000)};
+ if(![start,end,assetIn].every(Number.isFinite)||start<0||end>composedDuration(draft)+1e-7||end-start<.1-1e-7||assetIn<0)throw new Error('Keep the cutaway inside the clip with at least 0.1 seconds of duration.');
+ const startPosition=composedAtOutputTime(draft,start),endPosition=composedAtOutputTime(draft,Math.max(start,end-.00001));
+ if(startPosition.kind==='insert'||endPosition.kind==='insert')throw new Error('Overlay timing must start and end on source video.');
+ const next={...cutaway,source_start_ms:Math.round(startPosition.sourceSeconds*1000),source_end_ms:Math.round((endPosition.sourceSeconds+.00001)*1000),asset_in_ms:asset.kind==='photo'?0:Math.round(assetIn*1000)};
  if(asset.kind==='video'&&(asset.duration_ms===null||next.asset_in_ms+next.source_end_ms-next.source_start_ms>asset.duration_ms))throw new Error('This interval extends beyond the imported video duration. Shorten it or reduce the media start.');
  if(draft.cutaways.some(c=>c.id!==next.id&&c.source_start_ms<next.source_end_ms&&c.source_end_ms>next.source_start_ms))throw new Error('Cutaways cannot overlap. Move or shorten the selected interval.');
  return next;
@@ -53,6 +49,20 @@ export function createCutawayAtPlayhead(draft:ClipEditDraftV3,asset:EditorAsset,
   for(const s of draft.segments){if(s.start_seconds*1000>=cap)break;end=offset+Math.min(s.end_seconds*1000,cap)/1000-s.start_seconds;offset+=s.end_seconds-s.start_seconds;if(s.end_seconds*1000>=cap)break;}
  }
  return updateCutawayInterval(draft,{id,asset_id:asset.id,source_start_ms:0,source_end_ms:0,asset_in_ms:0,fit:'cover',focal_point:{x:.5,y:.5}},asset,time,end,0);
+}
+export function createOverlayAtPlayhead(draft:ClipEditDraftV3,asset:EditorAsset,time:number,id:string):VisualCutaway {
+ const position=composedAtOutputTime(draft,time);if(position.kind==='insert')throw new Error('Place overlays on a source video section.');
+ const sourceTime=sourceOnlyOutputForSourceSeconds(draft.segments,position.sourceSeconds);
+ return {...createCutawayAtPlayhead({...draft,inserts:[]},asset,sourceTime,id),placement:'overlay',rect:{x:.3,y:.3,w:.4,h:.4},muted:asset.kind!=='video'};
+}
+export function createTimelineInsert(draft:ClipEditDraftV3,asset:EditorAsset,afterSegmentId:string,id:string):TimelineInsert {
+ if(asset.status!=='verified')throw new Error('Choose verified media.');
+ if(!draft.segments.some(s=>s.id===afterSegmentId))throw new Error('Select a source video section first.');
+ if((draft.inserts?.length??0)>=12)throw new Error('Keep at most 12 inserted media sections.');
+ const available=Math.round((180-composedDuration(draft))*1000);
+ const duration=Math.min(asset.kind==='photo'?3000:asset.duration_ms??0,available);
+ if(duration<100)throw new Error('No room for imported media within the three-minute clip limit.');
+ return {id,asset_id:asset.id,after_segment_id:afterSegmentId,duration_ms:duration,asset_in_ms:0,muted:false};
 }
 /** Match FFmpeg's even square-pixel scale, crop/pad, and focal offsets. Use the
  * browser's videoWidth/videoHeight (display geometry), never coded asset metadata. */

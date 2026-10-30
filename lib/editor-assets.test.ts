@@ -124,6 +124,10 @@ test('draft validation requires verified owned stored assets and checks usable v
  await f.service.assertOwnedDraftAssets('user','clip',draft(asset.id,57000));
  await assert.rejects(f.service.assertOwnedDraftAssets('user','clip',draft(asset.id,58000)),/duration/i);
  await assert.rejects(f.service.assertOwnedDraftAssets('user','clip',draft('other')),/not found/i);
+ const insert=(id=asset.id,offset=0)=>({version:3,cutaways:[],inserts:[{asset_id:id,asset_in_ms:offset,duration_ms:3000}]}) as any;
+ await f.service.assertOwnedDraftAssets('user','clip',insert());
+ await assert.rejects(f.service.assertOwnedDraftAssets('user','clip',insert('other')),/not found/i);
+ await assert.rejects(f.service.assertOwnedDraftAssets('user','clip',insert(asset.id,58000)),/duration/i);
  await assert.rejects(f.service.assertOwnedDraftAssets('user','other',draft()),/not found/i);
  f.objects.clear(); await assert.rejects(f.service.assertOwnedDraftAssets('user','clip',draft()),/missing/i);
  await f.service.assertOwnedDraftAssets('user','clip',{version:2} as any);

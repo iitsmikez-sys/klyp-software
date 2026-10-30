@@ -1,5 +1,6 @@
 /** Verify archived preview and export with the original upload unavailable. */
 import { existsSync, renameSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { loginExistingTestAccount } from "./smoke-auth.mjs";
 
@@ -14,13 +15,14 @@ if (clip.archive_status !== "stored" || !clip.master_path || !clip.proxy_path ||
     !/^upload:[0-9a-f-]{36}$/i.test(clip.url)) {
   throw new Error("Expected a stored archive for the test upload.");
 }
-const cache = path.resolve(".tmp-smoke/klyp-videos");
+const cache = path.join(tmpdir(), "klyp-videos");
 const original = path.join(cache, `upload-${clip.url.slice(7)}.mp4`);
 const hidden = `${original}.hidden`;
-if (!existsSync(original) || existsSync(hidden)) throw new Error("Original upload is unavailable or already hidden.");
+if (existsSync(hidden)) throw new Error("Original upload is already hidden.");
+const shouldHideOriginal = existsSync(original);
 const payload = { clip_id: clip.id, url: clip.url,
   start_seconds: Number(clip.start_seconds), end_seconds: Number(clip.end_seconds) };
-renameSync(original, hidden);
+if (shouldHideOriginal) renameSync(original, hidden);
 try {
   for (const endpoint of ["preview", "clip"]) {
     const response = await fetch(`${base}/api/${endpoint}`, {
@@ -37,5 +39,5 @@ try {
     console.log(JSON.stringify({ endpoint, success: true, bytes: bytes.byteLength, source }));
   }
 } finally {
-  renameSync(hidden, original);
+  if (shouldHideOriginal) renameSync(hidden, original);
 }

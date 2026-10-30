@@ -7,17 +7,17 @@ function composePlan(plan: VerticalLayoutPlan, inputLabel: string, prefix: strin
   const label = (name: string) => `${prefix}${name}`;
   let current: string;
   if (plan.mode === "full_frame") {
-    const d = plan.dest;
-    if (d.x === Math.round((plan.output.w - d.w) / 2) && d.y === Math.round((plan.output.h - d.h) / 2) && d.w <= plan.output.w && d.h <= plan.output.h) {
-      filters.push(`[${inputLabel}]scale=${plan.output.w}:${plan.output.h}:force_original_aspect_ratio=decrease,pad=${plan.output.w}:${plan.output.h}:(ow-iw)/2:(oh-ih)/2:color=0x101014,format=yuv420p[${label('base')}]`);
-      current = label('base');
-    } else {
-      filters.push(`[${inputLabel}]split=2[${label('bgsrc')}][${label('frame')}]`);
-      filters.push(`[${label('bgsrc')}]scale=${plan.output.w}:${plan.output.h},drawbox=x=0:y=0:w=iw:h=ih:color=0x101014:t=fill[${label('base')}]`);
-      filters.push(`[${label('frame')}]scale=${d.w}:${d.h}[${label('scaled')}]`);
-      filters.push(`[${label('base')}][${label('scaled')}]overlay=${d.x}:${d.y}:shortest=1[${label('placed')}]`);
-      current = label('placed');
-    }
+    // Fill the canvas with a blurred cover while the uncropped foreground
+    // keeps gameplay, facecam, chat and other edge content visible.
+    filters.push(`[${inputLabel}]split=2[${label('bgsrc')}][${label('fgsrc')}]`);
+    const backgroundW = Math.max(2, Math.round(plan.output.w / 8) * 2);
+    const backgroundH = Math.max(2, Math.round(plan.output.h / 8) * 2);
+    filters.push(`[${label('bgsrc')}]scale=${backgroundW}:${backgroundH}:force_original_aspect_ratio=increase,crop=${backgroundW}:${backgroundH},boxblur=8:1:3:1,scale=${plan.output.w}:${plan.output.h}[${label('bg')}]`);
+    filters.push(plan.transformed
+      ? `[${label('fgsrc')}]scale=${plan.dest.w}:${plan.dest.h}[${label('fg')}]`
+      : `[${label('fgsrc')}]scale=${plan.output.w}:${plan.output.h}:force_original_aspect_ratio=decrease[${label('fg')}]`);
+    filters.push(`[${label('bg')}][${label('fg')}]overlay=${plan.transformed ? `${plan.dest.x}:${plan.dest.y}` : '(W-w)/2:(H-h)/2'}:shortest=1,format=yuv420p[${label('base')}]`);
+    current = label('base');
   } else {
     const n = plan.panels.length;
     filters.push(`[${inputLabel}]split=${n + 1}[${label('bgsrc')}]${plan.panels.map((_, i) => `[${label(`s${i}`)}]`).join('')}`);

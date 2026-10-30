@@ -65,6 +65,20 @@ function ClipsPageContent() {
         setLoading(false);
       });
   }, []);
+  const unconfirmedIds = clips.filter(c => c.archive_status !== 'stored' && c.archive_status !== 'unavailable').map(c => c.id).join(',');
+  useEffect(() => {
+    if (!unconfirmedIds) return;
+    let active = true;
+    const refresh = async () => {
+      const { data } = await createClient().from('clips').select('id,archive_status').in('id', unconfirmedIds.split(','));
+      if (!active || !data) return;
+      const statuses = new Map(data.map(row => [row.id, row.archive_status]));
+      setClips(previous => previous.map(clip => statuses.has(clip.id)
+        ? { ...clip, archive_status: statuses.get(clip.id) } : clip));
+    };
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [unconfirmedIds]);
 
   const deleteClip = async (id: string) => {
     setDeletingId(id);
@@ -115,7 +129,7 @@ function ClipsPageContent() {
       return;
     }
     setClips((prev) => [data as SavedClip, ...prev]);
-    flash("Clip duplicated.");
+    flash("Copy added. Backup is in progress.");
   };
 
   const filtered = useMemo(() => {

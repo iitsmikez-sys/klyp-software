@@ -5,6 +5,7 @@ import { HOOK_STYLES, type HookStyle } from "./captions.ts";
 import type { SavedClip } from "./clip-ui.ts";
 import { validateVerticalLayout, type VerticalLayoutV1 } from "./vertical-layout.ts";
 import { validateFocusEvents, type FocusEvent } from "./editor-focus.ts";
+import { validateTextPlacement, type TextPlacement } from "./text-placement.ts";
 
 export type ClipEditDraftV1 = {
   version: 1;
@@ -17,6 +18,8 @@ export type ClipEditDraftV1 = {
   aspect_ratio: ExportFormat;
   words: TimedWord[] | null;
   vertical_layout?: VerticalLayoutV1 | null;
+  hook_placement?: TextPlacement;
+  caption_placement?: TextPlacement;
 };
 
 export type ClipEditDraftV2 = Omit<ClipEditDraftV1, "version"> & {
@@ -39,10 +42,19 @@ export type VisualCutaway = {
  asset_in_ms: number;
  fit: "cover" | "contain";
  focal_point: { x: number; y: number };
+ placement?: 'overlay';
+ rect?: {x:number;y:number;w:number;h:number};
+ muted?: boolean;
+};
+/** A section inserted after a split source section. Video audio is on by default. */
+export type TimelineInsert = {
+ id: string; asset_id: string; after_segment_id: string;
+ duration_ms: number; asset_in_ms: number; muted: boolean;
 };
 export type ClipEditDraftV3 = Omit<ClipEditDraftV2, "version"> & {
  version: 3;
  cutaways: VisualCutaway[];
+ inserts?: TimelineInsert[];
  focus_events?: FocusEvent[];
 };
 export type ClipEditDraft = ClipEditDraftV1 | ClipEditDraftV2 | ClipEditDraftV3;
@@ -105,6 +117,12 @@ export function validateClipEditDraft(input: unknown, clip: ClipSource): ClipEdi
       catch { throw new ClipEditDraftError("Invalid vertical layout."); }
     }
   }
+  let hookPlacement: TextPlacement | undefined;
+  let captionPlacement: TextPlacement | undefined;
+  try {
+    if(draft.hook_placement !== undefined)hookPlacement=validateTextPlacement(draft.hook_placement);
+    if(draft.caption_placement !== undefined)captionPlacement=validateTextPlacement(draft.caption_placement);
+  } catch { throw new ClipEditDraftError("Invalid text placement."); }
   const editedWords = draft.words;
   if (originalWords === null) {
     if (editedWords !== null) throw new ClipEditDraftError("This clip has no timed caption words.");
@@ -133,6 +151,8 @@ export function validateClipEditDraft(input: unknown, clip: ClipSource): ClipEdi
     aspect_ratio: draft.aspect_ratio as ExportFormat,
     words: originalWords ? (editedWords as TimedWord[]).map((w) => ({ text: w.text.trim(), start: w.start, end: w.end })) : null,
     ...(verticalLayout !== undefined ? { vertical_layout: verticalLayout } : {}),
+    ...(hookPlacement ? { hook_placement: hookPlacement } : {}),
+    ...(captionPlacement ? { caption_placement: captionPlacement } : {}),
   };
 }
 
@@ -188,6 +208,22 @@ function validateV2(input: Record<string, unknown>, clip: ClipSource): ClipEditD
 }
 function validateV3(input: Record<string, unknown>, clip: ClipSource): ClipEditDraftV3 {
  const common = validateV2(input, clip);
+ const insertsInput = input.inserts ?? [];
+ if (!Array.isArray(insertsInput) || insertsInput.length > 12) throw new ClipEditDraftError("Keep at most 12 inserted media sections.");
+ const insertIds = new Set<string>();
+ const inserts = insertsInput.map((value: unknown): TimelineInsert => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ClipEditDraftError('Invalid inserted media.');
+  const item = value as TimelineInsert;
+  if (typeof item.id !== 'string' || !item.id.trim() || item.id.length > 120 || insertIds.has(item.id) ||
+      typeof item.asset_id !== 'string' || !item.asset_id.trim() || item.asset_id.length > 120 ||
+      typeof item.after_segment_id !== 'string' || !common.segments.some(s => s.id === item.after_segment_id) ||
+      !Number.isInteger(item.duration_ms) || item.duration_ms < 100 || item.duration_ms > 60000 ||
+      !Number.isInteger(item.asset_in_ms) || item.asset_in_ms < 0 || item.muted !== true && item.muted !== false)
+   throw new ClipEditDraftError('Invalid inserted media.');
+  insertIds.add(item.id);
+  return { id:item.id,asset_id:item.asset_id,after_segment_id:item.after_segment_id,duration_ms:item.duration_ms,asset_in_ms:item.asset_in_ms,muted:item.muted };
+ });
+ if (inserts.reduce((total, item) => total + item.duration_ms, 0) + common.segments.reduce((total,s)=>total+(s.end_seconds-s.start_seconds)*1000,0) > 180000.001) throw new ClipEditDraftError('Output must be at most 3 minutes.');
  if (!Array.isArray(input.cutaways) || input.cutaways.length > MAX_VISUAL_CUTAWAYS) throw new ClipEditDraftError("Keep at most 12 visual cutaways.");
  const ids = new Set<string>();
  const cutaways = input.cutaways.map((item: unknown): VisualCutaway => {
@@ -200,9 +236,13 @@ function validateV3(input: Record<string, unknown>, clip: ClipSource): ClipEditD
       !Number.isFinite(c.asset_in_ms) || c.asset_in_ms < 0 ||
       !["cover", "contain"].includes(c.fit) || !c.focal_point ||
       !Number.isFinite(c.focal_point.x) || !Number.isFinite(c.focal_point.y) ||
-      c.focal_point.x < 0 || c.focal_point.x > 1 || c.focal_point.y < 0 || c.focal_point.y > 1) throw new ClipEditDraftError("Invalid visual cutaway.");
+      c.focal_point.x < 0 || c.focal_point.x > 1 || c.focal_point.y < 0 || c.focal_point.y > 1 ||
+      (c.placement!==undefined&&c.placement!=='overlay') ||
+      (c.muted!==undefined&&typeof c.muted!=='boolean') ||
+      (c.placement==='overlay'&&(!c.rect||![c.rect.x,c.rect.y,c.rect.w,c.rect.h].every(Number.isFinite)||c.rect.x<0||c.rect.y<0||c.rect.w<.05||c.rect.h<.05||c.rect.x+c.rect.w>1.00001||c.rect.y+c.rect.h>1.00001)) ||
+      (c.placement===undefined&&c.rect!==undefined)) throw new ClipEditDraftError("Invalid visual cutaway.");
   ids.add(c.id);
-  return { id: c.id, asset_id: c.asset_id, source_start_ms: c.source_start_ms, source_end_ms: c.source_end_ms, asset_in_ms: c.asset_in_ms, fit: c.fit, focal_point: { x: c.focal_point.x, y: c.focal_point.y } };
+  return { id: c.id, asset_id: c.asset_id, source_start_ms: c.source_start_ms, source_end_ms: c.source_end_ms, asset_in_ms: c.asset_in_ms, fit: c.fit, focal_point: { x: c.focal_point.x, y: c.focal_point.y },...(c.placement==='overlay'?{placement:'overlay' as const,rect:{...c.rect!}}:{}),...(c.muted!==undefined?{muted:c.muted}:{}) };
  });
  const ordered = [...cutaways].sort((a, b) => a.source_start_ms - b.source_start_ms);
  if (ordered.some((c, i) => i > 0 && c.source_start_ms < ordered[i - 1].source_end_ms)) throw new ClipEditDraftError("Visual cutaways must not overlap.");
@@ -211,7 +251,7 @@ function validateV3(input: Record<string, unknown>, clip: ClipSource): ClipEditD
   try { focusEvents = validateFocusEvents(input.focus_events, clip.start_seconds, clip.end_seconds); }
   catch (error) { throw new ClipEditDraftError((error as Error).message); }
  }
- return { ...common, version: 3, cutaways, ...(focusEvents ? { focus_events: focusEvents } : {}) };
+ return { ...common, version: 3, cutaways, ...(inserts.length ? { inserts } : {}), ...(focusEvents ? { focus_events: focusEvents } : {}) };
 }
 export function upgradeClipEditDraft(clip: ClipSource, draft: ClipEditDraft): ClipEditDraftV3 {
  if (draft.version !== 1) return validateClipEditDraft({ ...draft, version: 3, cutaways: draft.version === 3 ? draft.cutaways : [] }, clip) as ClipEditDraftV3;

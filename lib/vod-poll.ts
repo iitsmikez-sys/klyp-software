@@ -19,6 +19,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRecentVods, parseTwitchDuration } from "@/lib/twitch";
 import { unseenVods } from "@/lib/vod-discovery";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
+import { runDiscoveryPipeline } from "@/lib/vod-discovery-pipeline";
+import { vodSourceKey } from "@/lib/vod-source";
 import { anthropicCreditGate, isAnthropicCreditBalanceError, pauseAutomaticClipping } from "@/lib/anthropic-credit";
 import { preferencesForUser } from "@/lib/creator-feedback-data";
 import { processClipArchiveJobs } from "@/lib/clip-archive-worker";
@@ -96,6 +98,17 @@ type VodJob = {
 };
 
 async function processJob(admin: Admin, job: VodJob): Promise<void> {
+  if (job.duration_seconds > 10 * 60 * 60) {
+    // Mark the published VOD as handled so the sweep cannot keep retrying it.
+    // No provider work or Sparks debit is needed for an unsupported length.
+    const { data: committed, error } = await admin.rpc("finish_auto_vod_job", {
+      p_job_id: job.id, p_clips: [], p_cost: 0,
+    });
+    if (error) throw error;
+    if (committed) await notify(admin, job.user_id,
+      "A new VOD was over 10 hours, so automatic clipping skipped it. Upload a shorter video to analyze it manually.");
+    return;
+  }
   const clipCount = DEFAULT_CLIP_COUNT;
   const upfrontCost = estimateSparks(job.duration_seconds) + CLIP_COUNT_COST[clipCount];
   const { data: profile, error: profileError } = await admin.rpc("admin_get_profile", { target_user: job.user_id });
@@ -111,7 +124,7 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
   const workDir = await mkdtemp(path.join(tmpdir(), "klyp-autoclip-"));
   try {
     const creatorPreferences = await preferencesForUser(job.user_id);
-    const result = await runQueued(`auto-vod:${job.id}`, () => runAnalysisPipeline({
+    const options = {
       uploadedPath: null,
       url: job.url,
       durationHint: job.duration_seconds,
@@ -119,7 +132,12 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
       costRunId: job.id,
       workDir,
       creatorPreferences,
-    }));
+    };
+    const result = await runQueued(`auto-vod:${job.id}`, () =>
+      process.env.KLYP_DISCOVERY_V2 === "1"
+        ? runDiscoveryPipeline({ ...options, sourceKey: vodSourceKey(job.url)!, userId: job.user_id,
+            client: admin, durationHint: job.duration_seconds })
+        : runAnalysisPipeline(options));
 
     const sparksSpent = estimateSparks(result.durationSeconds) + clipCharge(clipCount, result.clips.length);
     const rows = result.clips.map((clip) => ({
@@ -189,9 +207,16 @@ async function processAutoVodJobs(): Promise<void> {
         return;
       }
       const retrySeconds = Math.min(86400, 120 * 2 ** Math.min(job.attempts - 1, 10));
-      const { data: status, error: failError } = await admin.rpc("fail_auto_vod_job", {
-        p_job_id: job.id, p_error: message, p_retry_seconds: retrySeconds,
-      });
+      const experimental = process.env.KLYP_DISCOVERY_V2 === "1";
+      const permanent = /^insufficient sparks:|Transcript cache unavailable:|Result cache unavailable:/i.test(message);
+      const { data: status, error: failError } = experimental
+        ? await admin.rpc("fail_auto_vod_job_limited", {
+            p_job_id: job.id, p_error: message, p_retry_seconds: retrySeconds,
+            p_max_attempts: permanent ? 1 : 2,
+          })
+        : await admin.rpc("fail_auto_vod_job", {
+            p_job_id: job.id, p_error: message, p_retry_seconds: retrySeconds,
+          });
       if (failError) throw failError;
       if (status === "failed") {
         await notify(admin, job.user_id, "Auto-clipping failed for a new VOD after several attempts. You can paste the VOD link into Find Clips to analyze it manually.");

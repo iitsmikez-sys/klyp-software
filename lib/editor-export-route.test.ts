@@ -24,10 +24,11 @@ const legacyCode=ts.transpileModule(readFileSync(new URL('./legacy-clip-export-r
 const routeCode=ts.transpileModule(readFileSync(new URL('../app/api/clip/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
 const clip={id:'owned',url:'https://twitch.tv/videos/123',title:'Original moment',start_seconds:100,end_seconds:110,words:null,edit_draft:null};
 const draft={version:2,start_seconds:101,end_seconds:109,title:'Unsaved',hook:'Hey',hook_style:'IMPACT',caption_style:'BOLD',aspect_ratio:'9:16',words:null,segments:[{id:'a',start_seconds:101,end_seconds:102},{id:'b',start_seconds:108,end_seconds:109}],caption_cues:[{id:'cue',start_ms:101500,end_ms:108500,text:'corrected'}],caption_color:'green',caption_position:'top'};
-async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart?:number;missingArchive?:boolean;owned?:boolean;exactMoment?:boolean;pro?:boolean;body?:Record<string,unknown>;failRender?:boolean;profileLayout?:any;assetError?:EditorAssetError;failAssetDownload?:boolean}={}){
+async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart?:number;missingArchive?:boolean;coldCache?:boolean;owned?:boolean;exactMoment?:boolean;pro?:boolean;body?:Record<string,unknown>;failRender?:boolean;profileLayout?:any;assetError?:EditorAssetError;failAssetDownload?:boolean;assetKind?:'photo'|'video'}={}){
  const calls:{name:string;args:any[]}[]=[];
  const record=(name:string,...args:any[])=>calls.push({name,args});
- const fs={mkdtemp:async()=>'/temp/editor',readFile:async()=>Buffer.from('mp4'),writeFile:async(...args:any[])=>record('write',...args),rm:async(...args:any[])=>record('rm',...args)};
+ let cacheExists=!options.coldCache;
+ const fs={mkdtemp:async()=>'/temp/editor',readFile:async()=>Buffer.from('mp4'),mkdir:async(location:string)=>{record('mkdir',location);if(path.normalize(location)===path.normalize('/cache'))cacheExists=true;},writeFile:async(location:string,...args:any[])=>{if(path.dirname(location)===path.normalize('/cache')&&!cacheExists)throw new Error('ENOENT: cold cache directory');record('write',location,...args);},rm:async(...args:any[])=>record('rm',...args)};
  const db:any={select:()=>db,eq:(...args:any[])=>{record('eq',...args);return db;},maybeSingle:async()=>({data:options.owned===false?null:clip,error:null})};
  class NextResponse extends Response{static json(body:unknown,init?:ResponseInit){return new NextResponse(JSON.stringify(body),init);}}
  const modules:Record<string,unknown>={
@@ -37,9 +38,9 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/editor-timeline':{resolveCutawaySpans},
  '@/lib/editor-focus':{layoutForFocus,resolveFocusSpans,splitCuesForFocus},
  '@/lib/editor-assets':{EditorAssetError,assertOwnedDraftAssets:async(...args:any[])=>{record('verifyAssets',...args);if(options.assetError)throw options.assetError;}},
- '@/lib/editor-cutaway-render':{...cutawayRenderer,loadEditorCutawayAssets:async(...args:any[])=>{record('loadAssets',...args);if(options.failAssetDownload)throw new EditorAssetError('Media is missing.',404);return [{id:'asset',localPath:'/trusted/asset.png',kind:'photo',mime_type:'image/png',width:128,height:64,duration_ms:null}];}},
+ '@/lib/editor-cutaway-render':{...cutawayRenderer,loadEditorCutawayAssets:async(...args:any[])=>{record('loadAssets',...args);if(options.failAssetDownload)throw new EditorAssetError('Media is missing.',404);return [{id:'asset',localPath:'/trusted/asset.png',kind:options.assetKind??'photo',mime_type:options.assetKind==='video'?'video/mp4':'image/png',width:128,height:64,duration_ms:options.assetKind==='video'?3000:null}];}},
  '@/lib/clip-edit-draft':{ClipEditDraftError},'@/lib/editor-captions':{resolveEditorCues,captionAppearance,parseCaptionOptions},
- '@/lib/bin':{resolveBin:(s:string)=>s,FFMPEG_THREADS:2,runCapture:async()=> '1920,1080',run:async(...args:any[])=>record('encode',...args)},
+ '@/lib/bin':{resolveBin:(s:string)=>s,FFMPEG_THREADS:2,runCapture:async(_bin:string,args:string[])=>args.includes('a:0')?'{"streams":[{"codec_type":"audio"}]}':'1920,1080',run:async(...args:any[])=>record('encode',...args)},
  '@/lib/captions':{generateAss:(...args:any[])=>{record('legacyCaptions',...args);return 'legacy';},generateTimedCueAss:(...args:any[])=>{record('cues',...args);return 'ass';},generateHookAss:()=> 'hook',toFfmpegPath:(s:string)=>s,HOOK_STYLES:['IMPACT']},
  '@/lib/clips':{CAPTION_STYLES,EXPORT_FORMATS,FORMAT_DIMENSIONS,resolveExportFormat},
  '@/lib/video-cache':{CACHE_DIR:'/cache',isUploadRef:()=>false,resolveSourceSegment:async(...args:any[])=>{record('download',...args);return {path:'/source.mp4',offsetSeconds:100};}},
@@ -70,6 +71,17 @@ test('source fallback uses owned URL/envelope, server-resolved cues and zero-bas
 });
 test('archive renders absolute source spans relative to original master start; missing object falls back once',async()=>{
  for(const missingArchive of [false,true]){const {response,calls}=await exportRoute({archive:true,missingArchive});assert.equal(response.status,200);assert.equal(calls.filter(c=>c.name==='download').length,missingArchive?1:0);assert.equal(calls.find(c=>c.name==='render')?.args[1],100);}
+});
+test('archived master exports after a restart with no local cache directory',async()=>{
+ for(const body of [
+  {clip_id:'owned',url:clip.url,start_seconds:100,end_seconds:110,aspect_ratio:'9:16'},
+  {legacy_editor:true,clip_id:'owned',url:clip.url,start_seconds:100,end_seconds:110,segments:[{start:0,end:10}]},
+ ]) {
+  const {response,calls}=await exportRoute({archive:true,coldCache:true,body});
+  assert.equal(response.status,200,await response.clone().text());
+  assert.ok(calls.some(c=>c.name==='write'&&String(c.args[0]).includes('master-owned.mp4')));
+  assert.ok(!calls.some(c=>c.name==='download'));
+ }
 });
 test('ownership, subscription and forged bounds reject before download or rendering',async()=>{
  for(const options of [{owned:false},{pro:false},{body:{clip_id:'owned',edit_draft:{...draft,segments:[{id:'bad',start_seconds:1,end_seconds:2}]}}}]){const {response,calls}=await exportRoute(options);assert.ok([400,403,404].includes(response.status));assert.equal(calls.filter(c=>['download','render','encode','charge'].includes(c.name)).length,0);}
@@ -183,6 +195,28 @@ test('normal export composites verified imports after framing and before caption
  assert.ok(filter.indexOf('overlay=')<filter.indexOf('subtitles='));
  assert.ok(args.includes('0:a?'));assert.ok(!args.includes('1:a?'));
  assert.ok(calls.some(c=>c.name==='rm'&&c.args[0]==='/temp/editor'));
+});
+test('insert-only export verifies and loads owned media before rendering',async()=>{
+ const insertOnly={...draft,version:3,cutaways:[],inserts:[{id:'insert',asset_id:'asset',after_segment_id:'a',duration_ms:1000,asset_in_ms:0,muted:false}]};
+ const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:insertOnly}});
+ assert.equal(response.status,200);
+ assert.ok(calls.some(c=>c.name==='verifyAssets'));
+ assert.ok(calls.some(c=>c.name==='loadAssets'));
+ const render=calls.find(c=>c.name==='render')!;
+ assert.equal(render.args[5].items[0].asset_id,'asset');
+ assert.equal(render.args[5].assets[0].localPath,'/trusted/asset.png');
+});
+test('unmuted overlay video mixes its own audio while muted overlays preserve source audio',async()=>{
+ const overlay={...imported,cutaways:[{...imported.cutaways[0],placement:'overlay',rect:{x:.2,y:.2,w:.4,h:.4},muted:false}]};
+ const audible=await exportRoute({assetKind:'video',body:{clip_id:'owned',edit_draft:overlay}});
+ assert.equal(audible.response.status,200);
+ const args=audible.calls.find(c=>c.name==='encode')!.args[1] as string[];
+ assert.match(args[args.indexOf('-filter_complex')+1],/amix=inputs=2/);
+ assert.ok(args.includes('[exportaudio]'));
+ const silent=await exportRoute({assetKind:'video',body:{clip_id:'owned',edit_draft:{...overlay,cutaways:[{...overlay.cutaways[0],muted:true}]}}});
+ assert.equal(silent.response.status,200);
+ const silentArgs=silent.calls.find(c=>c.name==='encode')!.args[1] as string[];
+ assert.ok(silentArgs.includes('0:a?'));
 });
 test('foreign, missing, and unavailable media fail with useful status before source work',async()=>{
  for(const status of [404,503]){

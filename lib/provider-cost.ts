@@ -1,7 +1,7 @@
 /** Measured provider units for one VOD analysis. No source URL or user data is logged. */
 export type ProviderUsageEvent =
-  | { runId: string; provider: "assemblyai"; model: string | null; audioSeconds: number }
-  | { runId: string; provider: "anthropic"; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+  | { runId: string; stage?: string; provider: "assemblyai"; model: string | null; audioSeconds: number }
+  | { runId: string; stage?: string; provider: "anthropic"; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
 
 /** Public list prices checked 2026-10-28. Raw units are retained if prices change. */
 const AUDIO_USD_PER_HOUR: Record<string, number> = {

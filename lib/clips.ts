@@ -166,6 +166,7 @@ export type AnalyzeStage = "download" | "transcribe" | "analyze";
 
 /** Events streamed by POST /api/analyze (Server-Sent Events). */
 export type AnalyzeEvent =
+  | { type: "job"; jobId: string }
   | { type: "progress"; stage: AnalyzeStage; status: "running" | "done"; etaSeconds?: number }
   | {
       type: "result";

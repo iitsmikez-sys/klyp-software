@@ -121,13 +121,19 @@ export function createEditorAssetService(repo: EditorAssetRepository, probe: (as
    return { asset, preview_url: await repo.signPreview(asset.storage_path), expires_in: EDITOR_PREVIEW_SECONDS };
   },
   async assertOwnedDraftAssets(userId:string,clipId:string,draft:ClipEditDraft):Promise<void> {
-   if (draft.version !== 3 || !draft.cutaways.length) return;
+   if (draft.version !== 3 || !(draft.cutaways.length || draft.inserts?.length)) return;
    const assets = new Map<string,EditorAsset>();
    for (const cutaway of draft.cutaways) {
     let asset = assets.get(cutaway.asset_id);
     if (!asset) { asset = await getOwnedEditorAsset(userId,clipId,cutaway.asset_id); assets.set(asset.id,asset); }
     if (asset.kind === 'video' && (asset.duration_ms === null || cutaway.asset_in_ms + cutaway.source_end_ms - cutaway.source_start_ms > asset.duration_ms)) throw new EditorAssetError('The cutaway extends beyond the imported video duration. Shorten it or choose a different video.');
     if (asset.kind === 'photo' && cutaway.asset_in_ms !== 0) throw new EditorAssetError('A photo cutaway must start at media offset zero.');
+   }
+   for (const insert of draft.inserts??[]) {
+    let asset=assets.get(insert.asset_id);
+    if(!asset){asset=await getOwnedEditorAsset(userId,clipId,insert.asset_id);assets.set(asset.id,asset);}
+    if(asset.kind==='video'&&(asset.duration_ms===null||insert.asset_in_ms+insert.duration_ms>asset.duration_ms))throw new EditorAssetError('Inserted video exceeds its verified duration. Shorten it or choose another video.');
+    if(asset.kind==='photo'&&insert.asset_in_ms!==0)throw new EditorAssetError('A photo insertion must start at media offset zero.');
    }
   },
   async cleanupExpiredUploads():Promise<void> {
@@ -161,5 +167,5 @@ export async function finalizeEditorUpload(userId:string,clipId:string,assetId:s
 export async function listEditorAssets(userId:string,clipId:string) { return (await service()).listEditorAssets(userId,clipId); }
 export async function getOwnedEditorAsset(userId:string,clipId:string,assetId:string) { return (await service()).getOwnedEditorAsset(userId,clipId,assetId); }
 export async function previewEditorAsset(userId:string,clipId:string,assetId:string) { return (await service()).previewEditorAsset(userId,clipId,assetId); }
-export async function assertOwnedDraftAssets(userId:string,clipId:string,draft:ClipEditDraft) { if(draft.version===3 && draft.cutaways.length) await (await service()).assertOwnedDraftAssets(userId,clipId,draft); }
+export async function assertOwnedDraftAssets(userId:string,clipId:string,draft:ClipEditDraft) { if(draft.version===3 && (draft.cutaways.length || draft.inserts?.length)) await (await service()).assertOwnedDraftAssets(userId,clipId,draft); }
 export async function cleanupExpiredEditorUploads() { return (await service()).cleanupExpiredUploads(); }

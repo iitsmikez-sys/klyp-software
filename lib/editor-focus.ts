@@ -1,4 +1,5 @@
 import { outputDuration, sourceAtOutputTime, type SourceSegment } from './editor-timeline.ts';
+import type { TimelineInsert } from './clip-edit-draft.ts';
 import type { TimedWord } from './clips.ts';
 import type { VerticalLayoutV1 } from './vertical-layout.ts';
 
@@ -27,7 +28,7 @@ export function validateFocusEvents(input: unknown, clipStartSeconds: number, cl
 }
 
 /** Markers stay attached to VOD moments; markers in deleted footage have no effect. */
-export function resolveFocusSpans(events: readonly FocusEvent[], segments: readonly SourceSegment[]): FocusSpan[] {
+export function resolveFocusSpans(events: readonly FocusEvent[], segments: readonly SourceSegment[], inserts:readonly TimelineInsert[]=[]): FocusSpan[] {
   const kept = events.filter(event => segments.some(segment => event.source_ms >= segment.start_seconds * 1000 && event.source_ms < segment.end_seconds * 1000));
   const spans: FocusSpan[] = [];
   let outputStart = 0;
@@ -44,6 +45,7 @@ export function resolveFocusSpans(events: readonly FocusEvent[], segments: reado
     }
     if (end > cursor) spans.push({ start_ms: outputStart + cursor - start, end_ms: outputStart + end - start, mode: active });
     outputStart += end - start;
+    for(const insert of inserts)if(insert.after_segment_id===segment.id){spans.push({start_ms:outputStart,end_ms:outputStart+insert.duration_ms,mode:active});outputStart+=insert.duration_ms;}
   }
   return spans.reduce<FocusSpan[]>((merged, span) => {
     const prior = merged.at(-1);

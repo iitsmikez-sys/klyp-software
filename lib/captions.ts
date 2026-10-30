@@ -12,6 +12,7 @@
  */
 import type { CaptionOptions } from "./editor-captions";
 import type { CaptionFont } from "./clip-edit-draft.ts";
+import type { TextPlacement } from "./text-placement.ts";
 import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
@@ -24,6 +25,7 @@ const DEFAULT_RES: PlayRes = { w: 1080, h: 1920 };
 
 /** Max words per cue — small groups, TikTok/CapCut style. */
 export const CUE_MAX_WORDS = 4;
+export const HOOK_TOP_MARGIN_REF = 260;
 /** A cue disappears this long after it appears (unless the next cue starts first). */
 export const CUE_HOLD_MS = 1500;
 /** Show cues slightly early to compensate for perception delay. */
@@ -130,11 +132,11 @@ const FONT_NAMES: Record<CaptionFont, { ass: string; css: string }> = {
 };
 export const captionFontFamily = (font: CaptionFont = "sans") => FONT_NAMES[font].css;
 
-function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?: CaptionOptions, font?: CaptionFont): string {
+function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?: CaptionOptions, font?: CaptionFont, textScale = 1): string {
   const p = STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
-  const size = Math.round(p.fontSize * scale);
-  const outline = Math.max(1, Math.round(p.outline * scale));
+  const size = Math.round(p.fontSize * scale * textScale);
+  const outline = Math.max(1, Math.round(p.outline * scale * textScale));
   const position = options?.position ?? 'BOTTOM';
   const marginV = position === 'CENTER' ? 0 : Math.round((position === 'TOP' ? 400 : 80) * scale + (position === 'BOTTOM' ? bottomInset : 0));
   const alignment = position === 'TOP' ? 8 : position === 'CENTER' ? 5 : 2;
@@ -157,8 +159,8 @@ function sanitizeAssText(text: string): string {
 }
 
 /** Fixed line breaks keep the browser preview and ASS export in the same safe area. */
-export function wrapCaptionText(text: string, style: CaptionStyle): string[] {
-  const limit = style === "CLEAN" ? 28 : 20;
+export function wrapCaptionText(text: string, style: CaptionStyle, characterLimit = style === "CLEAN" ? 28 : 20): string[] {
+  const limit = characterLimit;
   const lines: string[] = [];
   let line = "";
   for (const word of text.trim().split(/\s+/)) {
@@ -273,6 +275,21 @@ const HOOK_STYLE_PARAMS: Record<
   NEON: { font: "Arial", fontSize: 72, color: "&H00A0E500", bold: 1, outline: 4, borderStyle: 1 },
 };
 
+/** Shared geometry for manually placed hooks in canvas and ASS export. */
+export function hookTextLayout(hook:string,res:PlayRes,style:HookStyle,placement:TextPlacement) {
+  const p=HOOK_STYLE_PARAMS[style],fontSize=Math.max(10,Math.round(p.fontSize*res.h/DEFAULT_RES.h*placement.scale));
+  const lineHeight=Math.round(fontSize*1.25);
+  const available=2*Math.min(placement.x,1-placement.x);
+  const limit=Math.max(6,Math.floor(30*available/placement.scale));
+  const lines=wrapCaptionText(hook.toUpperCase(),"BOLD",limit);
+  const margin=Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));
+  const height=lines.length*lineHeight;
+  const estimatedWidth=Math.min(res.w-2*margin,Math.max(0,...lines.map(line=>line.length*fontSize*.53)));
+  const x=Math.round(Math.max(estimatedWidth/2+margin,Math.min(res.w-estimatedWidth/2-margin,placement.x*res.w)));
+  const y=Math.round(Math.max(height/2+margin,Math.min(res.h-height/2-margin,placement.y*res.h)));
+  return {lines,fontSize,lineHeight,x,y,firstY:y-height/2};
+}
+
 /**
  * Generate an ASS file that burns the selected hook as a big top-center title
  * for the first few seconds of the clip (Alignment 8 = top-center).
@@ -280,17 +297,19 @@ const HOOK_STYLE_PARAMS: Record<
 export function generateHookAss(
   hook: string,
   res: PlayRes = DEFAULT_RES,
-  style: HookStyle = "CLASSIC"
+  style: HookStyle = "CLASSIC",
+  placement?: TextPlacement,
 ): string {
   const p = HOOK_STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
-  const size = Math.round(p.fontSize * scale);
-  const outline = Math.max(1, Math.round(p.outline * scale));
-  const marginV = Math.round(160 * scale);
+  const custom=placement?hookTextLayout(hook,res,style,placement):null;
+  const size = custom?.fontSize ?? Math.round(p.fontSize * scale);
+  const outline = Math.max(1, Math.round(p.outline * scale * (placement?.scale ?? 1)));
+  const marginV = placement ? 0 : Math.round(HOOK_TOP_MARGIN_REF * scale);
   const hookStyle = [
     "[V4+ Styles]",
     STYLES_FORMAT,
-    `Style: Hook,${p.font},${size},${p.color},${p.color},&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${outline},0,8,40,40,${marginV},1`,
+    `Style: Hook,${p.font},${size},${p.color},${p.color},&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${outline},0,${placement ? 5 : 8},40,40,${marginV},1`,
   ].join("\n");
 
   return [
@@ -299,7 +318,7 @@ export function generateHookAss(
     hookStyle,
     "",
     EVENTS_HEADER,
-    dialogue(0, HOOK_DURATION_MS, sanitizeAssText(hook).toUpperCase(), "Hook"),
+    dialogue(0, HOOK_DURATION_MS, `${custom ? `{\\an5\\pos(${custom.x},${custom.y})}` : ''}${custom ? custom.lines.map(sanitizeAssText).join('\\N') : sanitizeAssText(hook).toUpperCase()}`, "Hook"),
   ].join("\n");
 }
 
@@ -311,13 +330,14 @@ export function toFfmpegPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "$1\\:");
 }
 
-export type CaptionAppearance = { color: string; assColor: string; anchorY: number; alignment: 8 | 5 | 2 };
+export type CaptionAppearance = { color: string; assColor: string; anchorY: number; alignment: 8 | 5 | 2; transform?: TextPlacement };
 /** Shared normalized anchors use the caption-safe rectangle supplied by the layout. */
-export function captionAppearance(draft: { caption_color: "white" | "yellow" | "green" | "pink"; caption_position: "top" | "center" | "bottom" }): CaptionAppearance {
+export function captionAppearance(draft: { caption_color: "white" | "yellow" | "green" | "pink"; caption_position: "top" | "center" | "bottom"; caption_placement?: TextPlacement }): CaptionAppearance {
  const color = { white: "#FFFFFF", yellow: "#FFFF00", green: "#00E5A0", pink: "#FF69B4" }[draft.caption_color];
  return { color, assColor: `&H00${color.slice(5,7)}${color.slice(3,5)}${color.slice(1,3)}`,
  anchorY: draft.caption_position === "top" ? 80/1920 : draft.caption_position === "center" ? 0.5 : 1-80/1920,
- alignment: draft.caption_position === "top" ? 8 : draft.caption_position === "center" ? 5 : 2 };
+ alignment: draft.caption_position === "top" ? 8 : draft.caption_position === "center" ? 5 : 2,
+ ...(draft.caption_placement ? {transform:draft.caption_placement} : {}) };
 }
 
 /** Explicit edited-output cues bypass word grouping and absolute-VOD subtraction. */
@@ -329,8 +349,9 @@ export function generateTimedCueAss(
  safeArea: { x: number; y: number; w: number; h: number } | ((cue: { id?: string; start_ms: number; end_ms: number; text: string }) => { x: number; y: number; w: number; h: number }) = { x: 0, y: 0, w: res.w, h: res.h },
  font: CaptionFont = "sans",
 ): string {
- const styles = style === "COMIC" || style === "KEYWORD" ? styleBlock(style, res, 0, undefined, font)
-   : styleBlock(style, res, 0, undefined, font).replace(STYLE_PARAMS[style].color, appearance.assColor);
+ const textScale=appearance.transform?.scale ?? 1;
+ const styles = style === "COMIC" || style === "KEYWORD" ? styleBlock(style, res, 0, undefined, font, textScale)
+   : styleBlock(style, res, 0, undefined, font, textScale).replace(STYLE_PARAMS[style].color, appearance.assColor);
  const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
  for (const cue of normalizeTimedCues(cues)) {
   const layout = layoutTimedCaption(cue.text, style, appearance, res, typeof safeArea === 'function' ? safeArea(cue) : safeArea, font);
@@ -366,12 +387,19 @@ export function normalizeTimedCues<T extends { start_ms: number; end_ms: number;
 /** Position each line explicitly so neither renderer chooses automatic line metrics. */
 export function layoutTimedCaption(text: string, style: CaptionStyle, appearance: CaptionAppearance, res: PlayRes = DEFAULT_RES, safeArea = { x: 0, y: 0, w: res.w, h: res.h }, font: CaptionFont = "sans") {
  const p = STYLE_PARAMS[style];
- const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h);
+ const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1));
  const lineHeight = Math.round(fontSize * 1.2);
  const normalized = sanitizeAssText(style === "KLYP" ? text.toUpperCase() : text);
- const lines = wrapCaptionText(normalized, style);
- const anchor = safeArea.y + safeArea.h * appearance.anchorY;
- const firstY = appearance.alignment === 8 ? anchor + fontSize/2 : appearance.alignment === 5 ? anchor - (lines.length-1)*lineHeight/2 : anchor - fontSize/2 - (lines.length-1)*lineHeight;
- return { fontSize, lineHeight, fontFamily: captionFontFamily(font), bold: p.bold === 1, italic: p.italic === 1, outline: Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h)), shadow: p.shadow,
- lines: lines.map((line,index) => ({ text: line, x: safeArea.x + safeArea.w/2, y: firstY + index*lineHeight })) };
+ const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : 20)/appearance.transform.scale)) : undefined);
+ const outline = Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1)));
+ const edgeMargin = Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));
+ const halfBlock = (lines.length-1)*lineHeight/2+fontSize/2+outline;
+ const customY=appearance.transform ? Math.max(halfBlock+edgeMargin,Math.min(res.h-halfBlock-edgeMargin,appearance.transform.y*res.h)) : 0;
+ const anchor = appearance.transform ? customY : safeArea.y + safeArea.h * appearance.anchorY;
+ const firstY = appearance.transform ? anchor - (lines.length-1)*lineHeight/2
+   : appearance.alignment === 8 ? anchor + fontSize/2 : appearance.alignment === 5 ? anchor - (lines.length-1)*lineHeight/2 : anchor - fontSize/2 - (lines.length-1)*lineHeight;
+ const estimatedWidth=Math.min(res.w-2*edgeMargin,Math.max(...lines.map(line=>line.length*fontSize*.52)));
+ const customX=appearance.transform ? Math.max(estimatedWidth/2+edgeMargin,Math.min(res.w-estimatedWidth/2-edgeMargin,appearance.transform.x*res.w)) : 0;
+ return { fontSize, lineHeight, fontFamily: captionFontFamily(font), bold: p.bold === 1, italic: p.italic === 1, outline, shadow: p.shadow,
+ lines: lines.map((line,index) => ({ text: line, x: appearance.transform ? customX : safeArea.x + safeArea.w/2, y: firstY + index*lineHeight })) };
 }

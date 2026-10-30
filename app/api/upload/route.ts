@@ -3,7 +3,7 @@
  *
  * The client sends the raw file bytes as the request body (streamed to disk,
  * never buffered in memory) with the original name in the x-file-name header.
- * The file lands in CACHE_DIR as upload-<uuid>.<ext> and is referenced by the
+ * The file lands in UPLOAD_DIR as upload-<uuid>.<ext> and is referenced by the
  * rest of the pipeline as "upload:<uuid>" wherever a VOD URL is expected.
  *
  * Responds with { uploadId, durationSeconds, sparks } so the client can show
@@ -20,7 +20,7 @@ import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import path from "path";
 import { resolveBin, runCapture } from "@/lib/bin";
-import { CACHE_DIR } from "@/lib/video-cache";
+import { UPLOAD_DIR } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { estimateSparks } from "@/lib/sparks";
 import { withCors, corsPreflight } from "@/lib/cors";
@@ -80,10 +80,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
 
   const uploadId = randomUUID();
-  const outPath = path.join(CACHE_DIR, `upload-${uploadId}${ext}`);
+  const outPath = path.join(UPLOAD_DIR, `upload-${uploadId}${ext}`);
 
   try {
-    await mkdir(CACHE_DIR, { recursive: true });
+    await mkdir(UPLOAD_DIR, { recursive: true });
 
     // Stream to disk, enforcing the size cap on actual bytes (the
     // content-length header can lie).

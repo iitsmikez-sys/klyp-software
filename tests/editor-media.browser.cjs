@@ -8,8 +8,8 @@ const { chromium } = require('playwright');
  try {
   const page = await browser.newPage();page.setDefaultTimeout(5000);page.on("pageerror",e=>console.error(e.message));
   await page.setContent('<style>.overflow-hidden{overflow:hidden}.flex{display:flex}.relative{position:relative}.w-3{width:12px}.shrink-0{flex-shrink:0}button{min-height:24px}</style><div id="root"></div>');
-  await page.addScriptTag({path:require.resolve('react').replace(/index\.js$/, 'umd/react.development.js')});
-  await page.addScriptTag({path:require.resolve('react-dom').replace(/index\.js$/, 'umd/react-dom.development.js')});
+
+  await require('./helpers/react-browser.cjs')(page);
   for (const file of ['lib/clip-trim.ts','lib/editor-timeline.ts','lib/editor-preview.ts','components/EditorMedia.tsx','components/EditorTimeline.tsx']) {
    const compiled=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
    await page.evaluate(({file,compiled})=>{

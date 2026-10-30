@@ -67,6 +67,24 @@ test("one VOD is enqueued once and charged only when clips commit", async () => 
   } finally { await db.close(); }
 });
 
+test("an overlong automatic VOD can be marked handled without clips or Sparks charged", async () => {
+  const db = await database();
+  try {
+    const created = await db.query("select public.enqueue_auto_vod_job($1,$2,$3,$4) as id",
+      [stream, video, url, 39600]);
+    const id = created.rows[0].id;
+    await db.query("select * from public.claim_auto_vod_job()");
+    const completed = await db.query("select public.finish_auto_vod_job($1,$2::jsonb,$3) as saved",
+      [id, '[]', 0]);
+    assert.equal(completed.rows[0].saved, true);
+    assert.equal((await db.query("select status from public.auto_vod_jobs where id=$1", [id])).rows[0].status, 'succeeded');
+    assert.equal((await db.query("select sparks from public.profiles where id=$1", [user])).rows[0].sparks, 100);
+    assert.equal((await db.query("select count(*)::int as n from public.spark_transactions")).rows[0].n, 0);
+    assert.equal((await db.query("select count(*)::int as n from public.clips")).rows[0].n, 0);
+    assert.equal((await db.query("select last_seen_video_id from public.streams where id=$1", [stream])).rows[0].last_seen_video_id, video);
+  } finally { await db.close(); }
+});
+
 test("failed processing remains retryable and never advances the stream cursor", async () => {
   const db = await database();
   try {

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   defaultClipEditDraft,
+  freshTimelineDraft,
   readClipEditDraft,
   toClipExportPayload,
   validateClipEditDraft,
@@ -15,6 +16,22 @@ test("layout override validates, exports, and old drafts remain valid", () => {
   assert.equal(validateClipEditDraft(draft(), clip).vertical_layout, undefined);
   assert.equal(Object.hasOwn(validateClipEditDraft(draft({ vertical_layout: undefined }), clip), "vertical_layout"), false);
   assert.throws(() => validateClipEditDraft(draft({ vertical_layout: { version: 1, gameplay: { x: 0.9, y: 0, w: 1, h: 1 } } }), clip));
+});
+
+test("hook and caption placement survive validation, save, and export", () => {
+  const hook_placement={x:.35,y:.2,scale:1.4};
+  const caption_placement={x:.65,y:.72,scale:.8};
+  const checked=validateClipEditDraft({...freshTimelineDraft(clip),hook_placement,caption_placement},clip);
+  assert.deepEqual(checked.hook_placement,hook_placement);
+  assert.deepEqual(checked.caption_placement,caption_placement);
+  assert.deepEqual(toClipExportPayload(clip,checked).edit_draft?.caption_placement,caption_placement);
+  assert.throws(()=>validateClipEditDraft({...freshTimelineDraft(clip),hook_placement:{x:2,y:.5,scale:1}},clip));
+});
+
+test("foreground size and position survive draft validation and export", () => {
+  const layout = { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, foreground: { scale: 2.2, x: .3, y: .7 } };
+  const checked = validateClipEditDraft(draft({ vertical_layout: layout }), clip);
+  assert.deepEqual(toClipExportPayload(clip, checked).vertical_layout, layout);
 });
 
 test("facecam-first layout survives draft validation and export", () => {

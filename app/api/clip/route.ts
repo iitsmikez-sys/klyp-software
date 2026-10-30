@@ -21,11 +21,11 @@ import { renderKeptSegments, validateEditorExportRequest } from "@/lib/editor-re
 import { assertOwnedDraftAssets, EditorAssetError } from "@/lib/editor-assets";
 import { resolveCutawaySpans, type ResolvedCutawaySpan } from "@/lib/editor-timeline";
 import { layoutForFocus, resolveFocusSpans, splitCuesForFocus } from "@/lib/editor-focus";
-import { buildCutawayGraph, cutawayInputArgs, loadEditorCutawayAssets, type RenderableEditorAsset } from "@/lib/editor-cutaway-render";
+import { buildCutawayGraph, buildOverlayAudioGraph, cutawayInputArgs, loadEditorCutawayAssets, type RenderableEditorAsset } from "@/lib/editor-cutaway-render";
 import { ClipEditDraftError, type ClipEditDraftV2, type ClipEditDraftV3 } from "@/lib/clip-edit-draft";
 import { resolveEditorCues, captionAppearance, parseCaptionOptions } from "@/lib/editor-captions";
 import type { SavedClip } from "@/lib/clip-ui";
-import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
@@ -115,7 +115,7 @@ async function cutClip(
   raw = false,
   upscale = false,
   verticalPlan?: VerticalLayoutPlan,
-  cutaways?: { spans: readonly ResolvedCutawaySpan[]; assets: readonly RenderableEditorAsset[]; dimensions: {w:number;h:number} },
+  cutaways?: { spans: readonly ResolvedCutawaySpan[]; assets: readonly RenderableEditorAsset[]; dimensions: {w:number;h:number}; hasSourceAudio:boolean },
   focusPlans?: readonly { start_ms: number; end_ms: number; plan: VerticalLayoutPlan }[]
 ): Promise<string> {
   const duration = endSeconds - startSeconds;
@@ -159,13 +159,19 @@ async function cutClip(
       videoLabel: 'exportv',
     };
   }
+  let overlayAudio:{filter:string;audioLabel:string|null}={filter:'',audioLabel:null};
+  if(!raw&&cutaways?.spans.some(span=>span.placement==='overlay'&&span.muted===false)){
+    const assetHasAudio=await Promise.all(cutaways.assets.map(async asset=>asset.kind==='video'&&JSON.parse(await runCapture(resolveBin('ffprobe'),['-v','error','-select_streams','a:0','-show_entries','stream=codec_type','-of','json',asset.localPath],{maxRunMs:30000})).streams?.length>0));
+    overlayAudio=buildOverlayAudioGraph(cutaways.spans,cutaways.assets,assetHasAudio,cutaways.hasSourceAudio,duration);
+    if(overlayAudio.filter&&composed)composed.filter+=';'+overlayAudio.filter;
+  }
   try {
   await run(resolveBin("ffmpeg"), [
     "-ss", String(startSeconds),
     "-t", String(duration),
     "-i", sourcePath,
     ...(cutaways ? cutawayInputArgs(cutaways.assets) : []),
-    ...(raw ? [] : composed ? ["-filter_complex_threads", String(FFMPEG_THREADS), "-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", "0:a?"] : ["-vf", vf]),
+    ...(raw ? [] : composed ? ["-filter_complex_threads", String(FFMPEG_THREADS), "-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", overlayAudio.audioLabel?`[${overlayAudio.audioLabel}]`:"0:a?"] : ["-vf", vf]),
     "-t", String(duration),
     "-c:v", "libx264",
     "-preset", "veryfast",
@@ -412,6 +418,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
           const bytes = await readArchivedObject(archived.masterPath);
           if (bytes) {
             archivedMaster = path.join(CACHE_DIR, `master-${archived.id}.mp4`);
+            await mkdir(CACHE_DIR, { recursive: true });
             await writeFile(archivedMaster, bytes);
             offsetSeconds = archivedClipTiming(archived.originalStartSeconds).sourceStart;
             archivedEndSeconds = archived.originalEndSeconds;
@@ -434,12 +441,16 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
 
       let editedDuration: number | null = null;
+      let editedHasAudio=false;
+      let editorAssets: RenderableEditorAsset[] = [];
       if (editorDraft) {
         editorDir = await mkdtemp(path.join(tmpdir(), "klyp-editor-"));
+        if(editorDraft.version===3 && (editorDraft.cutaways.length || editorDraft.inserts?.length)) editorAssets=await loadEditorCutawayAssets(profile.id,clipId,editorDraft,editorDir);
         const editedPath = path.join(editorDir, "kept.mp4");
-        const rendered = await renderKeptSegments(sourcePath, offsetSeconds, editorDraft.segments, editedPath, raw ? "off" : editorDraft.audio_polish ?? "off");
+        const rendered = await renderKeptSegments(sourcePath, offsetSeconds, editorDraft.segments, editedPath, raw ? "off" : editorDraft.audio_polish ?? "off",editorDraft.version===3&&editorDraft.inserts?.length?{items:editorDraft.inserts,assets:editorAssets}:undefined);
         sourcePath = editedPath;
         editedDuration = rendered.duration;
+        editedHasAudio=rendered.hasAudio;
       }
 
       // ASS PlayRes must match the output resolution so burned text scales with it.
@@ -464,7 +475,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // When probing fails, nonvertical exports retain the dynamic scale/crop fallback.
         if (native || format === "9:16") verticalPlan = planClipComposition(native ?? { w: 1920, h: 1080 }, format, verticalLayout, res);
         if (editorDraft?.version === 3 && editorDraft.focus_events?.length && format === "9:16" && verticalLayout?.facecam) {
-          focusPlans = resolveFocusSpans(editorDraft.focus_events, editorDraft.segments).map(span => ({
+          focusPlans = resolveFocusSpans(editorDraft.focus_events, editorDraft.segments,editorDraft.inserts).map(span => ({
             start_ms: span.start_ms, end_ms: span.end_ms,
             plan: planClipComposition(native ?? { w: 1920, h: 1080 }, format, layoutForFocus(verticalLayout, span.mode), res),
           }));
@@ -477,13 +488,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
       }
       if (style && editorDraft && ownedEditorClip && !raw) {
-        const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.mode === "full_frame" ? visibleFrameRect(verticalPlan.dest, res) : undefined;
+        const safe = verticalPlan?.textSafe;
         const cues = resolveEditorCues(editorDraft, ownedEditorClip);
-        const spans = editorDraft.version === 3 && focusPlans ? resolveFocusSpans(editorDraft.focus_events ?? [], editorDraft.segments) : null;
+        const spans = editorDraft.version === 3 && focusPlans ? resolveFocusSpans(editorDraft.focus_events ?? [], editorDraft.segments,editorDraft.inserts) : null;
         const resolvedCues = spans ? splitCuesForFocus(cues, spans) : cues;
         const captionSafe = spans && focusPlans ? (cue: { start_ms: number }) => {
           const plan = focusPlans!.find(span => cue.start_ms >= span.start_ms && cue.start_ms < span.end_ms)?.plan;
-          return plan?.mode === "composed" ? plan.textSafe : plan?.mode === "full_frame" ? visibleFrameRect(plan.dest, res) : { x: 0, y: 0, w: res.w, h: res.h };
+          return plan?.textSafe ?? { x: 0, y: 0, w: res.w, h: res.h };
         } : safe;
         if (resolvedCues.length) {
           assPath = path.join(assDir!, "captions.ass");
@@ -492,13 +503,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
         const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.y - verticalPlan.textSafe.h
-          : verticalPlan?.mode === "full_frame" ? res.h - visibleFrameRect(verticalPlan.dest, res).y - visibleFrameRect(verticalPlan.dest, res).h : 0;
+          : verticalPlan?.mode === "full_frame" ? res.h - verticalPlan.textSafe.y - verticalPlan.textSafe.h : 0;
         const assContent = generateAss(words, start * 1000, end * 1000, style, res, bottomInset, !!verticalPlan, parseCaptionOptions(requestBody));
         await writeFile(assPath, assContent, "utf-8");
       }
       if (hook) {
         hookAssPath = path.join(assDir!, "hook.ass");
-        await writeFile(hookAssPath, generateHookAss(hook, res, hookStyle), "utf-8");
+        await writeFile(hookAssPath, generateHookAss(hook, res, hookStyle, editorDraft?.hook_placement), "utf-8");
       }
 
       const t2 = Date.now();
@@ -506,8 +517,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       const cutawaySpans = editorDraft?.version === 3 ? resolveCutawaySpans(editorDraft) : [];
       const cutaways = cutawaySpans.length && editorDraft?.version === 3 ? {
         spans: cutawaySpans,
-        assets: await loadEditorCutawayAssets(profile.id, clipId, editorDraft, editorDir!),
+        assets: editorAssets,
         dimensions: res,
+        hasSourceAudio:editedHasAudio,
       } : undefined;
       const result = await cutClip(
         sourcePath,

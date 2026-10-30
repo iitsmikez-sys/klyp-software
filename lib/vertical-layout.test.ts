@@ -56,10 +56,10 @@ test("facecam-first layout puts the speaker above gameplay and keeps captions in
   assert.equal(plan.mode, "composed");
   if (plan.mode !== "composed") return;
   assert.deepEqual(plan.panels.map((panel) => [panel.name, panel.dest]), [
-    ["facecam", { x: 0, y: 0, w: 1080, h: 576 }],
-    ["gameplay", { x: 0, y: 576, w: 1080, h: 1344 }],
+    ["facecam", { x: 0, y: 0, w: 1080, h: 768 }],
+    ["gameplay", { x: 0, y: 768, w: 1080, h: 1152 }],
   ]);
-  assert.deepEqual(plan.textSafe, { x: 0, y: 576, w: 1080, h: 1344 });
+  assert.deepEqual(plan.textSafe, { x: 0, y: 768, w: 1080, h: 1152 });
 });
 
 test("facecam-first layout shares the top strip with chat when chat is included", () => {
@@ -67,9 +67,9 @@ test("facecam-first layout shares the top strip with chat when chat is included"
   assert.equal(plan.mode, "composed");
   if (plan.mode !== "composed") return;
   assert.deepEqual(plan.panels.map((panel) => [panel.name, panel.dest]), [
-    ["facecam", { x: 0, y: 0, w: 540, h: 576 }],
-    ["chat", { x: 540, y: 0, w: 540, h: 576 }],
-    ["gameplay", { x: 0, y: 576, w: 1080, h: 1344 }],
+    ["facecam", { x: 0, y: 0, w: 540, h: 768 }],
+    ["chat", { x: 540, y: 0, w: 540, h: 768 }],
+    ["gameplay", { x: 0, y: 768, w: 1080, h: 1152 }],
   ]);
 });
 
@@ -85,28 +85,53 @@ test("absent layout fits the full source without cropping", () => {
   assert.deepEqual(plan.dest, { x: 0, y: 656, w: 1080, h: 608 });
 });
 
-test("full stream can be enlarged and moved while keeping its aspect ratio", () => {
-  const layout = validateVerticalLayout({ version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, fit: { zoom: 1.5, x: 0.1, y: -0.1 } });
-  const plan = planVerticalLayout({ w: 1920, h: 1080 }, layout, { w: 1080, h: 1920 });
+test("foreground zoom enlarges the sharp video and keeps the requested position", () => {
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, foreground: { scale: 2, x: 0.25, y: 0.75 } }, { w: 1080, h: 1920 });
   assert.equal(plan.mode, "full_frame");
   if (plan.mode !== "full_frame") return;
-  assert.deepEqual(plan.dest, { x: -162, y: 312, w: 1620, h: 912 });
+  assert.deepEqual(plan.dest, { x: -270, y: 528, w: 2160, h: 1216 });
+  assert.deepEqual(plan.textSafe, { x: 0, y: 528, w: 1080, h: 1216 });
 });
 
-test("stacked panels honor a custom main panel share", () => {
-  const plan = planVerticalLayout({ w: 1920, h: 1080 }, { version: 1, gameplay, facecam, arrangement: "facecam_top", mainShare: 0.55 }, { w: 1080, h: 1920 });
+test("invalid or composed foreground transforms are rejected", () => {
+  const base = { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 } };
+  for (const foreground of [{ scale: 0, x: .5, y: .5 }, { scale: 5, x: .5, y: .5 }, { scale: 2, x: -1, y: .5 }, { scale: NaN, x: .5, y: .5 }]) {
+    assert.throws(() => validateVerticalLayout({ ...base, foreground }), /layout/i);
+  }
+  assert.throws(() => validateVerticalLayout({ ...base, facecam, foreground: { scale: 2, x: .5, y: .5 } }), /layout/i);
+});
+
+test("a gameplay-only layout covering the whole source cannot silently crop its edges", () => {
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, {
+    version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 },
+  }, { w: 1080, h: 1920 });
+  assert.equal(plan.mode, "full_frame");
+  if (plan.mode === "full_frame") assert.deepEqual(plan.source, { x: 0, y: 0, w: 1920, h: 1080 });
+});
+
+test("square export still fills its selected square format", () => {
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, {
+    version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 },
+  }, { w: 1080, h: 1080 });
   assert.equal(plan.mode, "composed");
-  if (plan.mode !== "composed") return;
-  assert.deepEqual(plan.panels.map(p => [p.name, p.dest.y, p.dest.h]), [["facecam", 0, 864], ["gameplay", 864, 1056]]);
 });
 
-test("invalid frame controls are rejected", () => {
-  for (const extra of [{ mainShare: 0.1 }, { fit: { zoom: 0, x: 0, y: 0 } }, { fit: { zoom: 2, x: Infinity, y: 0 } }]) {
+test("legacy full-stream fit stays enlarged and moved after the merge", () => {
+  const layout = validateVerticalLayout({ version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, fit: { zoom: 1.5, x: .1, y: -.1 } });
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, layout, { w: 1080, h: 1920 });
+  assert.equal(plan.mode, "full_frame");
+  if (plan.mode === "full_frame") assert.deepEqual(plan.dest, { x: -162, y: 312, w: 1620, h: 912 });
+});
+
+test("stacked panels honor a custom gameplay share", () => {
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, { version: 1, gameplay, facecam, arrangement: "facecam_top", mainShare: .55 }, { w: 1080, h: 1920 });
+  assert.equal(plan.mode, "composed");
+  if (plan.mode === "composed") assert.deepEqual(plan.panels.map(p => [p.name, p.dest.y, p.dest.h]), [["facecam", 0, 864], ["gameplay", 864, 1056]]);
+});
+
+test("invalid merged frame controls are rejected and captions use visible image", () => {
+  for (const extra of [{ mainShare: .1 }, { fit: { zoom: 0, x: 0, y: 0 } }, { fit: { zoom: 2, x: Infinity, y: 0 } }, { fit: { zoom: 2, x: 0, y: 0 }, foreground: { scale: 2, x: .5, y: .5 } }]) {
     assert.throws(() => validateVerticalLayout({ version: 1, gameplay, ...extra }), /layout/i);
   }
-});
-
-test("captions stay inside the visible part of a moved video", () => {
-  const safe = visibleFrameRect({ x: -100, y: 100, w: 900, h: 900 }, { w: 540, h: 960 });
-  assert.deepEqual(safe, { x: 0, y: 100, w: 540, h: 860 });
+  assert.deepEqual(visibleFrameRect({ x: -100, y: 100, w: 900, h: 900 }, { w: 540, h: 960 }), { x: 0, y: 100, w: 540, h: 860 });
 });

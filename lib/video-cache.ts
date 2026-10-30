@@ -10,8 +10,11 @@ import { tmpdir } from "os";
 import path from "path";
 import { ffmpegLocationArgs, isDiskFullError, resolveBin, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
 import { ensureVideoSegment, hasVideoStream } from "@/lib/video-segment";
+import { locateUploadedFile, uploadDirectory } from "@/lib/upload-location";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
+/** Set to an absolute mounted volume path on the processing service. */
+export const UPLOAD_DIR = uploadDirectory(CACHE_DIR);
 
 const GB = 1024 * 1024 * 1024;
 
@@ -47,11 +50,10 @@ const MIN_FREE_BYTES = envGb("KLYP_CACHE_MIN_FREE_GB", 15);
 const log = (...args: unknown[]) => console.log("[video-cache]", new Date().toISOString(), ...args);
 
 /* ── Uploaded VOD files ─────────────────────────────────────────────
- * Uploads are stored as upload-<uuid>.<ext> in CACHE_DIR and referenced
+ * Uploads are stored as upload-<uuid>.<ext> in UPLOAD_DIR and referenced
  * everywhere a VOD URL is expected as "upload:<uuid>". */
 
 export const UPLOAD_PREFIX = "upload:";
-const UPLOAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isUploadRef(url: string): boolean {
   return url.startsWith(UPLOAD_PREFIX);
@@ -59,14 +61,7 @@ export function isUploadRef(url: string): boolean {
 
 /** Find the stored file for an upload id — null if missing/expired. */
 export async function findUploadedVideo(uploadId: string): Promise<string | null> {
-  if (!UPLOAD_ID_PATTERN.test(uploadId)) return null;
-  try {
-    const files = await readdir(CACHE_DIR);
-    const match = files.find((f) => f.startsWith(`upload-${uploadId}.`));
-    return match ? path.join(CACHE_DIR, match) : null;
-  } catch {
-    return null;
-  }
+  return locateUploadedFile(uploadId, [UPLOAD_DIR, CACHE_DIR]);
 }
 
 /**

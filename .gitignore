@@ -51,4 +51,6 @@ next-env.d.ts
 # Local editor verification fixtures and evidence
 /.next-verification/
 /.superpowers/
+/outputs/
+/supabase/snippets/
 /artifacts/dashboard-redesign/

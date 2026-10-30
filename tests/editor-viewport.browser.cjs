@@ -22,7 +22,7 @@ const { chromium } = require('playwright');
         const rect = document.querySelector(selector).getBoundingClientRect();
         return [selector, { top: rect.top, bottom: rect.bottom, height: rect.height }];
       })));
-      assert.ok(boxes['.editor-canvas'].height <= height * 0.42, `${width}x${height}: preview is ${boxes['.editor-canvas'].height}px tall`);
+      assert.ok(boxes['.editor-canvas'].height > 0 && boxes['.editor-canvas'].height <= height * 0.7, `${width}x${height}: preview is ${boxes['.editor-canvas'].height}px tall`);
       assert.ok(boxes['.editor-timeline'].top < height - 100, `${width}x${height}: timeline starts below the viewport`);
       assert.ok(boxes['.editor-tools'].top < height - 150, `${width}x${height}: edit tools start below the viewport`);
       assert.ok(boxes['.editor-timeline'].bottom <= height + 1, `${width}x${height}: timeline ends at ${boxes['.editor-timeline'].bottom}px, below the viewport`);
@@ -34,7 +34,7 @@ const { chromium } = require('playwright');
     await page.addStyleTag({ content: fs.readFileSync('components/EditorWorkspace.module.css', 'utf8') });
     const legacyHeight = await page.locator('.frame').evaluate(element => element.getBoundingClientRect().height);
     assert.ok(legacyHeight <= 420, `original editor preview is ${legacyHeight}px tall`);
-    console.log('PASS: preview remains compact and editing controls stay visible at desktop and laptop sizes');
+    console.log('PASS: preview fills available space and editing controls stay visible at desktop and laptop sizes');
   } finally {
     await browser.close();
   }

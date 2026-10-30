@@ -5,7 +5,7 @@ import path from "node:path";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const names = (await readdir(path.join(root, "tests")))
-  .filter((name) => name.endsWith(".mjs") && name !== "homepage-demo.mjs")
+  .filter((name) => name.endsWith(".mjs") && name !== "homepage-demo.mjs" && name !== "analysis-reconnect.browser.mjs")
   .sort();
 const child = spawn(process.execPath, ["--test", ...names.map((name) => path.join(root, "tests", name))],
   { stdio: "inherit" });
