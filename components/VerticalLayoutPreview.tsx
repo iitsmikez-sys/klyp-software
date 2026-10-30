@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { planClipComposition, previewDimensions, type VerticalLayoutV1 } from "@/lib/vertical-layout";
+import { planClipComposition, previewDimensions, visibleFrameRect, type VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, keywordAtTime, type HookStyle } from "@/lib/captions";
 import { paintCaptionLine } from "@/lib/caption-preview";
 import { drawHookPreview } from "@/lib/hook-preview";
@@ -70,7 +70,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               : overlay.caption;
             if (activeCaption) {
               const appearance = captionAppearance(editor.draft);
-              const safe = plan.mode === "composed" ? plan.textSafe : plan.dest;
+              const safe = plan.mode === "composed" ? plan.textSafe : visibleFrameRect(plan.dest, dimensions);
               const style = editor.draft.caption_style;
               const caption = layoutTimedCaption(activeCaption.text, style, appearance, { w: canvas.width, h: canvas.height }, safe, editor.draft.caption_font ?? 'sans');
               const motion = captionMotion(style, outputTime * 1000 - activeCaption.start_ms);
@@ -101,7 +101,8 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const cues = buildCaptionCues(text.words, text.vodStart * 1000, text.vodEnd * 1000, text.captionStyle === "KLYP" ? 1 : 4);
               const active = cues.find((cue) => clipTime * 1000 >= cue.startMs && clipTime * 1000 < cue.endMs);
               if (active) {
-                const safeBottom = plan.mode === "composed" ? plan.textSafe.y + plan.textSafe.h : plan.dest.y + plan.dest.h;
+                const visible = plan.mode === "composed" ? plan.textSafe : visibleFrameRect(plan.dest, dimensions);
+                const safeBottom = visible.y + visible.h;
                 ctx.font = `${text.captionStyle === "COMIC" ? "italic " : ""}${text.captionStyle === "CLEAN" ? "normal 29" : "bold 41"}px Arial`;
                 ctx.textAlign = "center";
                 ctx.lineWidth = 5;

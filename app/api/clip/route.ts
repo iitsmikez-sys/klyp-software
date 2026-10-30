@@ -43,7 +43,7 @@ import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache"
 import { runQueued } from "@/lib/job-queue";
 import { watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
-import { planClipComposition, validateVerticalLayout, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
+import { planClipComposition, validateVerticalLayout, visibleFrameRect, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { buildTimedVerticalFilterGraph, buildVerticalFilterGraph } from "@/lib/vertical-layout-ffmpeg";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { clipSeekRange, archivedClipTiming } from "@/lib/clip-trim";
@@ -477,13 +477,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
       }
       if (style && editorDraft && ownedEditorClip && !raw) {
-        const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.dest;
+        const safe = verticalPlan?.mode === "composed" ? verticalPlan.textSafe : verticalPlan?.mode === "full_frame" ? visibleFrameRect(verticalPlan.dest, res) : undefined;
         const cues = resolveEditorCues(editorDraft, ownedEditorClip);
         const spans = editorDraft.version === 3 && focusPlans ? resolveFocusSpans(editorDraft.focus_events ?? [], editorDraft.segments) : null;
         const resolvedCues = spans ? splitCuesForFocus(cues, spans) : cues;
         const captionSafe = spans && focusPlans ? (cue: { start_ms: number }) => {
           const plan = focusPlans!.find(span => cue.start_ms >= span.start_ms && cue.start_ms < span.end_ms)?.plan;
-          return plan?.mode === "composed" ? plan.textSafe : plan?.mode === "full_frame" ? plan.dest : { x: 0, y: 0, w: res.w, h: res.h };
+          return plan?.mode === "composed" ? plan.textSafe : plan?.mode === "full_frame" ? visibleFrameRect(plan.dest, res) : { x: 0, y: 0, w: res.w, h: res.h };
         } : safe;
         if (resolvedCues.length) {
           assPath = path.join(assDir!, "captions.ass");
@@ -492,7 +492,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       } else if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
         const bottomInset = verticalPlan?.mode === "composed" ? res.h - verticalPlan.textSafe.y - verticalPlan.textSafe.h
-          : verticalPlan?.mode === "full_frame" ? res.h - verticalPlan.dest.y - verticalPlan.dest.h : 0;
+          : verticalPlan?.mode === "full_frame" ? res.h - visibleFrameRect(verticalPlan.dest, res).y - visibleFrameRect(verticalPlan.dest, res).h : 0;
         const assContent = generateAss(words, start * 1000, end * 1000, style, res, bottomInset, !!verticalPlan, parseCaptionOptions(requestBody));
         await writeFile(assPath, assContent, "utf-8");
       }
