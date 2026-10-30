@@ -29,7 +29,7 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: "AI clip detection with viral scores" },
   { ok: true, text: "9:16 vertical and Original (no crop) exports" },
   { ok: true, text: "AI captions — BOLD, CLEAN & KLYP styles" },
-  { ok: false, text: "Moving klyp.world watermark on every clip" },
+  { ok: false, text: "Animated Klyp watermark on free exports" },
 ];
 
 const PRO_FEATURES: string[] = [

@@ -88,7 +88,7 @@ test('export route returns playable MP4 with source cuts, imported pictures, aud
    '@/lib/bin':bin, '@/lib/captions':captions, '@/lib/clips':clips,
    '@/lib/video-cache':{CACHE_DIR:dir,isUploadRef:()=>false,resolveSourceSegment:async()=>({path:source,offsetSeconds:100})},
    '@/lib/job-queue':{runQueued:async(_key:string,fn:()=>Promise<unknown>)=>fn()},
-   '@/lib/watermark':{watermarkFilter:()=>{throw Error('Unexpected free export');}},
+   '@/lib/watermark':{generateWatermarkAss:()=>{throw Error('Unexpected free export');},watermarkFilter:()=>{throw Error('Unexpected free export');}},
    '@/lib/profile-token':{bearerToken:()=> 'fixture',getProfileFromToken:async()=>({id:'user',tier:'pro',stripe_subscription_id:'fixture',sparks:0,vertical_layout:null}),consumeSparksFromToken:async()=>{throw Error('Fixture must never spend Sparks');}},
    '@/lib/vertical-layout':vertical, '@/lib/vertical-layout-ffmpeg':verticalFfmpeg,
    '@/lib/clip-archive':{getArchivedClip:async()=>null}, '@/lib/clip-trim':trim,
