@@ -1,13 +1,10 @@
 /** User tiers. Tier lives on the Supabase `profiles` row — see lib/profile.ts. */
 export type Tier = "free" | "pro";
 
-/** Monthly Sparks allowance per tier. Keep in sync with tier_allowance() in
- *  supabase/migrations/001_sparks_profiles.sql. */
+/** Sparks allowance per 30-day cycle. Keep in sync with the latest
+ *  tier_allowance() migration. */
 export const SPARKS_ALLOWANCE: Record<Tier, number> = {
-  // 60 bought a single typical run (40), so one quiet VOD was the whole free
-  // trial and a user learned nothing about what Klyp does well. 150 is three
-  // runs: enough to discover that longer, louder streams clip better.
-  free: 150,
+  free: 60,
   pro: 500,
 };
 
