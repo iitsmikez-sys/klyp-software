@@ -107,26 +107,27 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="hidden md:flex flex-col w-60 min-h-screen bg-surface border-r border-border shrink-0">
-      <div className="flex items-center justify-between px-6 h-16 border-b border-border">
+    <aside className="hidden md:flex flex-col w-[208px] min-h-screen bg-surface border-r border-border shrink-0">
+      <div className="flex h-16 items-center justify-between border-b border-border px-5">
         <Logo size="md" />
         <NotificationBell />
       </div>
 
-      <nav className="flex flex-col gap-1 px-3 py-4 flex-1">
+      <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              aria-current={isActive ? "page" : undefined}
+              className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                 isActive
-                  ? "bg-accent-glow text-accent"
+                  ? "bg-accent/15 text-accent"
                   : "text-foreground-muted hover:text-foreground hover:bg-surface-2"
               }`}
             >
-              <span className={isActive ? "text-accent" : ""}>{item.icon}</span>
+              <span className={`flex w-5 shrink-0 items-center justify-center ${isActive ? "text-accent" : ""}`}>{item.icon}</span>
               {item.label}
             </Link>
           );

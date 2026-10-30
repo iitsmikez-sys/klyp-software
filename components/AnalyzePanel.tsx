@@ -14,7 +14,7 @@ import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
 import ClipPreviewModal from "./ResultsClipPreviewModal";
 import FoundClipCard from "./FoundClipCard";
-import type { SavedClip } from "@/lib/clip-ui";
+import { platformName, type SavedClip } from "@/lib/clip-ui";
 import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import { resultsChargeMessage } from "@/lib/results-summary";
 import resultsStyles from "./ClipResults.module.css";
@@ -111,14 +111,17 @@ export default function AnalyzePanel() {
   const exportLock = useRef(false);
   const submittedEstimate = useRef<number | null>(null);
   const [editorSettings, setEditorSettings] = useState<Partial<Record<number, EditorExportSettings>>>({});
-  /** Expandable Sparks cost breakdown. */
-  const [costOpen, setCostOpen] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadWarning, setDownloadWarning] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimatedSparks, setEstimatedSparks] = useState<number | null>(null);
+  const [estimatedForUrl, setEstimatedForUrl] = useState<string | null>(null);
   const [previewDuration, setPreviewDuration] = useState<number | null>(null);
+  const [previewMeta, setPreviewMeta] = useState<{ title: string | null; thumbnail: string | null } | null>(null);
+  const [previewImageFailed, setPreviewImageFailed] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [probeRevision, setProbeRevision] = useState(0);
   const [keyword, setKeyword] = useState("");
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
   const [zipProgress, setZipProgress] = useState<{ done: number; total: number } | null>(null);
@@ -146,6 +149,8 @@ export default function AnalyzePanel() {
   const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
+  const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
+  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !busy && !loading && !outOfSparks && !cantAfford;
 
   const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
     id: savedIds[index] ?? "", url: analyzedUrl, title: clip.title, clip_type: clip.type,
@@ -176,8 +181,13 @@ export default function AnalyzePanel() {
   // Probe video duration as the user types/pastes a URL, debounced.
   useEffect(() => {
     if (inputMode !== "url") return;
+    let cancelled = false;
     setEstimatedSparks(null);
+    setEstimatedForUrl(null);
     setPreviewDuration(null);
+    setPreviewMeta(null);
+    setPreviewImageFailed(false);
+    setEstimateError(null);
     if (!VOD_URL_PATTERN.test(url)) {
       setEstimating(false);
       return;
@@ -187,20 +197,26 @@ export default function AnalyzePanel() {
     const probe = setTimeout(async () => {
       try {
         const res = await processingFetch(`/api/duration?url=${encodeURIComponent(url)}`);
-        if (res.ok) {
-          const data = await res.json();
+        if (!res.ok) throw new Error("Could not check this VOD.");
+        const data = await res.json();
+        if (!Number.isFinite(data.sparks) || !Number.isFinite(data.durationSeconds) || data.durationSeconds <= 0) {
+          throw new Error("VOD metadata did not include a usable duration or Sparks estimate.");
+        }
+        if (!cancelled) {
           setEstimatedSparks(data.sparks);
+          setEstimatedForUrl(url);
           setPreviewDuration(data.durationSeconds);
+          setPreviewMeta({ title: typeof data.title === "string" ? data.title : null, thumbnail: typeof data.thumbnail === "string" ? data.thumbnail : null });
         }
       } catch {
-        // Estimation is best-effort; analysis still works without it.
+        if (!cancelled) setEstimateError("Couldn’t confirm the VOD length or Sparks cost. Check the link and try again.");
       } finally {
-        setEstimating(false);
+        if (!cancelled) setEstimating(false);
       }
     }, 600);
 
-    return () => clearTimeout(probe);
-  }, [url, inputMode]);
+    return () => { cancelled = true; clearTimeout(probe); };
+  }, [url, inputMode, probeRevision]);
 
   const switchMode = (mode: "url" | "file") => {
     if (mode === inputMode || loading) return;
@@ -211,6 +227,7 @@ export default function AnalyzePanel() {
       setEstimating(false);
       setEstimatedSparks(uploadedFile?.sparks ?? null);
       setPreviewDuration(uploadedFile?.durationSeconds ?? null);
+      setEstimateError(null);
     }
   };
 
@@ -405,8 +422,7 @@ export default function AnalyzePanel() {
 
   const analyze = (e: FormEvent) => {
     e.preventDefault();
-    if (loading) return;
-    if (inputMode === "file" ? !uploadedFile : !url) return;
+    if (!canSubmit) return;
     void runAnalysis();
   };
 
@@ -790,23 +806,23 @@ export default function AnalyzePanel() {
       )}
 
       {/* VOD input — URL paste or file upload */}
-      <section className="rounded-xl border border-border bg-surface p-5 sm:p-6">
-        <h2 className="mb-1 font-geist text-xl font-semibold tracking-tight text-white sm:text-2xl">Analyze a VOD</h2>
-        <p className="mb-4 text-sm text-foreground-muted">
-          Paste a video link or upload a file to find your best moments.
+      <section className="overflow-hidden rounded-xl border border-border bg-surface p-4">
+        <h2 className="mb-0.5 font-geist text-lg font-semibold tracking-tight text-white">Analyze a VOD</h2>
+        <p className="mb-3 text-[13px] text-foreground-muted">
+          Paste a video link or upload a file. Klyp finds the moments worth sharing.
         </p>
         {/* Input mode toggle */}
-        <div className="mb-3 flex w-fit overflow-hidden rounded-md border border-border">
+        <div className="mb-2 flex w-fit gap-1 rounded-lg border border-border bg-background/50 p-0.5">
           {([["url", "Paste URL"], ["file", "Upload file"]] as const).map(([mode, label]) => (
             <button
               key={mode}
               type="button"
               onClick={() => switchMode(mode)}
               disabled={loading}
-              className={`px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
+              className={`min-h-8 rounded-md px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
                 inputMode === mode
-                  ? "bg-accent-glow text-accent"
-                  : "bg-surface-2 text-foreground-muted hover:text-foreground"
+                  ? "bg-accent/15 text-accent"
+                  : "text-foreground-muted hover:bg-surface-2 hover:text-foreground"
               }`}
             >
               {label}
@@ -814,26 +830,38 @@ export default function AnalyzePanel() {
           ))}
         </div>
 
-        <form onSubmit={analyze} className="flex flex-col gap-3">
+        <form onSubmit={analyze} className="min-w-0">
           {inputMode === "url" ? (
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div>
               <input
                 type="url"
                 required
                 aria-label="VOD URL"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => setUrl(e.target.value.trim())}
                 placeholder="Paste a YouTube or Twitch VOD link"
                 disabled={loading || outOfSparks}
-                className="min-h-12 flex-1 rounded-lg border border-border bg-surface-2 px-4 py-3 text-[15px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none disabled:opacity-50"
+                className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
               />
-              <button
-                type="submit"
-                disabled={busy || loading || !url || outOfSparks || cantAfford}
-                className="min-h-12 whitespace-nowrap rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim disabled:opacity-50"
-              >
-                {loading ? "Analyzing…" : "Find clips"}
-              </button>
+              {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
+                <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
+              </div>}
+              {previewDuration !== null && !estimating && <div className="mt-2 flex min-w-0 items-center gap-3 rounded-lg border border-border bg-surface-2/75 p-2">
+                <div className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md bg-background text-xs text-foreground-muted sm:w-28">
+                  {previewMeta?.thumbnail && !previewImageFailed
+                    ? <img src={previewMeta.thumbnail} alt="" onError={() => setPreviewImageFailed(true)} className="h-full w-full object-cover" />
+                    : <span>VOD preview</span>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">{previewMeta?.title || `${platformName(url)} VOD ready`}</p>
+                  <p className="mt-0.5 text-xs text-foreground-muted">{platformName(url)} · {fmtTime(previewDuration)} · ready to analyze</p>
+                </div>
+              </div>}
+              {estimateError && <div role="alert" className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs text-red-300">
+                <span>{estimateError}</span>
+                <button type="button" onClick={() => setProbeRevision((value) => value + 1)} className="font-semibold underline underline-offset-2">Retry</button>
+              </div>}
+              {url && !VOD_URL_PATTERN.test(url) && <p className="mt-2 text-xs text-foreground-muted">Use a Twitch or YouTube VOD link to get started.</p>}
             </div>
           ) : (
             <>
@@ -926,70 +954,66 @@ export default function AnalyzePanel() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={busy || loading || !uploadedFile || uploadPct !== null || outOfSparks || cantAfford}
-                className="whitespace-nowrap rounded-lg bg-accent px-6 py-2.5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim disabled:opacity-50 sm:self-start"
-              >
-                {loading ? "Analyzing…" : "Find clips"}
-              </button>
             </>
           )}
-        </form>
 
-        <details className="group mt-4 border-t border-border pt-3">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm text-foreground-muted marker:content-none hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-            <span className="font-medium text-foreground">Clip Settings <span className="ml-2 font-normal text-foreground-muted">{clipCount} clips · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · keyword added" : ""}</span></span>
-            <span aria-hidden="true" className="text-lg leading-none transition-transform group-open:rotate-45">+</span>
+        <details className="group mt-3 rounded-lg border border-border bg-background/35">
+          <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-foreground-muted marker:content-none hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            <span className="min-w-0"><span className="font-semibold text-foreground">Clip Settings</span><span className="ml-2 font-normal text-foreground-muted">{clipCount} clips · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · topic added" : ""}</span></span>
+            <svg aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m5 7.5 5 5 5-5" /></svg>
           </summary>
-          <div className="pt-4">
+          <div className="grid gap-3 border-t border-border px-3 py-3 lg:grid-cols-2">
         {/* Clip count selector */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0">
           <span
-            className="text-sm text-foreground whitespace-nowrap cursor-help"
+            className="mb-1.5 block text-xs font-medium text-foreground cursor-help"
             title="We only return clips worth posting — if your VOD doesn't have 10 great moments you'll get fewer"
           >
-            How many clips? <span className="text-foreground-muted">ⓘ</span>
+            Number of clips <span className="text-foreground-muted">ⓘ</span>
           </span>
-          <div className="flex max-w-full overflow-x-auto rounded-lg border border-border">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {CLIP_COUNT_OPTIONS.map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setClipCount(n)}
                 disabled={loading}
-                className={`flex-none whitespace-nowrap px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50 ${
+                aria-pressed={clipCount === n}
+                className={`min-h-11 rounded-lg border px-2 py-1 text-center text-xs font-semibold transition-colors disabled:opacity-50 ${
                   clipCount === n
-                    ? "bg-accent-glow text-accent"
-                    : "bg-surface-2 text-foreground-muted hover:text-foreground"
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-surface-2 text-foreground-muted hover:border-subtle hover:text-foreground"
                 }`}
               >
-                {n}{" "}
-                <span className="font-normal opacity-90">· {CLIP_COUNT_COST[n]}⚡</span>
+                <span className="block">{n} clips</span>
+                <span className="mt-0.5 block font-normal opacity-85">{CLIP_COUNT_COST[n]} Sparks <span aria-hidden="true" className="ml-0.5 text-[11px] text-amber-400">⚡</span></span>
               </button>
             ))}
           </div>
         </div>
 
+        <div className="min-w-0">
+
         {/* Content type — changes which clip types MIDAS looks for */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span
-            className="text-sm text-foreground whitespace-nowrap cursor-help"
+            className="text-xs font-medium text-foreground whitespace-nowrap cursor-help"
             title="Gaming picks from CLUTCH/EPIC/BIG_BRAIN etc; IRL swaps those for STORY_TIME/AWKWARD/PUBLIC_INTERACTION"
           >
             Content type <span className="text-foreground-muted">ⓘ</span>
           </span>
-          <div className="flex rounded-lg border border-border overflow-hidden">
+          <div className="flex gap-1 rounded-lg border border-border bg-surface-2 p-1">
             {CONTENT_TYPES.map((ct) => (
               <button
                 key={ct}
                 type="button"
                 onClick={() => updateContentType(ct)}
                 disabled={loading}
-                className={`px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50 ${
+                aria-pressed={contentType === ct}
+                className={`min-h-8 rounded-md px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
                   contentType === ct
-                    ? "bg-accent-glow text-accent"
-                    : "bg-surface-2 text-foreground-muted hover:text-foreground"
+                    ? "bg-accent/15 text-accent"
+                    : "text-foreground-muted hover:text-foreground"
                 }`}
               >
                 {CONTENT_TYPE_LABELS[ct]}
@@ -999,96 +1023,63 @@ export default function AnalyzePanel() {
         </div>
 
         {/* Keyword or topic — weights matching transcript moments higher when picking clips */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <label htmlFor="klyp-keyword" className="text-sm text-foreground whitespace-nowrap">
+        <div className="mt-2 min-w-0">
+          <label htmlFor="klyp-keyword" className="mb-1 block text-xs font-medium text-foreground">
             Keyword or topic (optional)
           </label>
-          <div className="flex items-center px-3 py-1.5 rounded-lg bg-surface-2 border border-border focus-within:border-accent transition-colors w-full sm:w-48">
+          <div className="flex min-h-8 w-full items-center rounded-lg border border-border bg-surface-2 px-3 focus-within:border-accent transition-colors">
             <input
               id="klyp-keyword"
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value.slice(0, 100))}
-              placeholder="e.g. pool, Kai, funny moment"
+              placeholder="e.g. clutch, funny moment, Kai"
               disabled={loading}
               className="w-full bg-transparent text-sm text-foreground placeholder:text-foreground-muted focus:outline-none disabled:opacity-50"
             />
           </div>
-          <span className="text-xs text-foreground-muted">
+          <span className="mt-0.5 block text-[11px] text-foreground-muted">
             {keyword.trim()
               ? `moments mentioning "${keyword.trim()}" are weighted higher`
               : "Leave blank to find the best moments."}
           </span>
         </div>
+        </div>
           </div>
         </details>
 
-        {/* Sparks cost preview */}
-        {!outOfSparks && (estimating || estimatedSparks !== null) && (
-          <div className="mt-3">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[15px]">
-              <span className="flex items-center gap-1.5 text-foreground-muted">
-                <SparkIcon size={15} className="text-accent" />
-                {estimating ? (
-                  "Checking video length…"
-                ) : (
-                  <>
-                    Estimated cost:{" "}
-                    <span className={`font-bold tabular-nums ${cantAfford ? "text-red-400" : "text-accent"}`}>
-                      {totalEstimate} Sparks
-                    </span>
-                  </>
-                )}
-              </span>
-              {!estimating && (
-                <button
-                  type="button"
-                  onClick={() => setCostOpen((v) => !v)}
-                  aria-expanded={costOpen}
-                  className="flex items-center gap-1 text-[13px] font-semibold text-foreground-muted hover:text-foreground transition-colors"
-                >
-                  Details
-                  <svg
-                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                    className={`transition-transform ${costOpen ? "rotate-180" : ""}`}
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-              )}
-            </div>
-
-            {/* Breakdown of the same figures the server charges — see lib/sparks.ts. */}
-            {costOpen && !estimating && (
-              <div className="mt-2 px-3.5 py-3 rounded-lg bg-surface-2 border border-border text-sm space-y-1.5">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-foreground-muted">VOD length</span>
-                  <span className="text-foreground tabular-nums">{estimatedSparks} Sparks</span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-foreground-muted">{clipCount} clips requested</span>
-                  <span className="text-foreground tabular-nums">{CLIP_COUNT_COST[clipCount]} Sparks</span>
-                </div>
-                <div className="flex items-center justify-between gap-4 pt-1.5 border-t border-border">
-                  <span className="text-foreground font-semibold">Total</span>
-                  <span className="text-accent font-bold tabular-nums">{totalEstimate} Sparks</span>
-                </div>
-                <p className="text-[13px] text-foreground-muted pt-1 leading-relaxed">
-                  You are only charged for clips that come back above the quality floor, so
-                  fewer results cost less than the estimate.
+        {/* Breakdown uses the same cost figures sent to the processing service. */}
+        <div className="mt-3 rounded-lg border border-border bg-surface-2/70 p-3" aria-live="polite">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+            <div className="grid min-w-0 flex-1 grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+              <div className="col-span-2 sm:col-span-1">
+                <p className="text-xs text-foreground-muted">Estimated total</p>
+                <p className={`mt-0.5 flex items-center gap-1.5 text-lg font-semibold tabular-nums ${cantAfford ? "text-red-400" : "text-accent"}`}>
+                  <SparkIcon size={17} />{totalEstimate !== null && !estimating ? `${totalEstimate} Sparks` : "Checking cost…"}
                 </p>
               </div>
-            )}
-
-            {cantAfford && !estimating && (
-              <p className="mt-2 text-sm text-red-400">
-                Not enough Sparks: this costs {totalEstimate} but you have {balance} remaining.{" "}
-                <a href="/dashboard/upgrade" className="underline font-semibold">Upgrade to Pro</a>
+              <div className="border-l border-border pl-3 sm:pl-4">
+                <p className="text-xs text-foreground-muted">VOD analysis {previewDuration ? `(${fmtTime(previewDuration)})` : ""}</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{estimatedSparks !== null && !estimating ? `${estimatedSparks} Sparks` : "—"}</p>
+              </div>
+              <div className="border-l border-border pl-3 sm:pl-4">
+                <p className="text-xs text-foreground-muted">{clipCount} clips requested</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{CLIP_COUNT_COST[clipCount]} Sparks</p>
+              </div>
+            </div>
+            <div className="lg:w-48 lg:shrink-0">
+              <button type="submit" disabled={!canSubmit}
+                className="flex min-h-10 w-full items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45">
+                {loading ? "Analyzing…" : "Find Clips"}
+              </button>
+              <p className="mt-1 text-center text-[11px] leading-snug text-foreground-muted">
+                {totalEstimate !== null && !estimating ? `Up to ${totalEstimate} Sparks from your balance` : "Add a VOD to see its cost"}
               </p>
-            )}
+            </div>
           </div>
-        )}
+          <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Only clips that meet the quality bar are charged. Fewer results can cost less than this estimate.</p>
+          {cantAfford && !estimating && <p role="alert" className="mt-2 text-xs text-red-400">Not enough Sparks: this costs {totalEstimate}, and you have {balance}. <a href="/dashboard/upgrade" className="font-semibold underline">Upgrade to Pro</a></p>}
+        </div>
 
         {/* Processing server unreachable — set by the background health poll, clears itself */}
         {serverOffline && !loading && (
@@ -1122,6 +1113,7 @@ export default function AnalyzePanel() {
             )}
           </div>
         )}
+        </form>
       </section>
 
       {/* Results */}
