@@ -9,29 +9,6 @@ import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import Waitlist from "@/components/Waitlist";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
-import ClipFlowDemo from "@/components/ClipFlowDemo";
-import { existsSync } from "fs";
-import path from "path";
-import { DEMO_ASSET_PATHS } from "@/lib/demo-reel";
-
-/**
- * The demo reel needs real footage that isn't in the repo. This is a server
- * component, so it can simply look: drop the files into public/demo and the
- * section upgrades from its diagram to real players on the next render, with
- * no flag to flip. A partial set counts as missing — half a reel looks broken.
- */
-function demoFootageInstalled(): boolean {
-  const present = DEMO_ASSET_PATHS.every((asset) =>
-    existsSync(path.join(process.cwd(), "public", asset))
-  );
-  if (!present && process.env.NODE_ENV !== "production") {
-    const missing = DEMO_ASSET_PATHS.filter(
-      (asset) => !existsSync(path.join(process.cwd(), "public", asset))
-    );
-    console.log("[landing] demo reel showing its diagram — missing public" + missing.join(", public"));
-  }
-  return present;
-}
 
 /* ─── Features ───
  * Descriptions stay short here; each one states only what the product does
@@ -225,8 +202,6 @@ const steps = [
 ];
 
 export default function LandingPage() {
-  const hasFootage = demoFootageInstalled();
-
   return (
     <div className="min-h-screen bg-background flex flex-col font-geist">
       <AmbientAudio />
@@ -319,21 +294,16 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── VOD → clips ── */}
-      <section className="relative px-6 pb-24 -mt-4">
-        <FadeIn className="max-w-6xl mx-auto w-full">
-          <div className="rounded-3xl bg-surface/90 backdrop-blur-md border border-border p-5 sm:p-8 shadow-2xl">
-            <div className="text-center mb-8">
-              <h2 className="font-geist text-2xl sm:text-3xl font-bold text-white">
-                One VOD in. A week of shorts out.
-              </h2>
-              <p className="mt-2 text-base text-foreground-muted max-w-xl mx-auto">
-                Paste a Twitch or YouTube VOD and Klyp returns the moments worth posting,
-                cut and formatted for vertical.
-              </p>
-            </div>
-            <ClipFlowDemo hasFootage={hasFootage} />
-          </div>
+      {/* ── What Klyp saves creators ── */}
+      <section className="relative border-t border-border px-6 py-16 sm:py-20">
+        <FadeIn className="mx-auto max-w-3xl text-center">
+          <h2 className="font-geist text-2xl sm:text-3xl font-bold text-white tracking-tight">
+            Spend less time searching. More time posting.
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-base text-foreground-muted leading-relaxed">
+            Drop in a Twitch or YouTube VOD. Klyp surfaces moments you can
+            review, edit, and export as vertical clips.
+          </p>
         </FadeIn>
       </section>
 
