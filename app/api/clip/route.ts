@@ -305,7 +305,6 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     }
   }
   if (editorRequested) {
-    if (!isPro) return NextResponse.json({ error: "Editing saved clips requires Pro." }, { status: 403 });
     try {
       const { data, error } = await createAdminClient().from("clips")
         .select("id,url,title,start_seconds,end_seconds,words,edit_draft")
@@ -352,7 +351,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let layoutWarning: string | null = null;
   if (!raw && format === "9:16") {
     // Omitted means inherit; explicit null means full frame, matching the editor.
-    const override = isPro && requestedLayout !== undefined;
+    const override = requestedLayout !== undefined;
     const selected = override ? requestedLayout : profile.vertical_layout;
     try { verticalLayout = selected ? validateVerticalLayout(selected) : null; }
     catch {

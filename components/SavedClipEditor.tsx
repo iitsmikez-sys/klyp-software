@@ -82,7 +82,7 @@ export default function SavedClipEditor({
   const [pendingAccountLayout, setPendingAccountLayout] = useState<VerticalLayoutV1 | null>(null);
   const { tier } = useSparks();
   const isPro = tier === "pro";
-  const editorLayout = layoutEditorState(isPro, accountLayout, draft.vertical_layout, pendingAccountLayout);
+  const editorLayout = layoutEditorState(true, accountLayout, draft.vertical_layout, pendingAccountLayout);
 
   const hooks = Array.isArray(clip.hooks) ? clip.hooks : [];
   const hasWords = Array.isArray(draft.words) && draft.words.length > 0;
@@ -96,7 +96,7 @@ export default function SavedClipEditor({
     setSaveError(null);
   };
   const saveAccountLayout = async () => {
-    const layout = isPro ? effectiveVerticalLayout(accountLayout, draft.vertical_layout) : pendingAccountLayout;
+    const layout = effectiveVerticalLayout(accountLayout, draft.vertical_layout);
     if (!layout) return;
     setLayoutSaving(true);
     setSaveError(null);
@@ -222,7 +222,6 @@ export default function SavedClipEditor({
 
   const saveDraft = async (reset = false) => {
     if (((clip.edit_draft as { version?: number } | null)?.version ?? 1) >= 2) { setSaveError("Open the timeline editor to preserve this clip’s timeline edits."); return; }
-    if (!isPro) { setProGateOpen(true); return; }
     setSaving(true);
     setSaveError(null);
     setSaveNotice(null);
@@ -350,17 +349,16 @@ export default function SavedClipEditor({
       <ClipTrimControl
         originalStart={clip.start_seconds} originalEnd={clip.end_seconds}
         start={draft.start_seconds} end={draft.end_seconds}
-        disabled={!isPro || saving || exporting}
+        disabled={saving || exporting}
         onChange={(start_seconds, end_seconds) => changeDraft({ start_seconds, end_seconds })}
       />
       <label className="block text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted">
         Clip title
         <input type="text" value={draft.title} maxLength={120}
           onChange={(event) => changeDraft({ title: event.target.value })}
-          disabled={!isPro || saving || exporting}
+          disabled={saving || exporting}
           className="mt-1.5 w-full px-3 py-2 rounded-lg border border-border bg-surface-2 text-xs text-foreground focus:outline-none focus:border-accent/50 disabled:opacity-50" />
       </label>
-      {!isPro && <p className="text-[10px] text-subtle">Saving trim, title, and caption corrections is a Pro feature.</p>}
       {!hidePreview && (
       <>
       {/* Preview player */}
@@ -507,24 +505,23 @@ export default function SavedClipEditor({
       </div>
       {draft.words?.length ? (
         <CaptionWordEditor words={draft.words} originalStart={clip.start_seconds}
-          disabled={!isPro || saving || exporting}
+          disabled={saving || exporting}
           onChange={(words) => changeDraft({ words })} />
       ) : null}
 
       {/* Format */}
       <div className="rounded-lg border border-border p-3">
         <button type="button" className="text-xs font-semibold text-accent" onClick={() => setLayoutOpen((open) => !open)}>Vertical layout {layoutOpen ? "▴" : "▾"}</button>
-        <p className="text-[11px] text-foreground-muted mt-1">{isPro && draft.vertical_layout === null ? "This clip uses the full frame." : isPro && draft.vertical_layout ? "This clip has its own layout." : accountLayout ? "Using your saved stream layout." : "Full frame is shown until you set a layout."}</p>
+        <p className="text-[11px] text-foreground-muted mt-1">{draft.vertical_layout === null ? "This clip uses the full frame." : draft.vertical_layout ? "This clip has its own layout." : accountLayout ? "Using your saved stream layout." : "Full frame is shown until you set a layout."}</p>
         {layoutOpen && <div className="mt-3">
           <VerticalLayoutEditor sourceUrl={sourcePreviewUrl ?? previewUrl} layout={editorLayout.preview}
             text={{ hook: draft.hook, hookStyle: draft.hook_style, captionStyle: draft.caption_style, words: draft.words, videoTrimStart: draft.start_seconds - (sourcePreviewStart ?? sourceStart), vodStart: draft.start_seconds, vodEnd: draft.end_seconds }}
             onChange={(layout) => {
-              if (isPro) changeDraft({ vertical_layout: layout });
-              else { setPendingAccountLayout(layout); onLayoutPendingChange?.(true); }
+              changeDraft({ vertical_layout: layout });
             }} />
-          <button type="button" className="text-xs text-accent mt-2 mr-3 underline disabled:opacity-50" disabled={!(isPro ? draft.vertical_layout : pendingAccountLayout) || layoutSaving} onClick={saveAccountLayout}>{layoutSaving ? "Saving…" : "Save as my layout for future clips"}</button>
+          <button type="button" className="text-xs text-accent mt-2 mr-3 underline disabled:opacity-50" disabled={!draft.vertical_layout || layoutSaving} onClick={saveAccountLayout}>{layoutSaving ? "Saving…" : "Save as my layout for future clips"}</button>
           {editorLayout.exportBlocked && <p className="text-xs text-amber-300 mt-2">Save this account layout before exporting. The preview shows your unsaved changes.</p>}
-          {isPro && draft.vertical_layout !== undefined && <button type="button" className="text-xs text-foreground-muted mt-2 underline" onClick={() => changeDraft({ vertical_layout: undefined })}>Use my account layout</button>}
+          {draft.vertical_layout !== undefined && <button type="button" className="text-xs text-foreground-muted mt-2 underline" onClick={() => changeDraft({ vertical_layout: undefined })}>Use my account layout</button>}
         </div>}
       </div>
       <div className="flex items-center gap-2">

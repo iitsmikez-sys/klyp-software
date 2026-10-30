@@ -37,7 +37,7 @@ async function updateDraft(req: NextRequest, { params }: Context, reset: boolean
       profile?.stripe_subscription_id ?? null,
     );
     if (denial) {
-      const error = denial === 404 ? "Clip not found." : "Editing saved clips requires Pro.";
+      const error = denial === 404 ? "Clip not found." : "Sign in to edit clips.";
       return NextResponse.json({ error }, { status: denial });
     }
     const draft = reset ? null : validateClipEditDraft(

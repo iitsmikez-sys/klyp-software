@@ -83,8 +83,17 @@ test('archived master exports after a restart with no local cache directory',asy
   assert.ok(!calls.some(c=>c.name==='download'));
  }
 });
-test('ownership, subscription and forged bounds reject before download or rendering',async()=>{
- for(const options of [{owned:false},{pro:false},{body:{clip_id:'owned',edit_draft:{...draft,segments:[{id:'bad',start_seconds:1,end_seconds:2}]}}}]){const {response,calls}=await exportRoute(options);assert.ok([400,403,404].includes(response.status));assert.equal(calls.filter(c=>['download','render','encode','charge'].includes(c.name)).length,0);}
+test('ownership and forged bounds reject before download or rendering',async()=>{
+ for(const options of [{owned:false},{body:{clip_id:'owned',edit_draft:{...draft,segments:[{id:'bad',start_seconds:1,end_seconds:2}]}}}]){const {response,calls}=await exportRoute(options);assert.ok([400,403,404].includes(response.status));assert.equal(calls.filter(c=>['download','render','encode','charge'].includes(c.name)).length,0);}
+});
+test('Free users export their edits with a watermark and no extra Sparks charge',async()=>{
+ const {response,calls}=await exportRoute({pro:false,body:{clip_id:'owned',edit_draft:{...draft,aspect_ratio:'Original'}}});
+ assert.equal(response.status,200,await response.clone().text());
+ assert.ok(calls.some(c=>c.name==='render'));
+ assert.ok(calls.some(c=>c.name==='cues'));
+ const args=Array.from(calls.find(c=>c.name==='encode')!.args[1]) as string[];
+ assert.ok(args.some(arg=>String(arg).includes('watermark')));
+ assert.ok(!calls.some(c=>c.name==='charge'));
 });
 test('render failure cleans intermediate directory and does not charge; upscale charges only after success',async()=>{
  const failed=await exportRoute({failRender:true});assert.equal(failed.response.status,500);assert.ok(failed.calls.some(c=>c.name==='rm'));assert.ok(!failed.calls.some(c=>c.name==='charge'));

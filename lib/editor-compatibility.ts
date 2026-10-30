@@ -10,11 +10,8 @@ export function isLegacyEditorExport(body: Record<string, unknown>): boolean {
  if(body.edit_draft !== undefined || body.editor_export === true || body.caption_cues !== undefined) return false;
  return body.legacy_editor === true || Array.isArray(body.segments) && body.segments.length > 0 && body.segments.every(s=>s && typeof s.start === 'number' && typeof s.end === 'number');
 }
-/** Free explicitly exports the original clip without mutating its saved Pro draft. */
-export function timelineExportPayload(clip: SavedClip, draft: ClipEditDraftV3, isPro: boolean) {
- if(isPro) return toClipExportPayload(clip,draft);
- // "Export original" must mean the same untouched detected moment as
- // Download Raw, even when analysis suggested hooks or transcribed words.
- return { clip_id: clip.id, raw: true as const };
+/** Editing is available on every plan. Format and watermark rules apply at export. */
+export function timelineExportPayload(clip: SavedClip, draft: ClipEditDraftV3, _isPro: boolean) {
+ return toClipExportPayload(clip,draft);
 }
 

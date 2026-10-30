@@ -11,9 +11,9 @@ test("another user's clip and missing clip are both hidden", () => {
   assert.equal(authorizeClipDraftWrite("attacker", null, "pro", "sub_1"), 404);
 });
 
-test("draft save requires confirmed Pro billing", () => {
-  assert.equal(authorizeClipDraftWrite("owner", "owner", "free", "sub_1"), 403);
-  assert.equal(authorizeClipDraftWrite("owner", "owner", "pro", null), 403);
+test("owned clips can be edited on Free and Pro", () => {
+  assert.equal(authorizeClipDraftWrite("owner", "owner", "free", null), null);
+  assert.equal(authorizeClipDraftWrite("owner", "owner", "pro", null), null);
 });
 
 test("owned clip with confirmed Pro billing is editable", () => {

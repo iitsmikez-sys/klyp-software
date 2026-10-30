@@ -97,7 +97,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.getByLabel('Cutaway fit').selectOption('contain');await page.getByLabel('Cutaway vertical position').fill('1');
  assert.equal(await page.getByLabel('Cutaway fit').inputValue(),'contain');assert.equal(await page.getByLabel('Cutaway vertical position').inputValue(),'1');
  await page.getByLabel('Cutaway fit').selectOption('cover');
- await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Saved to Klyp',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Edits saved',{exact:true}).waitFor();
  assert.equal(await page.evaluate(()=>saved.cutaways[0].source_start_ms),100500);
  await page.getByRole('button',{name:'Remove cutaway',exact:true}).click();
  assert.equal(await page.locator('[aria-label="Overlay lane"] button').count(),0);
@@ -161,11 +161,14 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.getByText('Edit underlying source',{exact:true}).click();
  await page.locator('[aria-label="Overlay lane"] button').click();await page.getByRole('button',{name:'Remove cutaway',exact:true}).click();
  await page.evaluate(()=>{window.pro=false;window.saved=null;window.mountKey=5;renderEditor();});
- await page.getByRole('button',{name:'Media panel',exact:true}).click();await page.getByRole('button',{name:'Add photo',exact:true}).click();await page.getByText('Upgrade to Pro',{exact:true}).waitFor();assert.equal(await page.getByLabel('Choose photo').isDisabled(),true);
+ await page.getByRole('button',{name:'Media panel',exact:true}).click();await page.getByRole('button',{name:'Add photo',exact:true}).click();assert.equal(await page.getByLabel('Choose photo').isDisabled(),false);
+ await page.getByLabel('Clip title').fill('Free edited title');
+ await page.getByRole('button',{name:'Style',exact:true}).click();assert.equal(await page.getByText('Editing requires Pro. Free exports use the original clip.').count(),0);
+ await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Edits saved',{exact:true}).waitFor();
  await page.getByLabel('Export aspect ratio').selectOption('Original');
- await page.getByRole('button',{name:'Export original',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();
- assert.equal(await page.evaluate(()=>exported.raw),true);assert.equal(await page.evaluate(()=>exported.clip_id),'clip');assert.equal(await page.evaluate(()=>'edit_draft' in exported),false);
- await page.evaluate(()=>releaseExport());await page.getByRole('button',{name:'Export original',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Export clip',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();
+ assert.equal(await page.evaluate(()=>exported.edit_draft.title),'Free edited title');assert.equal(await page.evaluate(()=>exported.clip_id),'clip');
+ await page.evaluate(()=>releaseExport());await page.getByRole('button',{name:'Export clip',exact:true}).waitFor();
  // A richer, explicitly synthetic local fixture exercises the final layout with real
  // decoded frames/audio. It is never shipped as user footage or used by production.
  const fixtureBytes=require('node:child_process').execFileSync(resolveBin('ffmpeg'),['-v','error','-f','lavfi','-i','testsrc2=size=360x640:rate=15:duration=18','-f','lavfi','-i','sine=frequency=220:sample_rate=44100:duration=18','-c:v','libx264','-preset','ultrafast','-crf','32','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-movflags','frag_keyframe+empty_moov','-f','mp4','pipe:1'],{maxBuffer:16*1024*1024,windowsHide:true});
@@ -179,7 +182,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.getByRole('button',{name:'Transcript panel',exact:true}).click();
  const line=page.locator('.editor-transcript-lines button').nth(1);await line.click();assert.ok(Math.abs(Number(await page.getByLabel('Playhead position').inputValue())-3.84)<.02,'Transcript seeks its source moment');
  await page.locator('[aria-label="Video lane"] button[aria-label^="Select video"]').first().click();
- await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Saved to Klyp',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Edits saved',{exact:true}).waitFor();
  const scroll=page.locator('.editor-track-scroll');assert.ok(await scroll.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Default zoom fits the whole edited clip');
  await page.getByLabel('Timeline zoom').fill('2');assert.ok(await scroll.evaluate(el=>el.scrollWidth>el.clientWidth*1.9),'Zoom expands timed tracks');await page.getByLabel('Timeline zoom').fill('1');
  const ruler=await page.locator('.editor-ruler').boundingBox();await page.mouse.move(ruler.x+ruler.width*.2,ruler.y+12);await page.mouse.down();await page.mouse.move(ruler.x+ruler.width*.3,ruler.y+12);await page.mouse.up();assert.ok(Math.abs(Number(await page.getByLabel('Playhead position').inputValue())-5.4)<.1,'Ruler dragging seeks edited time');
@@ -199,9 +202,9 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
   await page.setViewportSize({width:1672,height:941});
  }
  await page.evaluate(()=>{window.pro=false;window.mountKey=99;window.savedSnapshot=JSON.stringify(saved);renderEditor();});
- await page.getByRole('button',{name:'Export original',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();
- assert.equal(await page.evaluate(()=>exported.raw),true);assert.equal(await page.evaluate(()=>exported.clip_id),'clip');assert.equal(await page.evaluate(()=>'edit_draft' in exported),false);assert.equal(await page.evaluate(()=>JSON.stringify(saved)===savedSnapshot),true);
- await page.evaluate(()=>releaseExport());await page.getByRole('button',{name:'Export original',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Export clip',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();
+ assert.equal(await page.evaluate(()=>exported.edit_draft.version),3);assert.equal(await page.evaluate(()=>exported.clip_id),'clip');assert.equal(await page.evaluate(()=>JSON.stringify(saved)===savedSnapshot),true);
+ await page.evaluate(()=>releaseExport());await page.getByRole('button',{name:'Export clip',exact:true}).waitFor();
  await page.evaluate(()=>{
   window.pro=false;const c=document.createElement('canvas');c.width=160;c.height=90;c.getContext('2d').fillRect(0,0,160,90);window.legacyPhoto=c.toDataURL();
   window.legacyDraft={segments:[{start:1,end:2},{start:7,end:9}],media:[{id:'11111111-1111-4111-8111-111111111111',kind:'image',after:0,duration:.5,name:'Saved photo'}],captionColor:'YELLOW',captionPosition:'CENTER',format:'Original'};
@@ -224,6 +227,6 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.getByRole('button',{name:'Edit Clip',exact:true}).click();assert.equal(await page.evaluate(()=>editedResults),1);
  await page.getByRole('button',{name:'Download Raw',exact:true}).click();assert.equal(await page.evaluate(()=>rawDownloads),1);
  await page.getByRole('button',{name:'Close preview',exact:true}).click();await page.waitForFunction(()=>closedResults);
- assert.deepEqual(errors,[]);console.log('PASS mounted editor: photo/video picker, upload/probe stages, delayed media-list race, insertion, real canvas pixels, archived-source preview request, save/reload, remove/undo, muted video synchronization, volume/mute, source failure/retry, signed URL refresh/retry, fit/focal controls, trimmed media offsets, real SAR 2:1 MP4 geometry, Pro gate, split/delete/undo, export pending state, transcript seek, ruler drag, zoom, full-coverage photo source touch selection/split/pointer trims, responsive 44px header/screenshot checks, Free and downgrade original exports, and legacy device-draft restore/export/switch persistence, and current results edit/raw-download callbacks.');
+ assert.deepEqual(errors,[]);console.log('PASS mounted editor: media import, timeline editing, save/reload, Free edited export payload, caption/style controls, responsive layout, and legacy draft recovery.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

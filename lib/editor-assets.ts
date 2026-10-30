@@ -62,7 +62,7 @@ export function createEditorAssetService(repo: EditorAssetRepository, probe: (as
  async function authorize(userId:string, clipId:string) {
   const access = await repo.access(userId, clipId);
   const denial = authorizeClipDraftWrite(userId, access.owner, access.tier, access.subscription);
-  if (denial) throw new EditorAssetError(denial === 404 ? 'Clip not found.' : 'Importing media requires a confirmed Pro subscription.', denial);
+  if (denial) throw new EditorAssetError(denial === 404 ? 'Clip not found.' : 'Sign in to import media.', denial);
  }
  async function owned(userId:string, clipId:string, assetId:string) {
   await authorize(userId, clipId);

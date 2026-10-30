@@ -48,12 +48,13 @@ test('list and preview bind asset requests to cookie owner and clip; preserve un
  const unavailable=route('../app/api/clips/[id]/media/route.ts',{assetError:new EditorAssetError('Apply 023_editor_media.sql',503)});
  const response=await unavailable.handlers.GET(body(),context);assert.equal(response.status,503);assert.match((await response.json()).error,/023_editor_media/);
 });
-test('finalization runs on processing only with Bearer auth and Pro, with CORS responses',async()=>{
+test('finalization runs on processing only with Bearer auth for Free and Pro, with CORS responses',async()=>{
  const file='../app/api/clips/[id]/media/[assetId]/finalize/route.ts';
  const req=new Request('https://test/api',{method:'POST',headers:{Authorization:'Bearer token'}});
  const valid=route(file);const response=await valid.handlers.POST(req,context);assert.equal(response.status,200);assert.equal(response.headers.get('Access-Control-Allow-Origin'),'*');
  assert.deepEqual(valid.calls,[{name:'finalize',args:['user',clipId,assetId]}]);
- for(const [options,request,status] of [[{target:'frontend'},req,404],[{},body(),401],[{signedOut:true},req,401],[{pro:false},req,403]] as const){
+ const free=route(file,{pro:false});assert.equal((await free.handlers.POST(req,context)).status,200);
+ for(const [options,request,status] of [[{target:'frontend'},req,404],[{},body(),401],[{signedOut:true},req,401]] as const){
   const denied=route(file,options);assert.equal((await denied.handlers.POST(request,context)).status,status);assert.equal(denied.calls.length,0);
  }
 });

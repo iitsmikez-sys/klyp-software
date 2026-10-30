@@ -52,7 +52,6 @@ export default function EditorInspector({ tool, onToolChange, draft, segment, cu
     const hasCaptions = draft.caption_cues === null ? !!draft.words?.length : !!draft.caption_cues?.length;
     return <aside className="editor-inspector" aria-label={`${tab} inspector`}>
         <nav className="editor-inspector-tabs" aria-label="Inspector tools">{(['text', 'style', 'layout'] as const).map(next => <button key={next} type="button" aria-pressed={tab === next} onClick={() => chooseTab(next)}><EditorIcon name={tabIcons[next]}/>{next[0].toUpperCase()+next.slice(1)}</button>)}</nav>
-        {disabled && <p className="editor-pro-note">Editing requires Pro. Free exports use the original clip.</p>}
         <fieldset disabled={disabled}>
         {tab === 'text' && <>
             <section className="editor-inspector-section"><div className="editor-inspector-section-heading"><h3>Captions</h3><span>{hasCaptions ? 'Captions on' : 'No captions yet'}</span></div>

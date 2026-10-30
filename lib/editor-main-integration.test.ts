@@ -29,12 +29,12 @@ test('saved device edits select legacy fallback without changing their data',()=
  assert.equal(compatibility.isLegacyEditorExport({segments:[{start:1,end:2}],media:[]}),true);
  assert.equal(compatibility.isLegacyEditorExport({legacy_editor:true,edit_draft:{version:3},segments:[{start:1,end:2}]}),false);
 });
-test('Free source timeline export uses the exact raw moment without suggested text',()=>{
+test('Free timeline export includes saved edits and leaves the draft untouched',()=>{
  const draft={...upgradeClipEditDraft(ownedClip,defaultClipEditDraft(ownedClip)),aspect_ratio:'Original' as const};
  const payload=compatibility.timelineExportPayload(ownedClip,draft,false);
- assert.deepEqual(payload,{clip_id:'owned',raw:true});
+ assert.equal((payload as any).edit_draft,draft);
  const edited={...draft,title:'Edited title',hook:'Edited hook',cutaways:[{id:'x'} as any],segments:[{id:'s',start_seconds:101,end_seconds:109}],caption_cues:[{id:'cue',start_ms:101000,end_ms:102000,text:'Edited'}]};
  const snapshot=JSON.stringify(edited),original=compatibility.timelineExportPayload(ownedClip,edited,false);
- assert.deepEqual(original,{clip_id:'owned',raw:true});assert.equal(JSON.stringify(edited),snapshot);
+ assert.equal((original as any).edit_draft,edited);assert.equal(JSON.stringify(edited),snapshot);
  assert.equal((compatibility.timelineExportPayload(ownedClip,draft,true) as any).edit_draft,draft);
 });

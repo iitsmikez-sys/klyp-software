@@ -15,7 +15,6 @@ async function finalize(req:NextRequest,{params}:Context) {
   const { id, assetId } = await params;
   const token=bearerToken(req);const profile=token?await getProfileFromToken(token):null;
   if(!profile) return NextResponse.json({error:'Sign in to verify imported media.'},{status:401,headers});
-  if(profile.tier!=='pro' || !profile.stripe_subscription_id) return NextResponse.json({error:'Importing media requires a confirmed Pro subscription.'},{status:403,headers});
   if(![id,assetId].every(value=>/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value))) return NextResponse.json({error:'Media asset not found.'},{status:404,headers});
   return NextResponse.json({asset:await finalizeEditorUpload(profile.id,id,assetId)},{headers});
  }catch(error){
