@@ -202,6 +202,33 @@ export async function createStreamOfflineSubscription(
   return data.data[0].id;
 }
 
+/** Reuse a previously registered webhook if its database ID was not saved. */
+export async function ensureStreamOfflineSubscription(
+  broadcasterId: string,
+  callbackUrl: string
+): Promise<string> {
+  let cursor: string | undefined;
+  do {
+    const query = cursor ? `?after=${encodeURIComponent(cursor)}` : "";
+    const res = await helix(`/eventsub/subscriptions${query}`);
+    if (!res.ok) throw new Error(`Twitch EventSub lookup failed: HTTP ${res.status} ${await res.text()}`);
+    const page = (await res.json()) as {
+      data: { id: string; status: string; type: string;
+        condition?: { broadcaster_user_id?: string };
+        transport?: { callback?: string } }[];
+      pagination?: { cursor?: string };
+    };
+    const existing = page.data.find((subscription) =>
+      subscription.status === "enabled" &&
+      subscription.type === "stream.offline" &&
+      subscription.condition?.broadcaster_user_id === broadcasterId &&
+      subscription.transport?.callback === callbackUrl);
+    if (existing) return existing.id;
+    cursor = page.pagination?.cursor;
+  } while (cursor);
+  return createStreamOfflineSubscription(broadcasterId, callbackUrl);
+}
+
 /** Best-effort — a subscription that's already gone (e.g. Twitch revoked it) isn't an error here. */
 export async function deleteEventSubSubscription(subscriptionId: string): Promise<void> {
   const res = await helix(`/eventsub/subscriptions?id=${subscriptionId}`, { method: "DELETE" });
