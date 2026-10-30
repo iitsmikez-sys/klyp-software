@@ -1136,37 +1136,34 @@ export default function AnalyzePanel() {
           </div>
         </details>
 
-        {/* Breakdown uses the same cost figures sent to the processing service. */}
-        <div className="mt-3 rounded-lg border border-border bg-surface-2/70 p-3" aria-live="polite">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
-            <div className="grid min-w-0 flex-1 grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+        {/* Show the breakdown only after the VOD duration has been verified. */}
+        {totalEstimate !== null && !estimating && (
+          <div className="mt-3 rounded-lg border border-border bg-surface-2/70 p-3" aria-live="polite">
+            <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               <div className="col-span-2 sm:col-span-1">
                 <p className="text-xs text-foreground-muted">Estimated total</p>
                 <p className={`mt-0.5 flex items-center gap-1.5 text-lg font-semibold tabular-nums ${cantAfford ? "text-red-400" : "text-accent"}`}>
-                  <SparkIcon size={17} />{totalEstimate !== null && !estimating ? `${totalEstimate} Sparks` : "Checking cost…"}
+                  <SparkIcon size={17} />{totalEstimate} Sparks
                 </p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
                 <p className="text-xs text-foreground-muted">VOD analysis {previewDuration ? `(${fmtTime(previewDuration)})` : ""}</p>
-                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{estimatedSparks !== null && !estimating ? `${estimatedSparks} Sparks` : "—"}</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{estimatedSparks} Sparks</p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
                 <p className="text-xs text-foreground-muted">{clipCount} clips requested</p>
                 <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{CLIP_COUNT_COST[clipCount]} Sparks</p>
               </div>
             </div>
-            <div className="lg:w-48 lg:shrink-0">
-              <button type="submit" disabled={!canSubmit}
-                className="flex min-h-10 w-full items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45">
-                {loading ? "Analyzing…" : "Find Clips"}
-              </button>
-              <p className="mt-1 text-center text-[11px] leading-snug text-foreground-muted">
-                {totalEstimate !== null && !estimating ? `Up to ${totalEstimate} Sparks from your balance` : "Add a VOD to see its cost"}
-              </p>
-            </div>
+            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Only clips that meet the quality bar are charged. Fewer results can cost less than this estimate.</p>
+            {cantAfford && <p role="alert" className="mt-2 text-xs text-red-400">Not enough Sparks: this costs {totalEstimate}, and you have {balance}. <a href="/dashboard/upgrade" className="font-semibold underline">Upgrade to Pro</a></p>}
           </div>
-          <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Only clips that meet the quality bar are charged. Fewer results can cost less than this estimate.</p>
-          {cantAfford && !estimating && <p role="alert" className="mt-2 text-xs text-red-400">Not enough Sparks: this costs {totalEstimate}, and you have {balance}. <a href="/dashboard/upgrade" className="font-semibold underline">Upgrade to Pro</a></p>}
+        )}
+        <div className="mt-3 flex justify-end">
+          <button type="submit" disabled={!canSubmit}
+            className="flex min-h-10 w-full items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45 sm:w-48">
+            {loading ? "Analyzing…" : "Find Clips"}
+          </button>
         </div>
 
         {/* Processing server unreachable — set by the background health poll, clears itself */}
