@@ -30,7 +30,7 @@ import {
 } from "@/lib/clips";
 import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
 import { runQueued } from "@/lib/job-queue";
-import { watermarkFilter } from "@/lib/watermark";
+import { generateWatermarkAss, watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { UPSCALE_COST } from "@/lib/sparks";
@@ -113,6 +113,7 @@ async function cutClip(
   outputSize: { w: number; h: number },
   assPath?: string,
   hookAssPath?: string,
+  watermarkAssPath?: string,
   handle?: string,
   raw = false,
   upscale = false
@@ -153,8 +154,8 @@ async function cutClip(
   if (handle) {
     vf += `,${handleFilter(handle)}`;
   }
-  if (!isPro) {
-    vf += `,${watermarkFilter()}`;
+  if (!isPro && watermarkAssPath) {
+    vf += `,${watermarkFilter(watermarkAssPath)}`;
   }
 
   const audio = multiSection || hasMedia ? await hasAudioStream(sourcePath) : true;
@@ -445,8 +446,13 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
 
       let assPath: string | undefined;
       let hookAssPath: string | undefined;
-      if ((style && words && words.length > 0) || hook) {
+      if ((style && words && words.length > 0) || hook || !isPro) {
         assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
+      }
+      let watermarkAssPath: string | undefined;
+      if (!isPro) {
+        watermarkAssPath = path.join(assDir!, "watermark.ass");
+        await writeFile(watermarkAssPath, generateWatermarkAss(res, end - start), "utf-8");
       }
       if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
@@ -472,6 +478,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
         res,
         assPath,
         hookAssPath,
+        watermarkAssPath,
         handle,
         raw,
         upscale

@@ -7,7 +7,7 @@ import { buildCaptionCues, type HookStyle } from "@/lib/captions";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { drawCaptionPreview } from "@/lib/caption-preview";
 import { useSparks } from "./SparksProvider";
-import { watermarkCanvasPos, WATERMARK_FONT_SIZE } from "@/lib/watermark";
+import { drawWatermarkPreview } from "@/lib/watermark";
 import { processingFetch } from "@/lib/processing-api";
 
 /* ── Types ── */
@@ -45,30 +45,6 @@ function drawCaptions(
   if (!cue) return;
   drawCaptionPreview(ctx, t, [{ text: cue.text, startMs: cue.start * 1000,
     endMs: cue.end * 1000 }], style, { color: "DEFAULT", position: "BOTTOM" }, W, H);
-}
-
-function drawWatermark(
-  ctx: CanvasRenderingContext2D,
-  t: number,
-  W: number,
-  H: number
-) {
-  const scale = H / 1920;
-  const fs = Math.round(WATERMARK_FONT_SIZE * scale);
-  ctx.font = `bold ${fs}px Arial`;
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-
-  const measured = ctx.measureText("klyp.world");
-  const textW = measured.width;
-  const textH = fs;
-
-  const { x, y } = watermarkCanvasPos(t, W, H, textW, textH);
-
-  ctx.globalAlpha = 0.7;
-  ctx.fillStyle = "white";
-  ctx.fillText("klyp.world", x, y);
-  ctx.globalAlpha = 1;
 }
 
 /* ── Time format helper ── */
@@ -198,7 +174,7 @@ export default function ClipPreview({
       const t = video.currentTime;
       drawCaptions(ctx, t, wordCues.current, cues.current, styleRef.current, canvas.width, canvas.height);
       if (hook) drawHookPreview(ctx, t, hook, hookStyle, canvas.width, canvas.height);
-      if (!isPro) drawWatermark(ctx, t, canvas.width, canvas.height);
+      if (!isPro) drawWatermarkPreview(ctx, t, canvas.width, canvas.height);
 
       rafRef.current = requestAnimationFrame(draw);
     };

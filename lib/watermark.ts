@@ -1,110 +1,105 @@
-/**
- * Animated Klyp watermark — free-tier only.
- *
- * Motion: three waypoints in a 12-second loop.
- *   0–4s  : bottom-right → center   (linear)
- *   4–8s  : center → bottom-left    (linear)
- *   8–12s : bottom-left → bottom-right (linear)
- *
- * The FFmpeg drawtext expression and the canvas simulation use the same math
- * so the preview exactly matches the burned-in export.
- */
+/** Free-export watermark shared by the ASS burn and canvas previews. */
 
-const CYCLE = 12; // seconds
-const MARGIN = 22;
-const FONT_SIZE = 68; // px at 1080×1920 export resolution
+const TEXT = "Created with klyp";
+const STATIC = "klyp";
+const FONT_AT_1080 = 54;
+const X_FRACTION = 82 / 470;
+const Y_FRACTION = 293 / 836;
+const HOLD_END = 3.1;
+const TRANSITION_END = 3.8;
 
-/**
- * Build the FFmpeg drawtext filter string for the animated watermark.
- * Commas inside if()/mod() calls are escaped as \, so they survive
- * FFmpeg's filter-graph parser (which uses , as a filter separator).
- * Node spawn passes args directly — no shell re-escaping needed.
- */
-export function watermarkFilter(): string {
-  // Segment t_norm for each 4-second leg
-  const seg0 = `mod(t\\,${CYCLE})/${CYCLE / 3}`;          // 0–1 in first leg
-  const seg1 = `(mod(t\\,${CYCLE})-${CYCLE/3})/${CYCLE/3}`;// 0–1 in second leg
-  const seg2 = `(mod(t\\,${CYCLE})-${(CYCLE*2)/3})/${CYCLE/3}`; // 0–1 in third leg
+type Size = { w: number; h: number };
 
-  // X: BR=(main_w-tw-M)  C=((main_w-tw)/2)  BL=M
-  const xBR = `(main_w-tw-${MARGIN})`;
-  const xC  = `((main_w-tw)/2)`;
-  const xBL = `${MARGIN}`;
-  const xExpr =
-    `if(lt(mod(t\\,${CYCLE})\\,${CYCLE/3})\\,` +
-      `${xBR}+(${xC}-${xBR})*(${seg0})\\,` +
-      `if(lt(mod(t\\,${CYCLE})\\,${(CYCLE*2)/3})\\,` +
-        `${xC}+(${xBL}-${xC})*(${seg1})\\,` +
-        `${xBL}+(${xBR}-${xBL})*(${seg2})))`;
-
-  // Y: BR=BL=(main_h-th-M)  C=((main_h-th)/2)
-  const yBot = `(main_h-th-${MARGIN})`;
-  const yC   = `((main_h-th)/2)`;
-  const yExpr =
-    `if(lt(mod(t\\,${CYCLE})\\,${CYCLE/3})\\,` +
-      `${yBot}+(${yC}-${yBot})*(${seg0})\\,` +
-      `if(lt(mod(t\\,${CYCLE})\\,${(CYCLE*2)/3})\\,` +
-        `${yC}+(${yBot}-${yC})*(${seg1})\\,` +
-        `${yBot}))`;
-
-  return [
-    `drawtext=text='klyp.world'`,
-    `font='Arial Bold'`,
-    `fontsize=${FONT_SIZE}`,
-    `fontcolor=white@0.7`,
-    `x=${xExpr}`,
-    `y=${yExpr}`,
-  ].join(":");
-}
-
-/**
- * Canvas position for the preview simulation — same 3-waypoint math as above.
- * `t` is video.currentTime (clip-relative seconds).
- */
-export function watermarkCanvasPos(
-  t: number,
-  W: number,
-  H: number,
-  textW: number,
-  textH: number,
-  margin = MARGIN * (W / 1080)
-): { x: number; y: number } {
-  const phase = ((t % CYCLE) + CYCLE) % CYCLE;
-  const segLen = CYCLE / 3;
-  const seg = Math.min(2, Math.floor(phase / segLen));
-  const tNorm = (phase % segLen) / segLen;
-
-  const positions = [
-    { x: W - textW - margin, y: H - textH - margin }, // BR
-    { x: (W - textW) / 2,    y: (H - textH) / 2    }, // C
-    { x: margin,              y: H - textH - margin  }, // BL
-  ];
-
-  const from = positions[seg];
-  const to   = positions[(seg + 1) % 3];
-
+function layout({ w, h }: Size) {
+  const fit = Math.min(w / 1080, h / 1920);
   return {
-    x: from.x + (to.x - from.x) * tNorm,
-    y: from.y + (to.y - from.y) * tNorm,
+    x: Math.round(w * X_FRACTION),
+    y: Math.round(h * Y_FRACTION),
+    fontSize: Math.max(14, Math.round(FONT_AT_1080 * fit)),
   };
 }
 
-export { FONT_SIZE as WATERMARK_FONT_SIZE };
+function assTime(seconds: number): string {
+  const hundredths = Math.max(0, Math.round(seconds * 100));
+  const h = Math.floor(hundredths / 360000);
+  const m = Math.floor(hundredths / 6000) % 60;
+  const s = Math.floor(hundredths / 100) % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(hundredths % 100).padStart(2, "0")}`;
+}
 
-/** Draw in export coordinates so placement and font size scale together. */
-export function drawWatermarkPreview(ctx: CanvasRenderingContext2D, time: number,
-  width: number, height: number, outputWidth = 1080, outputHeight = 1920): void {
-  if (width <= 0 || height <= 0) return;
+/** ASS gives the exported clip a true rotated typewriter and a static wordmark. */
+export function generateWatermarkAss(size: Size, durationSeconds: number): string {
+  const { x, y, fontSize } = layout(size);
+  // libass rotates around the alignment anchor, moving glyphs left by roughly
+  // one font height; offset the rotated anchor so both states share a left edge.
+  const verticalX = x + Math.round(fontSize * .85);
+  const staticY = y - Math.round(fontSize * .17);
+  const duration = Math.max(0, durationSeconds);
+  const events: string[] = [];
+  const add = (start: number, end: number, text: string) => {
+    if (end > start && start < duration) {
+      events.push(`Dialogue: 0,${assTime(start)},${assTime(Math.min(end, duration))},Mark,,0,0,0,,${text}`);
+    }
+  };
+  for (let i = 1; i <= TEXT.length; i++) {
+    const start = (i - 1) / 11;
+    const end = i === TEXT.length ? HOLD_END : i / 11;
+    add(start, end, `{\\an7\\pos(${verticalX},${y})\\frz270}${TEXT.slice(0, i)}`);
+  }
+  const transitionMs = Math.round((TRANSITION_END - HOLD_END) * 1000);
+  add(HOLD_END, TRANSITION_END,
+    `{\\an7\\pos(${verticalX},${y})\\frz270\\t(0,${transitionMs},\\fscx8\\alpha&HFF&)}${TEXT}`);
+  add(HOLD_END + 0.35, duration,
+    `{\\an7\\pos(${x},${staticY})\\fad(350,0)}${STATIC}`);
+  return `[Script Info]\nScriptType: v4.00+\nPlayResX: ${size.w}\nPlayResY: ${size.h}\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n` +
+    `[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n` +
+    `Style: Mark,Arial,${fontSize},&H00FFFFFF,&H00FFFFFF,&H80000000,&H80000000,-1,0,0,0,100,100,0,0,1,1,1,7,0,0,0,1\n\n` +
+    `[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events.join("\n")}\n`;
+}
+
+/** Escaping matches the existing subtitles filter used for captions and hooks. */
+export function watermarkFilter(assPath: string): string {
+  const escaped = assPath.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "$1\\:");
+  return `subtitles='${escaped}'`;
+}
+
+export function drawWatermarkPreview(
+  ctx: CanvasRenderingContext2D, time: number,
+  width: number, height: number, outputWidth = width, outputHeight = height
+): void {
+  if (width <= 0 || height <= 0 || time < 0) return;
+  const { x, y, fontSize } = layout({ w: outputWidth, h: outputHeight });
   ctx.save();
   ctx.scale(width / outputWidth, height / outputHeight);
-  ctx.font = `bold ${FONT_SIZE}px Arial`;
+  ctx.font = `bold ${fontSize}px Arial`;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(255,255,255,0.7)";
-  const metrics = ctx.measureText("klyp.world");
-  const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent || FONT_SIZE;
-  // The filter uses a fixed 22px margin at every export resolution.
-  const pos = watermarkCanvasPos(time, outputWidth, outputHeight, metrics.width, textHeight, MARGIN);
-  ctx.fillText("klyp.world", pos.x, pos.y);
+  ctx.fillStyle = "white";
+  ctx.shadowColor = "rgba(0,0,0,.65)";
+  ctx.shadowBlur = Math.max(2, fontSize * .08);
+  if (time < HOLD_END) {
+    const count = Math.min(TEXT.length, Math.max(0, Math.floor(time * 11) + 1));
+    ctx.globalAlpha = .92;
+    ctx.translate(x + fontSize * .85, y);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillText(TEXT.slice(0, count), 0, 0);
+  } else if (time < TRANSITION_END) {
+    const progress = (time - HOLD_END) / (TRANSITION_END - HOLD_END);
+    const ease = progress * progress * (3 - 2 * progress);
+    const fold = Math.min(1, ease / .55);
+    const reveal = Math.max(0, Math.min(1, (ease - .45) / .55));
+    ctx.save();
+    ctx.globalAlpha = .92 * (1 - fold);
+    ctx.translate(x + fontSize * .85, y);
+    ctx.rotate(Math.PI / 2);
+    ctx.scale(1 - .92 * fold, 1);
+    ctx.fillText(TEXT, 0, 0);
+    ctx.restore();
+    ctx.globalAlpha = .92 * reveal;
+    ctx.fillText(STATIC, x, y - fontSize * .17);
+  } else {
+    ctx.globalAlpha = .92;
+    ctx.fillText(STATIC, x, y - fontSize * .17);
+  }
   ctx.restore();
 }

@@ -41,7 +41,7 @@ import {
 } from "@/lib/clips";
 import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
 import { runQueued } from "@/lib/job-queue";
-import { watermarkFilter } from "@/lib/watermark";
+import { generateWatermarkAss, watermarkFilter } from "@/lib/watermark";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { planClipComposition, validateVerticalLayout, visibleFrameRect, type VerticalLayoutPlan, type VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { buildTimedVerticalFilterGraph, buildVerticalFilterGraph } from "@/lib/vertical-layout-ffmpeg";
@@ -111,6 +111,7 @@ async function cutClip(
   format: ExportFormat,
   assPath?: string,
   hookAssPath?: string,
+  watermarkAssPath?: string,
   handle?: string,
   raw = false,
   upscale = false,
@@ -146,7 +147,7 @@ async function cutClip(
     ...(assPath ? [`subtitles='${toFfmpegPath(assPath)}'`] : []),
     ...(hookAssPath ? [`subtitles='${toFfmpegPath(hookAssPath)}'`] : []),
     ...(handle ? [handleFilter(handle)] : []),
-    ...(!isPro ? [watermarkFilter()] : []),
+    ...(!isPro && watermarkAssPath ? [watermarkFilter(watermarkAssPath)] : []),
   ];
   if (overlays.length) vf += `,${overlays.join(',')}`;
   let composed = !raw && focusPlans?.length ? buildTimedVerticalFilterGraph(focusPlans, cutaways ? [] : overlays)
@@ -483,8 +484,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
 
       let assPath: string | undefined;
       let hookAssPath: string | undefined;
-      if ((style && (editorDraft || (words && words.length > 0))) || hook) {
+      if ((style && (editorDraft || (words && words.length > 0))) || hook || !isPro) {
         assDir = await mkdtemp(path.join(tmpdir(), "klyp-ass-"));
+      }
+      let watermarkAssPath: string | undefined;
+      if (!isPro) {
+        watermarkAssPath = path.join(assDir!, "watermark.ass");
+        await writeFile(watermarkAssPath, generateWatermarkAss(res, editedDuration ?? end - start), "utf-8");
       }
       if (style && editorDraft && ownedEditorClip && !raw) {
         const safe = verticalPlan?.textSafe;
@@ -528,6 +534,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         format,
         assPath,
         hookAssPath,
+        watermarkAssPath,
         handle,
         raw,
         upscale,
