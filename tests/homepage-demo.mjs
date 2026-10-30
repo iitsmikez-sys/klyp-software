@@ -12,6 +12,7 @@ try {
     assert.ok(await page.getByRole("heading", { name: "Your best moments, ready to find" }).isVisible());
     assert.ok(await page.getByRole("heading", { name: "Spend less time searching. More time posting." }).isVisible());
     assert.ok(await page.getByRole("link", { name: "Start clipping for free" }).isVisible());
+    assert.ok(await page.getByText("No credit card required. Free plan includes 60 Sparks every 30 days.").isVisible());
     assert.equal(await page.locator("video[data-demo]").count(), 0);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 
