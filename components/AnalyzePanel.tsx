@@ -5,7 +5,6 @@ import type { AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFor
 import { CAPTION_STYLES, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, resolveExportFormat } from "@/lib/clips";
 import {
   MIN_ANALYZE_COST,
-  CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
   MAX_CLIP_COUNT,
@@ -27,6 +26,9 @@ import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
+
+// Keep older clip counts valid for existing jobs, but offer a focused set for new runs.
+const CLIP_COUNT_CHOICES = [3, 5, 7, 10] as const satisfies readonly ClipCount[];
 
 /** Export can include a first-time source download + full-quality burn — generous but finite. */
 const EXPORT_TIMEOUT_MS = 10 * 60_000;
@@ -1060,7 +1062,7 @@ export default function AnalyzePanel() {
             Number of clips <span className="text-foreground-muted">ⓘ</span>
           </span>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {CLIP_COUNT_OPTIONS.map((n) => (
+            {CLIP_COUNT_CHOICES.map((n) => (
               <button
                 key={n}
                 type="button"
@@ -1073,7 +1075,7 @@ export default function AnalyzePanel() {
                     : "border-border bg-surface-2 text-foreground-muted hover:border-subtle hover:text-foreground"
                 }`}
               >
-                <span className="block">{n === MAX_CLIP_COUNT ? `${n} MAX clips` : `${n} clips`}</span>
+                <span className="block">{n} clips</span>
                 <span className="mt-0.5 block font-normal opacity-85">{CLIP_COUNT_COST[n]} Sparks <span aria-hidden="true" className="ml-0.5 text-[11px] text-amber-400">⚡</span></span>
               </button>
             ))}
