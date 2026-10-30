@@ -6,7 +6,9 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { exchangeTwitchCode, getTwitchUser, createStreamOfflineSubscription } from "@/lib/twitch";
+import { exchangeTwitchCode, getTwitchUser, ensureStreamOfflineSubscription } from "@/lib/twitch";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { saveEventSubSubscription } from "@/lib/twitch-subscription";
 
 export const runtime = "nodejs";
 
@@ -111,8 +113,8 @@ export async function GET(req: NextRequest) {
       const processingBase = process.env.NEXT_PUBLIC_PROCESSING_API_URL;
       if (!processingBase) throw new Error("NEXT_PUBLIC_PROCESSING_API_URL is not set.");
       const callbackUrl = `${processingBase}/api/twitch/eventsub`;
-      const subscriptionId = await createStreamOfflineSubscription(twitchUser.id, callbackUrl);
-      await supabase.from("streams").update({ eventsub_subscription_id: subscriptionId }).eq("id", streamId);
+      const subscriptionId = await ensureStreamOfflineSubscription(twitchUser.id, callbackUrl);
+      await saveEventSubSubscription(createAdminClient(), streamId!, user.id, subscriptionId);
     }
 
     const final = redirectWithStatus(req, "connected");

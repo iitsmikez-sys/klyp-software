@@ -45,28 +45,42 @@ export async function POST(req: NextRequest): Promise<Response> {
     const broadcasterId = body.event?.broadcaster_user_id as string | undefined;
     if (broadcasterId) {
       const admin = createAdminClient();
-      const { data: stream } = await admin
+      const { data: stream, error: streamError } = await admin
         .from("streams")
         .select("id")
         .eq("twitch_user_id", broadcasterId)
         .eq("auto_clip_enabled", true)
         .maybeSingle();
 
+      if (streamError) {
+        console.error("[twitch eventsub] stream lookup failed:", streamError);
+        return NextResponse.json({ error: "Could not queue VOD check." }, { status: 500 });
+      }
+
       if (stream) {
         // Twitch retries webhook delivery on a slow/missing 2xx — avoid piling
         // up duplicate checks for the same stream-end event.
-        const { data: alreadyPending } = await admin
+        const { data: alreadyPending, error: pendingError } = await admin
           .from("pending_vod_checks")
           .select("id")
           .eq("stream_id", stream.id)
           .limit(1)
           .maybeSingle();
 
+        if (pendingError) {
+          console.error("[twitch eventsub] pending check lookup failed:", pendingError);
+          return NextResponse.json({ error: "Could not queue VOD check." }, { status: 500 });
+        }
+
         if (!alreadyPending) {
-          await admin.from("pending_vod_checks").insert({
+          const { error: insertError } = await admin.from("pending_vod_checks").insert({
             stream_id: stream.id,
             check_after: new Date(Date.now() + FIRST_CHECK_DELAY_MS).toISOString(),
           });
+          if (insertError) {
+            console.error("[twitch eventsub] pending check insert failed:", insertError);
+            return NextResponse.json({ error: "Could not queue VOD check." }, { status: 500 });
+          }
         }
       }
     }
