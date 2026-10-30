@@ -452,7 +452,10 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
       let watermarkAssPath: string | undefined;
       if (!isPro) {
         watermarkAssPath = path.join(assDir!, "watermark.ass");
-        await writeFile(watermarkAssPath, generateWatermarkAss(res, end - start), "utf-8");
+        const outputDuration = media.length
+          ? buildEditorTimeline(segments, media).at(-1)!.end
+          : timelineDuration(segments);
+        await writeFile(watermarkAssPath, generateWatermarkAss(res, outputDuration), "utf-8");
       }
       if (style && words && words.length > 0) {
         assPath = path.join(assDir!, "captions.ass");
