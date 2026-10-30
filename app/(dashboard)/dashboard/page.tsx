@@ -7,15 +7,15 @@ import DashboardStats from "@/components/DashboardStats";
 
 export default function DashboardPage() {
   return (
-    <div className="mx-auto max-w-[1240px] space-y-8 px-4 py-6 font-geist sm:px-6 md:px-8 md:py-9">
-      <header className="flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="w-full max-w-[1480px] space-y-6 px-4 pb-10 pt-6 font-geist sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-geist text-3xl font-semibold tracking-tight text-white sm:text-4xl">Dashboard</h1>
-          <p className="mt-2 text-[15px] text-foreground-muted">
-            Start with a VOD. Review the moments Klyp finds.
+          <h1 className="font-geist text-2xl font-semibold tracking-tight text-white sm:text-[29px]">Create clips from your streams</h1>
+          <p className="mt-1 text-sm text-foreground-muted">
+            Add a VOD and let Klyp find your best moments.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <SparksBalance />
           <UpgradeButton />
         </div>

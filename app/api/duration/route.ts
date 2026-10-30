@@ -2,9 +2,9 @@
  * GET /api/duration?url=... — probe a VOD's duration (no download).
  *
  * Used by the dashboard to preview the Sparks cost before analysis.
- * yt-dlp reads just the metadata (--skip-download), typically 1-3s.
- * Results are cached in-memory per URL. (YouTube's oEmbed API doesn't
- * return duration, so yt-dlp is the reliable cross-platform option.)
+ * yt-dlp reads metadata without downloading video. The same probe returns
+ * duration, title, and thumbnail for the dashboard preview, then caches the
+ * result per URL. It makes no paid API request.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { runYtDlpCaptureWithIpv6Fallback } from "@/lib/bin";
@@ -13,6 +13,7 @@ import { withCors, corsPreflight } from "@/lib/cors";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { runQueued } from "@/lib/job-queue";
+import { parseVodProbe, type VodProbe } from "@/lib/vod-probe";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -22,7 +23,7 @@ export const OPTIONS = corsPreflight;
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
-const durationCache = new Map<string, number>();
+const durationCache = new Map<string, VodProbe>();
 
 export async function GET(req: NextRequest) {
   // This route only runs on the processing service — set DEPLOYMENT_TARGET
@@ -44,23 +45,22 @@ export async function GET(req: NextRequest) {
   catch { return withCors(NextResponse.json({ error: "Could not verify your account." }, { status: 500 })); }
   if (!profile) return withCors(NextResponse.json({ error: "Sign in to check a VOD." }, { status: 401 }));
 
-  let durationSeconds = durationCache.get(url);
+  let probe = durationCache.get(url);
 
-  if (durationSeconds === undefined) {
+  if (probe === undefined) {
     const releaseSlot = acquireUserProcessingSlot(profile.id);
     if (!releaseSlot) return withCors(NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 }));
     try {
       const out = await runQueued(`duration:${profile.id}`, () => runYtDlpCaptureWithIpv6Fallback([
-        "--print", "duration",
+        "--print", "%(duration)j",
+        "--print", "%(title)j",
+        "--print", "%(thumbnail)j",
         "--skip-download",
         "--no-playlist",
         url,
       ]));
-      durationSeconds = Math.round(parseFloat(out.trim()));
-      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-        throw new Error("No duration in metadata (is this a live stream?).");
-      }
-      durationCache.set(url, durationSeconds);
+      probe = parseVodProbe(out);
+      durationCache.set(url, probe);
       if (durationCache.size > 1000) durationCache.delete(durationCache.keys().next().value!);
     } catch (err) {
       return withCors(
@@ -76,8 +76,10 @@ export async function GET(req: NextRequest) {
 
   return withCors(
     NextResponse.json({
-      durationSeconds,
-      sparks: estimateSparks(durationSeconds),
+      durationSeconds: probe.durationSeconds,
+      sparks: estimateSparks(probe.durationSeconds),
+      title: probe.title,
+      thumbnail: probe.thumbnail,
     })
   );
 }
