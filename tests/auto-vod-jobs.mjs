@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 
@@ -8,8 +10,8 @@ const stream = "22222222-2222-4222-8222-222222222222";
 const video = "2901248464";
 const url = `https://www.twitch.tv/videos/${video}`;
 
-async function database() {
-  const db = new PGlite();
+async function database(dir) {
+  const db = dir ? new PGlite(dir) : new PGlite();
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
     create schema auth;
@@ -35,6 +37,37 @@ async function database() {
   await db.exec(await readFile(new URL("../supabase/migrations/016_auto_vod_jobs.sql", import.meta.url), "utf8"));
   return db;
 }
+
+test("a claimed VOD survives worker replacement and charges once after lease recovery", async () => {
+  const parent = new URL("../.tmp-smoke/", import.meta.url);
+  await mkdir(parent, { recursive: true });
+  const dir = await mkdtemp(path.join(fileURLToPath(parent), "klyp-auto-vod-restart-"));
+  let db;
+  try {
+    db = await database(dir);
+    const created = await db.query("select public.enqueue_auto_vod_job($1,$2,$3,$4) as id",
+      [stream, video, url, 3600]);
+    const id = created.rows[0].id;
+    const firstClaim = await db.query("select * from public.claim_auto_vod_job()");
+    assert.equal(firstClaim.rows[0].attempts, 1);
+    await db.close();
+    db = new PGlite(dir);
+    assert.equal((await db.query("select count(*)::int as n from public.claim_auto_vod_job()")).rows[0].n, 0);
+    await db.query("update public.auto_vod_jobs set lease_until = now() - interval '1 second' where id=$1", [id]);
+    const secondClaim = await db.query("select * from public.claim_auto_vod_job()");
+    assert.equal(secondClaim.rows[0].id, id);
+    assert.equal(secondClaim.rows[0].attempts, 2);
+    assert.equal((await db.query("select public.finish_auto_vod_job($1,$2::jsonb,$3) as saved",
+      [id, JSON.stringify(clips), 40])).rows[0].saved, true);
+    assert.equal((await db.query("select public.finish_auto_vod_job($1,$2::jsonb,$3) as saved",
+      [id, JSON.stringify(clips), 40])).rows[0].saved, false);
+    assert.equal((await db.query("select sparks from public.profiles where id=$1", [user])).rows[0].sparks, 60);
+    assert.equal((await db.query("select count(*)::int as n from public.spark_transactions")).rows[0].n, 1);
+  } finally {
+    if (db) await db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 const clips = [{ title: "A moment", clip_type: "FUNNY", viral_score: 80,
   caption: "A caption", reason: "A reason", start_seconds: 10, end_seconds: 40,
