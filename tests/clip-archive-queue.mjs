@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -109,7 +109,9 @@ test("an interrupted archive is reclaimed after its lease expires without falsel
 });
 
 test('an archive job survives a database close and reopen after an interrupted worker', async () => {
-  const dir = await mkdtemp(path.join(fileURLToPath(new URL('../.tmp-smoke/', import.meta.url)), 'klyp-archive-restart-'));
+  const parent = new URL('../.tmp-smoke/', import.meta.url);
+  await mkdir(parent, { recursive: true });
+  const dir = await mkdtemp(path.join(fileURLToPath(parent), 'klyp-archive-restart-'));
   let db;
   try {
     db = await database(dir);
