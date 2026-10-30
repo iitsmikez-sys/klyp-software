@@ -25,6 +25,7 @@ test('expired Pro profile cannot refill Sparks without a paid invoice', async ()
     `);
     await db.exec(await readFile(new URL('../supabase/migrations/012_sparks_ledger.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/025_paid_sparks_invoice_only.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/029_free_60_allowance.sql', import.meta.url), 'utf8'));
     const profile = await db.query('select tier, sparks from public.get_profile()');
     assert.deepEqual(profile.rows[0], { tier: 'pro', sparks: 0 });
     const ledger = await db.query("select count(*)::int as n from public.spark_transactions where reason = 'monthly_reset'");
@@ -42,6 +43,15 @@ test('expired Pro profile cannot refill Sparks without a paid invoice', async ()
     await db.query(`update public.profiles set tier = 'free', sparks = 0,
       sparks_reset_at = now() - interval '1 day' where id = '${userId}'`);
     const freeProfile = await db.query('select tier, sparks from public.get_profile()');
-    assert.deepEqual(freeProfile.rows[0], { tier: 'free', sparks: 150 });
+    assert.deepEqual(freeProfile.rows[0], { tier: 'free', sparks: 60 });
+
+    await db.query(`update public.profiles set sparks = 120,
+      sparks_reset_at = now() + interval '1 day' where id = '${userId}'`);
+    const existingBalance = await db.query('select sparks from public.get_profile()');
+    assert.equal(existingBalance.rows[0].sparks, 120);
+
+    const newAccount = await db.query(`insert into public.profiles (id)
+      values ('22222222-2222-4222-8222-222222222222') returning tier, sparks`);
+    assert.deepEqual(newAccount.rows[0], { tier: 'free', sparks: 60 });
   } finally { await db.close(); }
 });
