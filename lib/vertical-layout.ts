@@ -1,5 +1,12 @@
 export type NormalizedRect = { x: number; y: number; w: number; h: number };
 export type PixelRect = { x: number; y: number; w: number; h: number };
+export function visibleFrameRect(rect: PixelRect, output: { w: number; h: number }): PixelRect {
+  const x = Math.max(0, rect.x);
+  const y = Math.max(0, rect.y);
+  const right = Math.min(output.w, rect.x + rect.w);
+  const bottom = Math.min(output.h, rect.y + rect.h);
+  return right > x && bottom > y ? { x, y, w: right - x, h: bottom - y } : { x: 0, y: 0, w: output.w, h: output.h };
+}
 export type VerticalLayoutV1 = {
   version: 1;
   gameplay: NormalizedRect;
@@ -7,6 +14,8 @@ export type VerticalLayoutV1 = {
   chat?: NormalizedRect;
   arrangement?: "gameplay_top" | "facecam_top";
   focus?: "reaction";
+  mainShare?: number;
+  fit?: { zoom: number; x: number; y: number };
 };
 export type VerticalLayoutPlan =
   | { mode: "full_frame"; source: PixelRect; dest: PixelRect; output: { w: number; h: number } }
@@ -38,6 +47,11 @@ export function validateVerticalLayout(input: unknown): VerticalLayoutV1 {
   if (value.version !== 1 || !validRect(value.gameplay) ||
       (value.facecam != null && !validRect(value.facecam)) ||
       (value.chat != null && !validRect(value.chat)) ||
+      (value.mainShare != null && (typeof value.mainShare !== "number" || !Number.isFinite(value.mainShare) || value.mainShare < 0.35 || value.mainShare > 0.8)) ||
+      (value.fit != null && (!value.fit || typeof value.fit !== "object" || Array.isArray(value.fit) ||
+        !["zoom", "x", "y"].every((key) => typeof (value.fit as Record<string, unknown>)[key] === "number" && Number.isFinite((value.fit as Record<string, number>)[key])) ||
+        (value.fit as { zoom: number }).zoom < 1 || (value.fit as { zoom: number }).zoom > 4 ||
+        Math.abs((value.fit as { x: number }).x) > 1 || Math.abs((value.fit as { y: number }).y) > 1)) ||
       (value.arrangement != null && value.arrangement !== "gameplay_top" && value.arrangement !== "facecam_top") ||
       (value.focus != null && value.focus !== "reaction")) throw new Error("Invalid vertical layout.");
   return {
@@ -47,6 +61,8 @@ export function validateVerticalLayout(input: unknown): VerticalLayoutV1 {
     ...(value.chat ? { chat: { ...(value.chat as NormalizedRect) } } : {}),
     ...(value.arrangement ? { arrangement: value.arrangement as VerticalLayoutV1["arrangement"] } : {}),
     ...(value.focus ? { focus: "reaction" as const } : {}),
+    ...(value.mainShare != null ? { mainShare: value.mainShare as number } : {}),
+    ...(value.fit ? { fit: { ...(value.fit as { zoom: number; x: number; y: number }) } } : {}),
   };
 }
 
@@ -69,14 +85,15 @@ function cropToPanel(rect: NormalizedRect, source: { w: number; h: number }, des
 export function planVerticalLayout(source: { w: number; h: number }, layout: VerticalLayoutV1 | null, output: { w: number; h: number }): VerticalLayoutPlan {
   if (![source.w, source.h, output.w, output.h].every((n) => Number.isFinite(n) && n > 0 && Number.isInteger(n)) ||
       output.w % 2 || output.h % 2) throw new Error("Unsupported vertical layout dimensions.");
-  if (!layout) {
-    const scale = Math.min(output.w / source.w, output.h / source.h);
+  const valid = layout ? validateVerticalLayout(layout) : null;
+  if (!valid || (valid.fit && !valid.facecam && !valid.chat)) {
+    const fit = valid?.fit ?? { zoom: 1, x: 0, y: 0 };
+    const scale = Math.min(output.w / source.w, output.h / source.h) * fit.zoom;
     const w = even(source.w * scale);
     const h = even(source.h * scale);
     return { mode: "full_frame", source: { x: 0, y: 0, w: source.w, h: source.h },
-      dest: { x: even((output.w - w) / 2), y: even((output.h - h) / 2), w, h }, output };
+      dest: { x: even((output.w - w) / 2 + fit.x * output.w), y: even((output.h - h) / 2 + fit.y * output.h), w, h }, output };
   }
-  const valid = validateVerticalLayout(layout);
   if (valid.focus === "reaction" && valid.facecam) {
     const faceHeight = even(output.h * 0.7);
     const faceDest = { x: 0, y: 0, w: output.w, h: faceHeight };
@@ -87,7 +104,7 @@ export function planVerticalLayout(source: { w: number; h: number }, layout: Ver
     ], textSafe: gameDest };
   }
   const optional = (["facecam", "chat"] as const).filter((name) => valid[name]);
-  const topHeight = optional.length ? even(output.h * 0.7) : output.h;
+  const topHeight = optional.length ? even(output.h * (valid.mainShare ?? 0.7)) : output.h;
   const facecamFirst = valid.arrangement === "facecam_top" && !!valid.facecam;
   const smallBandY = facecamFirst ? 0 : topHeight;
   const mainY = facecamFirst ? output.h - topHeight : 0;

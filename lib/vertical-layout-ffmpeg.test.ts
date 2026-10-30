@@ -18,6 +18,21 @@ test("full-frame fallback pads instead of cropping a 16:9 source", () => {
   assert.equal(result.videoLabel, "outv");
 });
 
+test("resized full stream export uses the same placement as the preview", (t) => {
+  const plan = planVerticalLayout({ w: 320, h: 180 }, { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, fit: { zoom: 1.5, x: 0.1, y: -0.1 } }, { w: 90, h: 160 });
+  assert.equal(plan.mode, "full_frame");
+  if (plan.mode !== "full_frame") return;
+  const result = buildVerticalFilterGraph(plan, []);
+  assert.match(result.filter, new RegExp(`scale=${plan.dest.w}:${plan.dest.h}`));
+  assert.match(result.filter, new RegExp(`overlay=${plan.dest.x}:${plan.dest.y}`));
+  if (spawnSync('ffmpeg', ['-version']).error) { t.skip('FFmpeg is unavailable'); return; }
+  const run = spawnSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=320x180:r=1:d=1', '-filter_complex', result.filter, '-map', `[${result.videoLabel}]`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 100_000 });
+  assert.equal(run.status, 0, run.stderr?.toString());
+  const pixel = (x: number, y: number) => Array.from(run.stdout.subarray((y * 90 + x) * 3, (y * 90 + x) * 3 + 3));
+  assert.ok(pixel(45, 10)[0] < 80, `top background ${pixel(45, 10)}`);
+  assert.ok(pixel(45, 50)[0] > 150, `enlarged video ${pixel(45, 50)}`);
+});
+
 test("composed graph crops gameplay, facecam and chat then fills vertical output", () => {
   const plan = planVerticalLayout(source, { version: 1, gameplay, facecam: { x: 0, y: 0.6, w: 0.2, h: 0.3 }, chat: { x: 0.8, y: 0.1, w: 0.2, h: 0.7 } }, output);
   const result = buildVerticalFilterGraph(plan, []);

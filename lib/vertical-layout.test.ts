@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chatReadabilityWarning, clampSourceRect, planVerticalLayout, validateVerticalLayout } from "./vertical-layout.ts";
+import { chatReadabilityWarning, clampSourceRect, planVerticalLayout, validateVerticalLayout, visibleFrameRect } from "./vertical-layout.ts";
 
 test("dragged boxes stay inside frame and tiny chat warns", () => {
   assert.deepEqual(clampSourceRect({ x: 0.9, y: -0.2, w: 0.2, h: 0.3 }), { x: 0.8, y: 0, w: 0.2, h: 0.3 });
@@ -83,4 +83,30 @@ test("absent layout fits the full source without cropping", () => {
   if (plan.mode !== "full_frame") return;
   assert.deepEqual(plan.source, { x: 0, y: 0, w: 1920, h: 1080 });
   assert.deepEqual(plan.dest, { x: 0, y: 656, w: 1080, h: 608 });
+});
+
+test("full stream can be enlarged and moved while keeping its aspect ratio", () => {
+  const layout = validateVerticalLayout({ version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 }, fit: { zoom: 1.5, x: 0.1, y: -0.1 } });
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, layout, { w: 1080, h: 1920 });
+  assert.equal(plan.mode, "full_frame");
+  if (plan.mode !== "full_frame") return;
+  assert.deepEqual(plan.dest, { x: -162, y: 312, w: 1620, h: 912 });
+});
+
+test("stacked panels honor a custom main panel share", () => {
+  const plan = planVerticalLayout({ w: 1920, h: 1080 }, { version: 1, gameplay, facecam, arrangement: "facecam_top", mainShare: 0.55 }, { w: 1080, h: 1920 });
+  assert.equal(plan.mode, "composed");
+  if (plan.mode !== "composed") return;
+  assert.deepEqual(plan.panels.map(p => [p.name, p.dest.y, p.dest.h]), [["facecam", 0, 864], ["gameplay", 864, 1056]]);
+});
+
+test("invalid frame controls are rejected", () => {
+  for (const extra of [{ mainShare: 0.1 }, { fit: { zoom: 0, x: 0, y: 0 } }, { fit: { zoom: 2, x: Infinity, y: 0 } }]) {
+    assert.throws(() => validateVerticalLayout({ version: 1, gameplay, ...extra }), /layout/i);
+  }
+});
+
+test("captions stay inside the visible part of a moved video", () => {
+  const safe = visibleFrameRect({ x: -100, y: 100, w: 900, h: 900 }, { w: 540, h: 960 });
+  assert.deepEqual(safe, { x: 0, y: 100, w: 540, h: 860 });
 });

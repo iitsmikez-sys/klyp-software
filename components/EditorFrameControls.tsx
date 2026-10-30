@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { clampSourceRect, type NormalizedRect, type VerticalLayoutV1 } from '@/lib/vertical-layout';
 import { captureFrameSamples } from '@/lib/auto-frame-client';
 import { processingFetch } from '@/lib/processing-api';
+import { zoomFrame } from '@/lib/frame-gesture';
 
 const full: VerticalLayoutV1 = { version: 1, gameplay: { x: 0, y: 0, w: 1, h: 1 } };
 const centered: VerticalLayoutV1 = { version: 1, gameplay: { x: .34, y: 0, w: .32, h: 1 } };
@@ -19,8 +20,10 @@ export default function EditorFrameControls({ clipId, video, layout, onChange }:
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const current = layout ?? full;
-  const stacked = (arrangement: 'facecam_top' | 'gameplay_top') =>
-    onChange({ ...current, facecam: current.facecam ?? defaultFacecam, arrangement });
+  const stacked = (arrangement: 'facecam_top' | 'gameplay_top') => {
+    const { fit: _fit, ...positioned } = current;
+    onChange({ ...positioned, facecam: current.facecam ?? defaultFacecam, arrangement });
+  };
   const suggest = async () => {
     if (!video || busy) return;
     setBusy(true); setMessage(null); setProposal(null);
@@ -43,14 +46,17 @@ export default function EditorFrameControls({ clipId, video, layout, onChange }:
   return <section className="editor-frame-controls" aria-label="Vertical framing">
     <div className="editor-frame-heading"><div><h3>Vertical frame</h3><p>Choose a layout, then adjust what each panel shows.</p></div><span>9:16</span></div>
     <div className="editor-layout-choices" aria-label="Vertical layout presets">
-      <button type="button" aria-pressed={layout === null} onClick={() => onChange(null)}><span className="layout-icon fit"><i/></span><strong>Full stream</strong><small>No crop</small></button>
+      <button type="button" aria-pressed={layout === null || !!layout.fit} onClick={() => onChange(null)}><span className="layout-icon fit"><i/></span><strong>Full stream</strong><small>Adjustable size</small></button>
       <button type="button" aria-pressed={!!layout && !layout.facecam} onClick={() => onChange(centered)}><span className="layout-icon focus"><i/></span><strong>Speaker focus</strong><small>One vertical view</small></button>
       <button type="button" aria-pressed={!!current.facecam && current.arrangement === 'facecam_top'} onClick={() => stacked('facecam_top')}><span className="layout-icon face-top"><i/><i/></span><strong>Facecam top</strong><small>Gameplay below</small></button>
       <button type="button" aria-pressed={!!current.facecam && current.arrangement !== 'facecam_top'} onClick={() => stacked('gameplay_top')}><span className="layout-icon game-top"><i/><i/></span><strong>Gameplay top</strong><small>Facecam below</small></button>
     </div>
+    <p className="editor-frame-help">Drag the preview to move the picture. Pinch with two fingers to resize it.</p>
+    {(layout === null || !!layout.fit) && <div className="editor-frame-size"><div><strong>Video size</strong><span>{Math.round((current.fit?.zoom ?? 1) * 100)}%</span></div><input type="range" aria-label="Video size" min="1" max="4" step="0.05" value={current.fit?.zoom ?? 1} onChange={event => onChange({ version: 1, gameplay: full.gameplay, fit: { ...(current.fit ?? { zoom: 1, x: 0, y: 0 }), zoom: Number(event.target.value) } })}/><button type="button" onClick={() => onChange(null)}>Reset position and size</button></div>}
+    {current.facecam && <div className="editor-frame-size"><div><strong>Gameplay space</strong><span>{Math.round((current.mainShare ?? .7) * 100)}%</span></div><input type="range" aria-label="Gameplay panel size" min="0.35" max="0.8" step="0.01" value={current.mainShare ?? .7} onChange={event => onChange({ ...current, mainShare: Number(event.target.value) })}/><p>Change how much of the vertical frame gameplay uses.</p></div>}
     <div className="editor-frame-presets"><button type="button" onClick={suggest} disabled={!video || busy}>{busy ? 'Finding frame…' : '✦ Suggest the best crop from this clip'}</button></div>
     {message && <p role="status" className="editor-frame-message">{message}</p>}
     {proposal && <div className="editor-frame-proposal"><div className="editor-frame-proposal-head"><strong>Suggested crop</strong><button type="button" onClick={() => { onChange({ ...proposal, ...(proposal.facecam ? { arrangement: current.arrangement ?? 'facecam_top' } : {}) }); setProposal(null); setMessage('Frame applied. Adjust it below or undo.'); }}>Use this frame</button></div><div className="editor-frame-map" style={{ aspectRatio: video?.videoWidth && video?.videoHeight ? `${video.videoWidth}/${video.videoHeight}` : '16 / 9' }}><div className="editor-frame-box" style={{ left: `${proposal.gameplay.x * 100}%`, top: `${proposal.gameplay.y * 100}%`, width: `${proposal.gameplay.w * 100}%`, height: `${proposal.gameplay.h * 100}%` }}>Main</div>{proposal.facecam && <div className="editor-frame-box face" style={{ left: `${proposal.facecam.x * 100}%`, top: `${proposal.facecam.y * 100}%`, width: `${proposal.facecam.w * 100}%`, height: `${proposal.facecam.h * 100}%` }}>Facecam</div>}</div></div>}
-    <div className="editor-frame-sliders">{(['gameplay', 'facecam'] as const).map(region => <div className="editor-frame-region" key={region}><div className="editor-frame-region-title"><strong>{region === 'gameplay' ? 'Main scene' : 'Facecam'}</strong>{region === 'facecam' && <label><input type="checkbox" checked={!!current.facecam} onChange={event => onChange(event.target.checked ? { ...current, facecam: defaultFacecam, arrangement: 'facecam_top' } : { version: 1, gameplay: current.gameplay })}/> Include</label>}</div>{current[region] && <div className="editor-frame-range-grid">{(['x', 'y', 'w', 'h'] as const).map(axis => <label key={axis}>{({x:'Left',y:'Top',w:'Width',h:'Height'} as const)[axis]}<input type="range" min="0" max="1" step="0.01" aria-label={`${region} ${axis}`} value={current[region]![axis]} onChange={event => update(region, axis, Number(event.target.value))}/></label>)}</div>}</div>)}</div>
+    {!(layout === null || !!layout.fit) && <div className="editor-frame-sliders">{(['gameplay', 'facecam'] as const).map(region => <div className="editor-frame-region" key={region}><div className="editor-frame-region-title"><strong>{region === 'gameplay' ? 'Main scene' : 'Facecam'}</strong>{region === 'facecam' && <label><input type="checkbox" checked={!!current.facecam} onChange={event => onChange(event.target.checked ? { ...current, facecam: defaultFacecam, arrangement: 'facecam_top' } : { version: 1, gameplay: current.gameplay })}/> Include</label>}</div>{current[region] && <div className="editor-frame-range-grid"><label>Video size<input type="range" min="1" max="20" step="0.1" aria-label={`${region} video size`} value={Math.min(20, 1 / current[region]!.w)} onChange={event => onChange(zoomFrame(current, region, current[region]!.w * Number(event.target.value)))}/></label>{(['x', 'y', 'w', 'h'] as const).map(axis => <label key={axis}>{({x:'Left',y:'Top',w:'Width',h:'Height'} as const)[axis]}<input type="range" min="0" max="1" step="0.01" aria-label={`${region} ${axis}`} value={current[region]![axis]} onChange={event => update(region, axis, Number(event.target.value))}/></label>)}</div>}</div>)}</div>}
   </section>;
 }

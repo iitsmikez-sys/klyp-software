@@ -77,6 +77,13 @@
 .layout-icon.focus i { background:#43b891 }
 .layout-icon.face-top i:first-child,.layout-icon.game-top i:last-child { flex:0 0 28%; background:#a185d3 }
 .editor-frame-presets { margin-top:9px }
+.editor-frame-help { margin:10px 0 0; color:#b5d9ca; font-size:11px; line-height:1.5 }
+.editor-frame-size { margin-top:12px; padding:12px; border:1px solid #3a5d55; border-radius:8px; background:#10241f }
+.editor-frame-size>div { display:flex; justify-content:space-between; gap:8px; margin-bottom:10px; color:#e6fff3; font-size:11px }
+.editor-frame-size>div span { color:#62f5cf; font-weight:800 }
+.editor-frame-size input[type=range] { width:100%; min-height:32px }
+.editor-frame-size p { margin:5px 0 0; color:#a8c9bd; font-size:10px; line-height:1.4 }
+.clip-editor .editor-frame-size button { margin-top:8px; min-height:34px; padding:5px 8px; border:1px solid #4f8675; border-radius:6px; color:#c8ffdf; font-size:11px }
 .clip-editor .editor-frame-presets button { width:100%; padding:9px; border:1px solid #40b88c; border-radius:7px; background:#1b493c; color:#adffdc; font-size:10px; font-weight:800 }
 .clip-editor .editor-frame-presets button:disabled { opacity:.45 }
 .editor-frame-message { margin:9px 0 0; color:#b3d9ca; font-size:11px; line-height:1.45 }
@@ -123,6 +130,11 @@
 .editor-player { position:relative; display:flex; flex-direction:column; overflow:hidden; background:#080d10 }
 .editor-stage { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; padding:0 20px }
 .editor-canvas { position:relative; height:min(100%,42dvh); max-height:420px; max-width:100%; background:#030609; box-shadow:0 10px 28px #0006 }
+.editor-frame-surface { position:absolute; inset:0 }
+.editor-frame-surface[data-enabled=true] { cursor:grab; touch-action:none }
+.editor-frame-surface[data-enabled=true]:active { cursor:grabbing }
+.editor-frame-selection { position:absolute; z-index:2; border:2px solid #62f5cf; box-shadow:inset 0 0 0 1px #06251b,0 0 12px #62f5cf77; pointer-events:none }
+.editor-frame-guide { position:absolute; z-index:3; bottom:9px; left:50%; transform:translateX(-50%); max-width:calc(100% - 12px); padding:5px 8px; border:1px solid #ffffff44; border-radius:5px; background:#071018dc; color:#f1fff9; font-size:10px; font-weight:700; text-align:center; white-space:nowrap; pointer-events:none }
 .editor-canvas canvas { display:block; width:100%!important; height:100%!important; max-width:none!important; object-fit:contain; border:0; border-radius:0 }
 .editor-source { position:absolute; z-index:3; top:40%; left:50%; width:min(300px,85%); transform:translate(-50%,-50%); text-align:center; font-size:13px; line-height:1.7 }
 .editor-source [aria-label="Source preview"] { background:transparent }
