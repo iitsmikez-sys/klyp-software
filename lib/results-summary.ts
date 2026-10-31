@@ -20,4 +20,3 @@ export function resultsChargeMessage(
   }
   return `Charged ${spent} Sparks for this analysis.`;
 }
-
