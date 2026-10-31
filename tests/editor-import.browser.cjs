@@ -58,11 +58,11 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.waitForFunction(()=>document.querySelector('[aria-label="Source preview"] video')?.readyState>=2);
  assert.equal(await page.getByRole('button',{name:'Captions panel'}).count(),0);
  assert.equal(await page.getByRole('button',{name:'Layout panel'}).count(),0);
- assert.deepEqual(await page.locator('.editor-inspector-tabs button').allTextContents(),['Text','Style','Layout']);
+ assert.deepEqual(await page.locator('.editor-inspector-tabs button').allTextContents(),['Captions','Hook','Layout']);
  await page.locator('.editor-inspector-tabs').getByRole('button',{name:'Layout'}).click();
  assert.equal(await page.getByRole('heading',{name:'Layout',exact:true}).count(),1);
- await page.locator('.editor-inspector-tabs').getByRole('button',{name:'Text'}).click();
- assert.equal(await page.getByLabel('Caption style').count(),1);
+ await page.locator('.editor-inspector-tabs').getByRole('button',{name:'Captions'}).click();
+ assert.equal(await page.getByLabel('Caption templates').count(),1);
  if(process.env.EDITOR_CAPTURE){
   await page.screenshot({path:path.join(evidence,`task-5-${process.env.EDITOR_CAPTURE}-desktop.png`)});
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(evidence,`task-5-${process.env.EDITOR_CAPTURE}-narrow.png`),fullPage:true});await page.setViewportSize({width:1672,height:941});
@@ -163,7 +163,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.evaluate(()=>{window.pro=false;window.saved=null;window.mountKey=5;renderEditor();});
  await page.getByRole('button',{name:'Media panel',exact:true}).click();await page.getByRole('button',{name:'Add photo',exact:true}).click();assert.equal(await page.getByLabel('Choose photo').isDisabled(),false);
  await page.getByLabel('Clip title').fill('Free edited title');
- await page.getByRole('button',{name:'Style',exact:true}).click();assert.equal(await page.getByText('Editing requires Pro. Free exports use the original clip.').count(),0);
+ await page.getByRole('button',{name:'Hook',exact:true}).click();assert.equal(await page.getByText('Editing requires Pro. Free exports use the original clip.').count(),0);
  await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Edits saved',{exact:true}).waitFor();
  await page.getByLabel('Export aspect ratio').selectOption('Original');
  await page.getByRole('button',{name:'Export clip',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();
@@ -180,7 +180,8 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.locator('[aria-label="Video lane"] button[aria-label^="Select video"]').last().click();await page.getByLabel('Playhead position').fill('14');await page.getByRole('button',{name:/Split/}).click();
  await page.getByRole('button',{name:'Media panel',exact:true}).click();await page.getByLabel('Playhead position').fill('7');await page.getByRole('button',{name:'Overlay red.png',exact:true}).click();
  await page.getByRole('button',{name:'Transcript panel',exact:true}).click();
- const line=page.locator('.editor-transcript-lines button').nth(1);await line.click();assert.ok(Math.abs(Number(await page.getByLabel('Playhead position').inputValue())-3.84)<.02,'Transcript seeks its source moment');
+ const paragraph=page.locator('.editor-transcript-lines button').first();await paragraph.click();assert.ok(Math.abs(Number(await page.getByLabel('Playhead position').inputValue()))<.02,'Transcript paragraph seeks its source moment');
+ await page.getByLabel('Search transcript').fill('share');await page.locator('.editor-transcript-lines button').first().click();assert.ok(Number(await page.getByLabel('Playhead position').inputValue())>10,'Transcript search seeks the matching word rather than the paragraph start');await page.getByLabel('Search transcript').fill('');
  await page.locator('[aria-label="Video lane"] button[aria-label^="Select video"]').first().click();
  await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Edits saved',{exact:true}).waitFor();
  const scroll=page.locator('.editor-track-scroll');assert.ok(await scroll.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Default zoom fits the whole edited clip');
@@ -191,7 +192,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
  if(process.env.EDITOR_CAPTURE){
   await page.screenshot({path:path.join(evidence,'task-5-polished-desktop.png')});
-  await page.getByRole('button',{name:'Style',exact:true}).click();await page.screenshot({path:path.join(evidence,'task-5-polished-style.png')});
+  await page.getByRole('button',{name:'Captions',exact:true}).click();await page.screenshot({path:path.join(evidence,'task-5-polished-style.png')});
   await page.getByRole('button',{name:'Media panel',exact:true}).click();await page.screenshot({path:path.join(evidence,'task-5-polished-media.png')});
   await page.setViewportSize({width:390,height:844});
   for(const name of ['Save','Export clip'])assert.ok((await page.getByRole('button',{name,exact:true}).boundingBox()).height>=44,`${name} needs a 44px touch target`);

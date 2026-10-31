@@ -51,6 +51,7 @@ export function drawCaptionPreview(
   const text = style === "KLYP" || style === "SPARK" ? cue.text.toUpperCase() : cue.text;
   ctx.save();
   ctx.globalAlpha = motion.alpha;
+  if (style === "GLOW") { ctx.shadowColor = "#FF99FF"; ctx.shadowBlur = 10 * height / 960; }
   ctx.font = `${style === "COMIC" ? "italic " : ""}${style === "CLEAN" ? "" : "bold "}${size}px Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = options.position === "TOP" ? "top" : options.position === "CENTER" ? "middle" : "bottom";
