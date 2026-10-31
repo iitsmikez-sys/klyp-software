@@ -18,6 +18,7 @@ function setup({ pro = true, ownsClip = true, saveFails = false, scheduleExpires
   let savedPost;
   let updates = 0;
   let validations = 0;
+  let brokerRequests = 0;
   const admin = { from(table) {
     if (table === 'clips') return { select() { return this; }, eq() { return this; },
       async maybeSingle() { return { data: ownsClip ? { id: clip } : null, error: null }; } };
@@ -61,6 +62,12 @@ function setup({ pro = true, ownsClip = true, saveFails = false, scheduleExpires
         return { title: input.title, description: input.description,
           publishAt: new Date(input.publishAt).toISOString() };
       } },
+    '@/lib/youtube-worker-token': { requestWorkerAccessToken: async id => {
+      assert.equal(id, 'post-1');
+      assert.equal(renders, 1, 'the token is requested after rendering');
+      brokerRequests++;
+      return 'access';
+    } },
   };
   const exports = {};
   vm.runInNewContext(code, { exports, require: name => {
@@ -72,7 +79,8 @@ function setup({ pro = true, ownsClip = true, saveFails = false, scheduleExpires
     body: JSON.stringify({ requestKey, clipPayload: { clip_id: clip, raw: true, upscale: true },
       title: 'Clip', description: '', publishAt: '2026-10-31T12:00:00Z' }),
   });
-  return { post: () => exports.POST(request), calls: () => ({ renders, uploads, savedPost }) };
+  return { post: () => exports.POST(request), calls: () => ({ renders, uploads, savedPost }),
+    brokerRequests: () => brokerRequests };
 }
 
 test('Free accounts cannot publish or trigger rendering', async () => {
@@ -95,6 +103,7 @@ test('an owned Pro clip is rendered safely and scheduled on YouTube', async () =
   assert.equal((await response.json()).youtubeUrl, 'https://www.youtube.com/watch?v=youtube-video');
   assert.equal(testCase.calls().renders, 1);
   assert.equal(testCase.calls().uploads, 1);
+  assert.equal(testCase.brokerRequests(), 1);
   assert.equal(testCase.calls().savedPost.status, 'scheduled');
 });
 
