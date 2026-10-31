@@ -108,6 +108,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               for (const line of caption.lines) {
                 ctx.save();
                 ctx.globalAlpha *= motion.alpha;
+                if (style === "GLOW") { ctx.shadowColor = "#FF99FF"; ctx.shadowBlur = 10 * canvas.height / 960; }
                 ctx.translate(line.x, line.y + motion.yOffset * canvas.height / 1920);
                 ctx.scale(motion.scale, motion.scale);
                 paintCaptionLine(ctx, line.text, 0, 0, safe.w - 20, style, keyword, wordOffset);

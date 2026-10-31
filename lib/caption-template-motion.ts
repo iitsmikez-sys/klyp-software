@@ -57,5 +57,6 @@ export function captionAssMotionAt(style: CaptionStyle, x: number, y: number, he
     const rise = Math.round(55 * height / 1920);
     return `{\\an5\\move(${x},${y + rise},${x},${y},0,220)\\fad(180,0)}`;
   }
-  return `{\\an5\\pos(${x},${y})${captionAssMotion(style, 0, height, "CENTER").slice(1, -1)}}`;
+  const glow = style === "GLOW" ? "\\shad0\\bord4\\3c&H00FF99FF&\\blur2" : "";
+  return `{\\an5\\pos(${x},${y})${glow}${captionAssMotion(style, 0, height, "CENTER").slice(1, -1)}}`;
 }
