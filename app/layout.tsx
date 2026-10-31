@@ -30,6 +30,7 @@ export const metadata: Metadata = {
   description:
     "Paste a YouTube or Twitch VOD link to find, review, save, and export clips with Klyp.",
   keywords: ["streaming", "clips", "AI", "Twitch", "YouTube", "content creation"],
+  verification: { google: "dWdc8Wy30rS6xoA9lavXIfFNSlqerWilbgldW_dfX-Q" },
 };
 
 export default function RootLayout({
