@@ -77,6 +77,26 @@ export function buildCaptionCues(
     const nextStart = i + 1 < cues.length ? cues[i + 1].startMs : Infinity;
     cue.endMs = Math.min(cue.startMs + CUE_HOLD_MS, nextStart, clipLenMs);
   });
+  // Rapid or overlapping words can create cues shorter than the editor's
+  // 100 ms minimum. Keep their text by folding them into a neighbor instead
+  // of dropping words or generating a draft that cannot be saved.
+  for (let i = 0; i < cues.length; i++) {
+    if (cues[i].endMs - cues[i].startMs >= 100) continue;
+    if (i + 1 < cues.length) {
+      cues[i + 1].text = `${cues[i].text} ${cues[i + 1].text}`;
+      cues[i + 1].startMs = cues[i].startMs;
+      cues.splice(i, 1);
+      i--;
+    } else if (i > 0) {
+      cues[i - 1].text += ` ${cues[i].text}`;
+      cues[i - 1].endMs = Math.max(cues[i - 1].endMs, cues[i].endMs);
+      cues.splice(i, 1);
+      i--;
+    } else if (clipLenMs >= 100) {
+      cues[i].startMs = Math.max(0, Math.min(cues[i].startMs, clipLenMs - 100));
+      cues[i].endMs = Math.max(cues[i].endMs, cues[i].startMs + 100);
+    }
+  }
   return cues.filter((c) => c.endMs > c.startMs);
 }
 
