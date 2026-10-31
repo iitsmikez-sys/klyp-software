@@ -14,6 +14,7 @@
  *   5. Stream the MP4 back as a file download
  */
 import {isLegacyEditorExport} from '@/lib/editor-compatibility';
+import { hasProAccess } from '@/lib/tier';
 import {handleLegacyClipExport} from '@/lib/legacy-clip-export-route';
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -286,7 +287,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   // "Pro" requires a real, confirmed subscription — see SparksProvider.tsx for
   // why the raw tier flag alone isn't trusted (it can drift from reality).
-  const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
+  const isPro = hasProAccess(profile);
   const sparksBalance = profile.sparks;
   // Raw always means the detected source moment, never an edited draft.
   const editorRequested = !raw && (requestBody.edit_draft !== undefined || requestBody.editor_export === true || requestBody.segments !== undefined || requestBody.caption_cues !== undefined);

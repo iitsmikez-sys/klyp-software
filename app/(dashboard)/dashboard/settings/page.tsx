@@ -39,7 +39,7 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { tier, balance } = useSparks();
+  const { tier, balance, complimentaryPro } = useSparks();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("");
@@ -271,7 +271,7 @@ export default function SettingsPage() {
                 {tier === "pro" ? "⚡ PRO" : "FREE"}
               </span>
               <span className="text-sm text-foreground-muted">
-                {tier === "pro" ? "$28/mo · no watermark · 500 ⚡/mo" : "60 ⚡/mo · watermarked exports"}
+                {tier === "pro" ? complimentaryPro ? "Complimentary Pro · no charge · 500 ⚡/mo" : "$28/mo · no watermark · 500 ⚡/mo" : "60 ⚡/mo · watermarked exports"}
               </span>
             </div>
             <UpgradeButton />
