@@ -1,28 +1,62 @@
 "use client";
+
 import { useState } from 'react';
 import type { SavedClip } from '@/lib/clip-ui';
 import { outputSpansForSourceCue, type SourceSegment } from '@/lib/editor-timeline';
-import type {TimelineInsert} from '@/lib/clip-edit-draft';
+import type { TimelineInsert } from '@/lib/clip-edit-draft';
 import type { CleanupCandidate } from '@/lib/transcript-edits';
+import { groupTranscriptParagraphs, wordMatchingQuery } from '@/lib/transcript-paragraphs';
+
+function clipTime(milliseconds: number, startSeconds: number): string {
+  const seconds = Math.floor(Math.max(0, milliseconds / 1000 - startSeconds));
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 export default function EditorTranscript({ clip, segments, inserts, time, onSeek, cleanup, onApplyCleanup, canEdit }: {
-    clip: SavedClip;
-    segments: SourceSegment[];
-    inserts?:TimelineInsert[];
-    time: number;
-    onSeek: (time: number) => void;
-    cleanup: CleanupCandidate[];
-    onApplyCleanup: (items: CleanupCandidate[]) => void;
-    canEdit: boolean;
+  clip: SavedClip;
+  segments: SourceSegment[];
+  inserts?: TimelineInsert[];
+  time: number;
+  onSeek: (time: number) => void;
+  cleanup: CleanupCandidate[];
+  onApplyCleanup: (items: CleanupCandidate[]) => void;
+  canEdit: boolean;
 }) {
-    const [query, setQuery] = useState('');
-    const [selected, setSelected] = useState<string[]>([]);
-    const key = (item: CleanupCandidate) => `${item.start_seconds}:${item.end_seconds}`;
-    const chosen = cleanup.filter(item => selected.includes(key(item)));
-    const saved = chosen.reduce((sum, item) => sum + item.end_seconds - item.start_seconds, 0);
-    const lines = [];
-    for (let i = 0; i < (clip.words?.length ?? 0); i += 8) {
-        const words = clip.words!.slice(i, i + 8);
-        lines.push({ text: words.map(w => w.text).join(' '), start_ms: words[0].start, end_ms: words[words.length - 1].end });
-    }
-    return <aside className="editor-transcript"><div className="editor-panel-heading"><h2>Transcript</h2><span>Click a line to seek</span></div>{canEdit && <section className="editor-cleanup" aria-label="Quick cleanup"><div className="editor-cleanup-heading"><div><strong>Quick cleanup</strong><small>Review each suggested cut</small></div><span>{cleanup.length}</span></div>{cleanup.length ? <><div className="editor-cleanup-list">{cleanup.map(item => <label key={key(item)}><input type="checkbox" checked={selected.includes(key(item))} onChange={event => setSelected(value => event.target.checked ? [...value, key(item)] : value.filter(id => id !== key(item)))}/><span><b>{item.kind === 'pause' ? 'Quiet pause' : `Filler · ${item.label}`}</b><small>{(item.start_seconds - clip.start_seconds).toFixed(1)}s · {(item.end_seconds - item.start_seconds).toFixed(1)}s</small></span></label>)}</div><button className="editor-cleanup-apply" disabled={!chosen.length} onClick={() => { onApplyCleanup(chosen); setSelected([]); }}>Remove {chosen.length ? `${chosen.length} selected · save ${saved.toFixed(1)}s` : 'selected moments'}</button><small>You can undo this from the timeline.</small></> : <p>{clip.words?.length ? 'No safe filler or quiet pause suggestions in this edit.' : 'Timed transcript needed for cleanup.'}</p>}</section>}<input aria-label="Search transcript" placeholder="Search transcript…" value={query} onChange={e => setQuery(e.target.value)}/><div className="editor-transcript-lines">{lines.filter(l => l.text.toLowerCase().includes(query.toLowerCase())).map((l, i) => { const spans = outputSpansForSourceCue(segments, l,inserts); const active = spans.some(s => time * 1000 >= s.start_ms && time * 1000 < s.end_ms); return <button key={i} disabled={!spans.length} aria-current={active ? 'true' : undefined} onClick={() => onSeek(spans[0].start_ms / 1000)}><time>{Math.floor(Math.max(0,l.start_ms/1000-clip.start_seconds)/60).toString().padStart(2,'0')}:{Math.floor(Math.max(0,l.start_ms/1000-clip.start_seconds)%60).toString().padStart(2,'0')}</time><span>{l.text}</span></button>; })}{!lines.length && <p>No timed transcript was saved for this clip. Video and hook editing are available.</p>}{!!lines.length && !lines.some(l => l.text.toLowerCase().includes(query.toLowerCase())) && <p>No matching transcript lines.</p>}</div></aside>;
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
+  const key = (item: CleanupCandidate) => `${item.start_seconds}:${item.end_seconds}`;
+  const chosen = cleanup.filter(item => selected.includes(key(item)));
+  const saved = chosen.reduce((sum, item) => sum + item.end_seconds - item.start_seconds, 0);
+  const paragraphs = groupTranscriptParagraphs(clip.words ?? [], word => outputSpansForSourceCue(segments, { start_ms: word.start, end_ms: word.end }, inserts).length > 0);
+  const matches = paragraphs.filter(paragraph => paragraph.text.toLowerCase().includes(query.toLowerCase()));
+
+  return <aside className="editor-transcript">
+    <div className="editor-panel-heading"><h2>Transcript</h2><span>Click a paragraph to play</span></div>
+    <input aria-label="Search transcript" placeholder="Search transcript…" value={query} onChange={event => setQuery(event.target.value)} />
+    <div className="editor-transcript-lines">
+      {matches.map(paragraph => {
+        const spans = outputSpansForSourceCue(segments, paragraph, inserts);
+        const matchedWord = wordMatchingQuery(paragraph, query);
+        const seekSpans = matchedWord ? outputSpansForSourceCue(segments, { start_ms: matchedWord.start, end_ms: matchedWord.end }, inserts) : spans;
+        const active = spans.some(span => time * 1000 >= span.start_ms && time * 1000 < span.end_ms);
+        return <button key={`${paragraph.start_ms}:${paragraph.end_ms}`} type="button" disabled={!seekSpans.length} aria-current={active ? 'true' : undefined} onClick={() => onSeek(seekSpans[0].start_ms / 1000)}>
+          <time>[{clipTime(paragraph.start_ms, clip.start_seconds)}–{clipTime(paragraph.end_ms, clip.start_seconds)}]</time>
+          <span>{paragraph.text}</span>
+        </button>;
+      })}
+      {!paragraphs.length && <p>{clip.words?.length ? 'No transcript words remain in this edit.' : 'No timed transcript was saved for this clip. Video and hook editing are available.'}</p>}
+      {!!paragraphs.length && !matches.length && <p>No matching transcript paragraphs.</p>}
+    </div>
+    {canEdit && <details className="editor-cleanup editor-cleanup-collapsed">
+      <summary>Quick cleanup{cleanup.length > 0 ? ` · ${cleanup.length} suggestions` : ''}</summary>
+      <div className="editor-cleanup-content">
+        {cleanup.length ? <>
+          <p>Review each suggested cut before applying it.</p>
+          <div className="editor-cleanup-list">{cleanup.map(item => <label key={key(item)}><input type="checkbox" checked={selected.includes(key(item))} onChange={event => setSelected(value => event.target.checked ? [...value, key(item)] : value.filter(id => id !== key(item)))} /><span><b>{item.kind === 'pause' ? 'Quiet pause' : `Filler · ${item.label}`}</b><small>{(item.start_seconds - clip.start_seconds).toFixed(1)}s · {(item.end_seconds - item.start_seconds).toFixed(1)}s</small></span></label>)}</div>
+          <button className="editor-cleanup-apply" disabled={!chosen.length} onClick={() => { onApplyCleanup(chosen); setSelected([]); }}>Remove {chosen.length ? `${chosen.length} selected · save ${saved.toFixed(1)}s` : 'selected moments'}</button>
+          <small>You can undo this from the timeline.</small>
+        </> : <p>{clip.words?.length ? 'No safe filler or quiet pause suggestions in this edit.' : 'Timed transcript needed for cleanup.'}</p>}
+      </div>
+    </details>}
+  </aside>;
 }

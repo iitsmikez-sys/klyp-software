@@ -180,7 +180,8 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.locator('[aria-label="Video lane"] button[aria-label^="Select video"]').last().click();await page.getByLabel('Playhead position').fill('14');await page.getByRole('button',{name:/Split/}).click();
  await page.getByRole('button',{name:'Media panel',exact:true}).click();await page.getByLabel('Playhead position').fill('7');await page.getByRole('button',{name:'Overlay red.png',exact:true}).click();
  await page.getByRole('button',{name:'Transcript panel',exact:true}).click();
- const line=page.locator('.editor-transcript-lines button').nth(1);await line.click();assert.ok(Math.abs(Number(await page.getByLabel('Playhead position').inputValue())-3.84)<.02,'Transcript seeks its source moment');
+ const paragraph=page.locator('.editor-transcript-lines button').first();await paragraph.click();assert.ok(Math.abs(Number(await page.getByLabel('Playhead position').inputValue()))<.02,'Transcript paragraph seeks its source moment');
+ await page.getByLabel('Search transcript').fill('share');await page.locator('.editor-transcript-lines button').first().click();assert.ok(Number(await page.getByLabel('Playhead position').inputValue())>10,'Transcript search seeks the matching word rather than the paragraph start');await page.getByLabel('Search transcript').fill('');
  await page.locator('[aria-label="Video lane"] button[aria-label^="Select video"]').first().click();
  await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Edits saved',{exact:true}).waitFor();
  const scroll=page.locator('.editor-track-scroll');assert.ok(await scroll.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Default zoom fits the whole edited clip');
