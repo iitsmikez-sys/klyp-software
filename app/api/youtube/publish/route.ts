@@ -8,7 +8,7 @@ import { refreshYouTubeAccessToken, uploadToYouTube, YouTubeUploadError } from '
 import { decryptRefreshToken, isConfirmedPro, validateYouTubePost } from '@/lib/youtube-publishing';
 
 export const runtime = 'nodejs';
-export const maxDuration = 900;
+export const maxDuration = 300;
 export const OPTIONS = corsPreflight;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
