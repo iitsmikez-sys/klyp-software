@@ -267,9 +267,18 @@
 .editor-imported-lane { position:absolute; inset:0; pointer-events:none }
 .editor-cutaway-block { pointer-events:auto; overflow:hidden; white-space:nowrap; min-width:4px; text-align:left; padding:5px 10px; border:1px solid #a679e7; border-radius:5px; background:#5424a1; font-size:11px }
 .editor-cutaway-block small { display:block; color:#e6d5ff; margin-top:3px }
-.editor-caption-block,.editor-hook-block { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; padding:10px; border:1px solid #2d8b69; border-radius:5px; background:#145039; font-size:11px }
+.editor-caption-group,.editor-hook-block { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; padding:10px; border:1px solid #2d8b69; border-radius:5px; background:#145039; font-size:11px }
+.editor-caption-lane { background:#10231d }
+.editor-caption-group { display:flex; align-items:center; padding:0 9px; color:#e6fff3; border-color:#2f8062; background:#20543f }
+.editor-caption-group span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.editor-caption-detail { display:flex; align-items:center; gap:8px; min-height:44px; padding:5px 8px; margin:3px 0 5px; border:1px solid #315b4e; border-radius:6px; background:#142720 }
+.editor-caption-detail>strong { color:#a6e8ce; font-size:11px; flex:none }
+.editor-caption-words { display:flex; gap:5px; min-width:0; overflow-x:auto; flex:1; scrollbar-width:thin }
+.clip-editor .editor-caption-words button { flex:none; min-height:30px; padding:4px 9px; border:1px solid #426653; border-radius:5px; background:#203a2e; color:#e0f5e9; font-size:11px; white-space:nowrap }
+.clip-editor .editor-caption-words button[aria-pressed=true] { background:#54d8a1; border-color:#7bf4c0; color:#08251a; font-weight:700 }
+.clip-editor .editor-caption-detail-close { flex:none; min-height:30px; padding:4px 8px; color:#c1d6cc; font-size:11px }
 .editor-hook-block { background:#4c2392; border-color:#7f4cc0; display:flex; align-items:center }
-.editor-caption-block[aria-pressed=true],.editor-cutaway-block[aria-pressed=true] { border-color:var(--editor-mint); box-shadow:inset 0 0 0 1px var(--editor-mint) }
+.editor-caption-group[aria-pressed=true],.editor-cutaway-block[aria-pressed=true] { border-color:var(--editor-mint); box-shadow:inset 0 0 0 1px var(--editor-mint) }
 .editor-audio-lane { background:#0c312b; border-radius:5px; height:44px; margin-bottom:2px }
 .editor-audio-lane>span { display:block; padding:13px; font-size:11px; color:#9dbcb3 }
 .editor-playhead { position:absolute; top:20px; bottom:0; border-left:2px solid #f3f7fa; pointer-events:none; z-index:2; filter:drop-shadow(0 0 2px #0009) }
@@ -448,7 +457,7 @@
 .editor-timeline[data-collapsed=true] .editor-timeline-topline { justify-content:space-between }
 .editor-timeline-topline strong { font-weight:600 }
 .editor-timeline-topline button { min-height:25px; padding:0 8px; color:#b8c4c9; font-size:10px }
-.editor-timeline[data-collapsed=true] .editor-timeline-feedback,.editor-timeline[data-collapsed=true] .editor-timeline-heading,.editor-timeline[data-collapsed=true] .editor-short-segments,.editor-timeline[data-collapsed=true] .editor-track-layout,.editor-timeline[data-collapsed=true] .editor-scrubber { display:none }
+.editor-timeline[data-collapsed=true] .editor-timeline-feedback,.editor-timeline[data-collapsed=true] .editor-timeline-heading,.editor-timeline[data-collapsed=true] .editor-caption-detail,.editor-timeline[data-collapsed=true] .editor-short-segments,.editor-timeline[data-collapsed=true] .editor-track-layout,.editor-timeline[data-collapsed=true] .editor-scrubber { display:none }
 .editor-timeline-feedback { min-height:18px; padding:2px 0; font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .editor-timeline-heading { height:24px }
 .editor-track-labels { width:72px; padding-top:22px; font-size:11px }
@@ -464,7 +473,7 @@
 .clip-editor .editor-trim-handle::after { left:5px; top:9px; bottom:9px }
 .editor-video-frames { background:#263d4a }
 .editor-video-frames span { background:#243d4ed9; font-size:10px }
-.editor-caption-block,.editor-hook-block { background:#214338; border-color:#487e68; padding:6px; font-size:10px }
+.editor-caption-group,.editor-hook-block { background:#214338; border-color:#487e68; padding:6px; font-size:10px }
 .editor-hook-block { background:#40334c; border-color:#766283 }
 .editor-cutaway-block { background:#3a3152; border-color:#78678e; padding:5px; font-size:10px }
 .editor-overlay-lane { min-height:28px; border:1px dashed #39534a; background:#10201c88 }

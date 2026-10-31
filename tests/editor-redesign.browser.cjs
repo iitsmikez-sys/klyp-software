@@ -112,7 +112,14 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   await page.getByRole('button',{name:'Transcript panel'}).click(); assert.equal(await page.getByLabel('Search transcript').count(),1);
   await page.getByText('Captions are not on the video yet. Choose a style, then generate them from the saved transcript.').waitFor();
   await page.getByRole('button',{name:'Generate captions from transcript'}).click();
-  assert((await page.locator('[aria-label="Caption lane"] button').count())>0,'caption generation creates visible timed cues');
+  const phraseButtons=page.locator('[aria-label="Caption lane"] button');
+  assert((await phraseButtons.count())>0,'caption generation creates visible timed cues');
+  assert((await phraseButtons.count())<clip.words.length/2,'normal zoom groups words into readable phrases');
+  await phraseButtons.first().click();
+  assert((await page.getByLabel('Selected caption words').getByRole('button').count())>2,'a phrase opens its individual word controls');
+  await page.getByLabel('Selected caption words').getByRole('button').nth(1).click();
+  assert.equal(await page.getByLabel('Selected caption words').getByRole('button').nth(1).getAttribute('aria-pressed'),'true','individual words remain selectable');
+  await page.screenshot({path:path.join(out,'caption-phrases.png')});
   assert.equal(await page.getByText('Captions are not on the video yet. Choose a style, then generate them from the saved transcript.').count(),0);
   assert.deepEqual(errors,[]);
  }catch(error){console.error(serverLog.slice(-6000));throw error}finally{if(browser)await browser.close();server.kill()}
