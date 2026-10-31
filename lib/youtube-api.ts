@@ -79,7 +79,7 @@ export async function uploadToYouTube(input: YouTubePostDetails & { accessToken:
     snippet: { title: input.title, description: input.description },
     status: input.publishAt
       ? { privacyStatus: 'private', publishAt: input.publishAt }
-      : { privacyStatus: 'public' },
+      : { privacyStatus: input.privacyStatus ?? 'public' },
   };
   const start = await fetcher('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
     method: 'POST',

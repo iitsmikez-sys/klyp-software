@@ -20,16 +20,21 @@ export type YouTubePostDetails = {
   title: string;
   description: string;
   publishAt: string | null;
+  privacyStatus: 'public' | 'private' | 'unlisted';
 };
 
 /** YouTube's native scheduler requires a future time on a private upload. */
 export function validateYouTubePost(input: {
-  title: unknown; description: unknown; publishAt?: unknown;
+  title: unknown; description: unknown; publishAt?: unknown; privacyStatus?: unknown;
 }, now = Date.now()): YouTubePostDetails {
   const title = typeof input.title === 'string' ? input.title.trim() : '';
   const description = typeof input.description === 'string' ? input.description.trim() : '';
   if (!title || title.length > 100 || /[<>]/.test(title)) throw new Error('Enter a YouTube title under 100 characters.');
   if (description.length > 5000) throw new Error('YouTube description must be under 5,000 characters.');
+  const privacyStatus = input.privacyStatus === undefined ? 'public' : input.privacyStatus;
+  if (privacyStatus !== 'public' && privacyStatus !== 'private' && privacyStatus !== 'unlisted') {
+    throw new Error('Choose a valid YouTube privacy setting.');
+  }
   let publishAt: string | null = null;
   if (input.publishAt !== null && input.publishAt !== undefined && input.publishAt !== '') {
     if (typeof input.publishAt !== 'string' || !Number.isFinite(Date.parse(input.publishAt))) {
@@ -39,7 +44,8 @@ export function validateYouTubePost(input: {
     if (time < now + 30 * 60_000) throw new Error('Schedule at least 30 minutes in the future.');
     publishAt = new Date(time).toISOString();
   }
-  return { title, description, publishAt };
+  if (publishAt && privacyStatus !== 'public') throw new Error('Scheduled videos publish publicly; choose Public visibility.');
+  return { title, description, publishAt, privacyStatus };
 }
 
 function encryptionKey(base64Key: string): Buffer {

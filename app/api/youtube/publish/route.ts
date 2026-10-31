@@ -41,7 +41,8 @@ async function publish(req: NextRequest): Promise<Response> {
     clipId = String(clipPayload?.clip_id ?? '');
     requestKey = String(body.requestKey ?? '');
     if (!UUID.test(clipId) || !UUID.test(requestKey)) throw new Error('Choose a saved clip to publish.');
-    details = validateYouTubePost({ title: body.title, description: body.description, publishAt: body.publishAt });
+    details = validateYouTubePost({ title: body.title, description: body.description,
+      publishAt: body.publishAt, privacyStatus: body.privacyStatus });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid YouTube post.' }, { status: 400 });
   }

@@ -49,11 +49,11 @@ test('scheduled upload uses private status and native publishAt', async () => {
     return Response.json({ id: 'video123' });
   };
   const id = await uploadToYouTube({ accessToken: 'access', bytes: Buffer.from('fake mp4'),
-    title: 'Clip', description: 'Funny moment', publishAt: '2026-10-31T12:00:00.000Z' }, fetcher);
+    title: 'Clip', description: 'Funny moment', publishAt: '2027-01-31T12:00:00.000Z', privacyStatus: 'public' }, fetcher);
   assert.equal(id, 'video123');
   const metadata = JSON.parse(calls[0].request.body);
   assert.equal(metadata.status.privacyStatus, 'private');
-  assert.equal(metadata.status.publishAt, '2026-10-31T12:00:00.000Z');
+  assert.equal(metadata.status.publishAt, '2027-01-31T12:00:00.000Z');
   assert.equal(calls[1].request.method, 'PUT');
   assert.equal(calls[1].request.headers.Authorization, 'Bearer access');
 });
@@ -73,6 +73,18 @@ test('immediate upload is public and rejects foreign upload session URLs', async
   await assert.rejects(uploadToYouTube({ accessToken: 'access', bytes: Buffer.from('mp4'),
     title: 'Clip', description: '', publishAt: null }, fetcher), /upload session/i);
   assert.equal(count, 1);
+});
+
+test('private and unlisted uploads use the selected YouTube visibility', async () => {
+  for (const privacyStatus of ['private', 'unlisted']) {
+    const fetcher = async (_url, request) => {
+      const metadata = JSON.parse(request.body);
+      assert.equal(metadata.status.privacyStatus, privacyStatus);
+      return new Response(null, { status: 200, headers: { Location: 'https://invalid.example/upload' } });
+    };
+    await assert.rejects(uploadToYouTube({ accessToken: 'access', bytes: Buffer.from('mp4'),
+      title: 'Clip', description: '', publishAt: null, privacyStatus }, fetcher), /upload session/i);
+  }
 });
 
 test('rejected upload initialization is safe to retry; uncertain completion is not', async () => {

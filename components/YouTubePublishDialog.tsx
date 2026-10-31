@@ -17,6 +17,7 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
   const [connection, setConnection] = useState<Status | null>(null);
   const [title, setTitle] = useState(clipTitle.slice(0, 100));
   const [description, setDescription] = useState('');
+  const [privacyStatus, setPrivacyStatus] = useState<'public' | 'private' | 'unlisted'>('public');
   const [mode, setMode] = useState<'now' | 'schedule'>('now');
   const [scheduledLocal, setScheduledLocal] = useState('');
   const [busy, setBusy] = useState(false);
@@ -66,7 +67,7 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
       }
       const response = await processingFetch('/api/youtube/publish', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestKey, clipPayload, title, description, publishAt }),
+        body: JSON.stringify({ requestKey, clipPayload, title, description, publishAt, privacyStatus }),
       });
       const data = await response.json();
       if (data.status === 'failed') localStorage.removeItem(keyName);
@@ -149,12 +150,21 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
         <p>Review the exact clip you edited. Klyp will render and upload it to your connected channel.</p>
         <label>Video title<input maxLength={100} value={title} onChange={event => setTitle(event.target.value)} /></label>
         <label>Description<textarea maxLength={5000} rows={3} value={description} onChange={event => setDescription(event.target.value)} /></label>
+        {mode === 'now' && <fieldset><legend>Who can watch?</legend>
+          {(['public', 'unlisted', 'private'] as const).map(option => <label key={option}>
+            <input type="radio" name="youtube-privacy" checked={privacyStatus === option}
+              onChange={() => setPrivacyStatus(option)} /> {option[0].toUpperCase() + option.slice(1)}
+          </label>)}
+        </fieldset>}
         <fieldset><legend>When should it go live?</legend>
           <label><input type="radio" name="youtube-publish-mode" checked={mode === 'now'} onChange={() => setMode('now')} /> Post now</label>
-          <label><input type="radio" name="youtube-publish-mode" checked={mode === 'schedule'} onChange={() => setMode('schedule')} /> Schedule</label>
+          <label><input type="radio" name="youtube-publish-mode" checked={mode === 'schedule'} onChange={() => {
+            setMode('schedule'); setPrivacyStatus('public');
+          }} /> Schedule</label>
         </fieldset>
         {mode === 'schedule' && <label>Publication time<input type="datetime-local" value={scheduledLocal}
           onChange={event => setScheduledLocal(event.target.value)} /></label>}
+        {mode === 'schedule' && <small>Scheduled videos stay private until YouTube publishes them publicly at your chosen time.</small>}
         <button className="youtube-dialog-primary" type="button" disabled={busy || !title.trim()} onClick={() => void submit()}>
           {busy ? 'Rendering and uploading…' : mode === 'schedule' ? 'Schedule on YouTube' : 'Post to YouTube'}
         </button>
