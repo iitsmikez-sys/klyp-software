@@ -13,6 +13,7 @@ const { chromium } = require('playwright');
     const box = await scrubber.boundingBox();
     await page.mouse.click(box.x + box.width / 3, box.y + box.height / 2);
     await page.waitForFunction(() => document.querySelector('video')?.currentTime > 5);
+    await page.getByRole('button', { name: 'Hook', exact: true }).click();
     const hook = page.getByLabel('Hook text');
     await hook.click();
     await hook.fill('AURA');

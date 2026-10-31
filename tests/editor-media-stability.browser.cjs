@@ -19,13 +19,17 @@ const url = process.env.EDITOR_TEST_URL || 'http://localhost:3133/dashboard/clip
         if (text.includes('Loading frames') || text.includes('Loading audio')) window.__mediaReloads.push(text);
       }).observe(timeline, { subtree: true, childList: true, characterData: true });
     });
+    await page.getByRole('button', { name: 'Hook', exact: true }).click();
     await page.getByLabel('Hook text').fill('AURA');
-    await page.getByLabel('Caption position').selectOption('center');
+    await page.getByRole('button', { name: 'Captions', exact: true }).click();
+    await page.locator('.editor-fine-tune summary').click();
+    await page.getByRole('button', { name: 'Center caption position' }).click();
     await page.waitForTimeout(500);
     const reloads = await page.evaluate(() => window.__mediaReloads.length);
     if (reloads) throw new Error(`Text changes restarted timeline media ${reloads} time(s)`);
     if (!await videoLane.isVisible()) throw new Error('Video lane disappeared');
     await page.screenshot({ path: 'C:/Users/Michael/Documents/Codex/2026-10-22/a/editor-preview/media-stable-after-text.png' });
+    await page.getByRole('button', { name: 'Layout', exact: true }).click();
     await page.getByText('Trim selected clip').click();
     const start = page.getByLabel('Selected start seconds');
     const nextStart = Number(await start.inputValue()) + 0.1;
