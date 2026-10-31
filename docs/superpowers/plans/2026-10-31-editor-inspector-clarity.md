@@ -1,6 +1,6 @@
 # Editor Inspector Clarity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make Klyp's editor right panel easy to understand by putting each editing task in one place.
 
@@ -34,11 +34,11 @@
 - Modify: `components/CaptionTemplatePicker.tsx`
 - Test: `tests/editor-redesign.browser.cjs`
 
-- [ ] Update the browser fixture to expect Captions / Hook / Layout and one caption setup flow; run it to see the old UI fail.
-- [ ] Move caption status, selected cue editing, template picker, and fine-tuning into Captions.
-- [ ] Put hook text, suggestions, and styles into Hook; keep suggestions collapsed by default.
-- [ ] Move contextual trim into Layout; leave export and draft callbacks unchanged.
-- [ ] Run the browser fixture and typecheck; fix only regressions tied to this task.
+- [x] Update the browser fixture to expect Captions / Hook / Layout and one caption setup flow; run it to see the old UI fail.
+- [x] Move caption status, selected cue editing, template picker, and fine-tuning into Captions.
+- [x] Put hook text, suggestions, and styles into Hook; keep suggestions collapsed by default.
+- [x] Move contextual trim into Layout; leave export and draft callbacks unchanged.
+- [x] Run the browser fixture and typecheck; fix only regressions tied to this task.
 
 ### Task 2: Calm presentation and responsive check
 
@@ -46,8 +46,8 @@
 - Modify: `components/clip-timeline-editor.css`
 - Test: `tests/editor-redesign.browser.cjs`
 
-- [ ] Add browser assertions for the compact picker, disclosure controls, and narrow viewport overflow; run them against the old UI first.
-- [ ] Tighten tab spacing, status, and disclosure styling. Avoid gradients, glows, and oversized cards.
-- [ ] Capture desktop and mobile screenshots and visually inspect them.
-- [ ] Run targeted browser tests, full unit suite, and typecheck.
-- [ ] Review the diff, commit on the isolated branch, and create a PR based on caption PR #63.
+- [x] Add browser assertions for the compact picker, disclosure controls, and narrow viewport overflow; run them against the old UI first.
+- [x] Tighten tab spacing, status, and disclosure styling. Avoid gradients, glows, and oversized cards.
+- [x] Capture desktop and mobile screenshots and visually inspect them.
+- [x] Run targeted browser tests, full unit suite, and typecheck.
+- [x] Review the diff, commit on the isolated branch, and create a PR based on caption PR #63.
