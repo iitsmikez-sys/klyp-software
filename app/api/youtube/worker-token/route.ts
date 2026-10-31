@@ -13,7 +13,7 @@ function reply(body: Record<string, unknown>, status: number): Response {
 
 /** Only Klyp's processing service may request a short-lived token for an active post. */
 export async function POST(req: Request): Promise<Response> {
-  const sharedSecret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const sharedSecret = process.env.YOUTUBE_WORKER_SIGNING_KEY;
   if (!sharedSecret) return reply({ error: 'YouTube publishing is not configured.' }, 503);
   let postId: string;
   try {

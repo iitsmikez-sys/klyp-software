@@ -25,7 +25,7 @@ export function workerTokenEndpoint(redirectUri: string): string {
 }
 
 export async function requestWorkerAccessToken(postId: string, fetcher: typeof fetch = fetch): Promise<string> {
-  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const secret = process.env.YOUTUBE_WORKER_SIGNING_KEY;
   const callback = process.env.YOUTUBE_REDIRECT_URI;
   if (!secret || !callback) throw new Error('YouTube publishing is not configured.');
   const timestamp = String(Date.now());

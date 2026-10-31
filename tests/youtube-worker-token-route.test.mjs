@@ -35,7 +35,7 @@ function setup({ validSignature = true, status = 'processing', connected = true 
   vm.runInNewContext(code, { exports, require: name => {
     if (!(name in modules)) throw new Error(`Unexpected import ${name}`);
     return modules[name];
-  }, process: { env: { SUPABASE_SERVICE_ROLE_KEY: 'shared-secret', DEPLOYMENT_TARGET: 'processing' } }, Request, Response, JSON, console });
+  }, process: { env: { YOUTUBE_WORKER_SIGNING_KEY: 'shared-secret', DEPLOYMENT_TARGET: 'processing' } }, Request, Response, JSON, console });
   const timestamp = String(Date.now());
   const request = new Request('https://www.klyp.world/api/youtube/worker-token', {
     method: 'POST', headers: { 'x-klyp-token-timestamp': timestamp,

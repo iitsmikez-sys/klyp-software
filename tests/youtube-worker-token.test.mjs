@@ -32,9 +32,9 @@ test('broker endpoint uses only the configured Klyp callback origin', () => {
 });
 
 test('worker requests a token for the exact post with a signed, uncached request', async () => {
-  const previousSecret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const previousSecret = process.env.YOUTUBE_WORKER_SIGNING_KEY;
   const previousRedirect = process.env.YOUTUBE_REDIRECT_URI;
-  process.env.SUPABASE_SERVICE_ROLE_KEY = key;
+  process.env.YOUTUBE_WORKER_SIGNING_KEY = key;
   process.env.YOUTUBE_REDIRECT_URI = 'https://www.klyp.world/api/youtube/callback';
   try {
     const token = await requestWorkerAccessToken(postId, async (url, init) => {
@@ -47,8 +47,8 @@ test('worker requests a token for the exact post with a signed, uncached request
     });
     assert.equal(token, 'short-lived');
   } finally {
-    if (previousSecret === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousSecret;
+    if (previousSecret === undefined) delete process.env.YOUTUBE_WORKER_SIGNING_KEY;
+    else process.env.YOUTUBE_WORKER_SIGNING_KEY = previousSecret;
     if (previousRedirect === undefined) delete process.env.YOUTUBE_REDIRECT_URI;
     else process.env.YOUTUBE_REDIRECT_URI = previousRedirect;
   }
