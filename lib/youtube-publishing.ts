@@ -1,9 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-type Subscription = { tier: string; stripe_subscription_id: string | null };
+import { hasProAccess, type Profile } from './tier.ts';
+
+type Subscription = Pick<Profile, 'tier' | 'stripe_subscription_id' | 'complimentary_pro'>;
 
 export function isConfirmedPro(profile: Subscription | null | undefined): boolean {
-  return profile?.tier === 'pro' && !!profile.stripe_subscription_id;
+  return !!profile && hasProAccess(profile);
 }
 
 export function canRetryUncertainPost(post: {
