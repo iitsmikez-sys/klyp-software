@@ -65,7 +65,7 @@ function ClipsPageContent() {
         setLoading(false);
       });
   }, []);
-  const unconfirmedIds = clips.filter(c => c.archive_status !== 'stored' && c.archive_status !== 'unavailable').map(c => c.id).join(',');
+  const unconfirmedIds = clips.filter(c => !['stored', 'unavailable', 'expired'].includes(c.archive_status ?? '')).map(c => c.id).join(',');
   useEffect(() => {
     if (!unconfirmedIds) return;
     let active = true;

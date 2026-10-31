@@ -11,6 +11,9 @@ import path from "path";
 import { ffmpegLocationArgs, isDiskFullError, resolveBin, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
 import { ensureVideoSegment, hasVideoStream } from "@/lib/video-segment";
 import { locateUploadedFile, uploadDirectory } from "@/lib/upload-location";
+import { r2Storage } from "@/lib/r2";
+import { r2UploadRepository } from "@/lib/r2-upload-store";
+import { R2_SCRATCH_DIR, materializeR2Upload } from "@/lib/r2-upload-source";
 
 export const CACHE_DIR = path.join(tmpdir(), "klyp-videos");
 /** Set to an absolute mounted volume path on the processing service. */
@@ -60,17 +63,26 @@ export function isUploadRef(url: string): boolean {
 }
 
 /** Find the stored file for an upload id — null if missing/expired. */
-export async function findUploadedVideo(uploadId: string): Promise<string | null> {
-  return locateUploadedFile(uploadId, [UPLOAD_DIR, CACHE_DIR]);
+export async function findUploadedVideo(uploadId: string, userId?: string): Promise<string | null> {
+  const legacy = await locateUploadedFile(uploadId, [UPLOAD_DIR, CACHE_DIR]);
+  if (legacy) return legacy;
+  const r2 = r2Storage();
+  if (!r2) return null;
+  // A new R2 upload is never exposed without its owner. Callers dealing with
+  // source URLs must pass the user who passed their clip/history access gate.
+  if (!userId) throw new Error('Uploaded VOD owner was not verified.');
+  const row = await r2UploadRepository.get(uploadId);
+  if (!row || row.userId !== userId || row.status !== 'ready') return null;
+  return materializeR2Upload(row, r2, R2_SCRATCH_DIR);
 }
 
 /**
  * Resolve a VOD reference (https URL or "upload:<id>") to a local file path,
  * downloading the URL if it isn't cached yet.
  */
-export async function resolveSource(ref: string): Promise<string> {
+export async function resolveSource(ref: string, userId?: string): Promise<string> {
   if (isUploadRef(ref)) {
-    const p = await findUploadedVideo(ref.slice(UPLOAD_PREFIX.length));
+    const p = await findUploadedVideo(ref.slice(UPLOAD_PREFIX.length), userId);
     if (!p) throw new Error("Uploaded file is no longer available — upload your VOD again.");
     return p;
   }
@@ -317,10 +329,11 @@ export async function resolveSourceSegment(
    */
   maxHeight = 1080,
   /** Optional tighter fetch budget for best-effort callers such as visual checks. */
-  maxRunMs = 10 * 60_000
+  maxRunMs = 10 * 60_000,
+  userId?: string
 ): Promise<ResolvedSegment> {
   // Uploads are already local — nothing to fetch, timeline is the original.
-  if (isUploadRef(ref)) return { path: await resolveSource(ref), offsetSeconds: 0 };
+  if (isUploadRef(ref)) return { path: await resolveSource(ref, userId), offsetSeconds: 0 };
 
   const key = createHash("sha1").update(ref).digest("hex");
   const fullPath = path.join(CACHE_DIR, `${key}.mp4`);

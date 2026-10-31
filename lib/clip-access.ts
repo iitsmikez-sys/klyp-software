@@ -13,9 +13,10 @@ export async function canProcessClip(
   const requested = { source_key: sourceKey(url), start_seconds: start, end_seconds: end };
   if (clipId) {
     const { data, error } = await admin.from("clips")
-      .select("url,start_seconds,end_seconds")
+      .select("url,start_seconds,end_seconds,archive_status")
       .eq("id", clipId).eq("user_id", userId).maybeSingle();
     if (error) throw error;
+    if (data?.archive_status === 'expired') return false;
     if (data && withinClipWindow(requested, {
       source_key: sourceKey(data.url), start_seconds: data.start_seconds, end_seconds: data.end_seconds,
     })) return true;

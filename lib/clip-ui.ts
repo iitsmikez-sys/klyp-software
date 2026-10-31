@@ -23,6 +23,8 @@ export interface SavedClip {
    * "failed" mid-archive. Null on clips from before migration 008.
    */
   archive_status?: string | null;
+  /** Set only for newly confirmed R2 backups. Older clips are grandfathered. */
+  media_expires_at?: string | null;
   /** Five 0-20 dimension scores — null on clips saved before migration 009. */
   dim_hype?: number | null;
   dim_emotion?: number | null;
@@ -87,7 +89,7 @@ export function clipDimensions(
  * says so instead of offering a preview or export that is certain to fail.
  */
 export function footageGone(clip: { archive_status?: string | null }): boolean {
-  return clip.archive_status === "unavailable";
+  return clip.archive_status === "unavailable" || clip.archive_status === "expired";
 }
 
 /** Badge colors per clip type — keep in sync with AnalyzePanel.

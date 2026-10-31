@@ -1,0 +1,35 @@
+name: Release candidate verification
+
+on:
+  push:
+    branches:
+      - feat/vod-discovery-quality
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: local-build-placeholder
+      DEPLOYMENT_TARGET: frontend
+      R2_ENABLED: '0'
+      R2_WRITES_ENABLED: '0'
+      STRIPE_SECRET_KEY: ''
+      STRIPE_PRICE_PRO: ''
+      STRIPE_WEBHOOK_SECRET: ''
+      ANTHROPIC_API_KEY: ''
+      ASSEMBLYAI_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -416,7 +416,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         const archived = await getArchivedClip(clipId, profile.id);
         if (archived?.masterPath && archived.status === "stored") {
           clipSeekRange(start, end, archived.originalStartSeconds, archived.originalEndSeconds);
-          const bytes = await readArchivedObject(archived.masterPath);
+          const bytes = await readArchivedObject(archived.masterPath, archived.provider);
           if (bytes) {
             archivedMaster = path.join(CACHE_DIR, `master-${archived.id}.mp4`);
             await mkdir(CACHE_DIR, { recursive: true });
@@ -435,7 +435,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // seek forward within it instead of treating the edited start as zero.
         sourcePath = archivedMaster;
       } else {
-        const resolved = await resolveSourceSegment(url, start, end);
+        const resolved = await resolveSourceSegment(url, start, end, 1080, 10 * 60_000, profile.id);
         sourcePath = resolved.path;
         offsetSeconds = resolved.offsetSeconds;
         log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);

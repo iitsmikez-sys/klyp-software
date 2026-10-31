@@ -47,6 +47,7 @@ test('automatic clipping skips an 11-hour VOD without paid work or a Sparks debi
       isAnthropicCreditBalanceError: () => false, pauseAutomaticClipping: async () => {} },
     '@/lib/creator-feedback-data': { preferencesForUser: async () => '' },
     '@/lib/clip-archive-worker': { processClipArchiveJobs: async () => {} },
+    '@/lib/r2-maintenance': { processR2Maintenance: async () => {} },
     '@/lib/job-queue': { runQueued: (_label, fn) => fn() },
     '@/lib/sparks': { estimateSparks: () => 50, clipCharge: () => 0,
       CLIP_COUNT_COST: { 5: 20 }, DEFAULT_CLIP_COUNT: 5 },

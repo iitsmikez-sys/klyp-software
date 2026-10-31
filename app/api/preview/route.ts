@@ -140,7 +140,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (clipId) {
     const archived = await getArchivedClip(clipId, profile.id);
     if (archived?.proxyPath && archived.status === "stored") {
-      const bytes = await readArchivedObject(archived.proxyPath);
+      const bytes = await readArchivedObject(archived.proxyPath, archived.provider);
       if (bytes) {
         log("served archived proxy", archived.proxyPath, `${(bytes.byteLength / 1e6).toFixed(1)}MB`);
         return new NextResponse(new Uint8Array(bytes), {
@@ -171,7 +171,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       // below must seek relative to it (a segment file starts at 0).
       // 480p is plenty of source to downscale from — see resolveSourceSegment's
       // maxHeight doc for why fetching full 1080p here just wastes time.
-      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 480);
+      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 480, 10 * 60_000, profile.id);
       log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
 
       const t1 = Date.now();
