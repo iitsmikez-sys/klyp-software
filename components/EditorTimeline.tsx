@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { outputDuration, type CaptionCue, type SourceSegment, type ResolvedCutawaySpan, type ResolvedInsertSpan } from '@/lib/editor-timeline';
 import { timeToPixels, type EditorThumbnail } from '@/lib/editor-preview';
+import { groupCaptionCues } from '@/lib/editor-caption-groups';
 import type { FocusSpan } from '@/lib/editor-focus';
 export type TimelineSelection = {type:'video' | 'caption' | 'cutaway' | 'insert'; id:string} | null;
 export type EditorTimelineProps = {
@@ -25,6 +26,8 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
  const cancelTrim=useRef<(() => void) | null>(null);
  useEffect(()=>()=>cancelTrim.current?.(),[]);
  const duration=outputDuration(segments)+inserts.reduce((sum,item)=>sum+(item.end_ms-item.start_ms)/1000,0), scale=timeToPixels(1,availableWidth/Math.max(duration,.1),zoom), width=duration*scale;
+ const captionGroups=groupCaptionCues(captions,zoom);
+ const selectedCaptionGroup=selection?.type==='caption' ? captionGroups.find(group=>group.cues.some(cue=>cue.id===selection.id)) : undefined;
  const rulerStep=[1,2,5,10,15,30,60].find(step=>step*scale>=65)??60;
  const position=(event:React.PointerEvent)=>{const rect=track.current!.getBoundingClientRect();return Math.max(0,Math.min(duration,(event.clientX-rect.left)/scale));};
  const seek=(event:React.PointerEvent)=>{onSeek(position(event));};
@@ -68,6 +71,7 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
     </fieldset>)}
    </div></details>}
    <label>Zoom <input aria-label="Timeline zoom" type="range" min="1" max="4" step="0.25" value={zoom} onChange={e=>setZoom(Number(e.target.value))}/></label></div>
+  {selectedCaptionGroup&&<div className="editor-caption-detail" aria-label="Selected caption words"><strong>Words</strong><div className="editor-caption-words">{selectedCaptionGroup.cues.map(cue=><button key={cue.id} type="button" aria-pressed={selection?.type==='caption'&&selection.id===cue.id} title={`${(cue.start_ms/1000).toFixed(1)}s – ${(cue.end_ms/1000).toFixed(1)}s`} onClick={()=>{onSelect({type:'caption',id:cue.id});onSeek(cue.start_ms/1000);}}>{cue.text}</button>)}</div><button type="button" className="editor-caption-detail-close" aria-label="Close caption words" onClick={()=>onSelect(null)}>Done</button></div>}
   <div aria-label="Short segment controls" className="editor-short-segments">
    {segments.filter(s=>(s.end_seconds-s.start_seconds)*scale<44||s.end_seconds-s.start_seconds<1.1).map((s,index)=><fieldset key={s.id}>
     <legend>Short clip {index+1}</legend>
@@ -91,7 +95,7 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
      </button><button type="button" aria-label={`Trim end of segment ${s.id}`} className="editor-trim-handle" onPointerDown={e=>trim(e,s,'end')} onKeyDown={e=>handleKey(e,s,'end')}/>
     </div>{after.map(item=><button key={item.id} type="button" style={blockStyle(item.start_ms/1000,item.end_ms/1000)} className="editor-insert-block" aria-label={`Select inserted media ${item.id}`} aria-pressed={selection?.type==='insert'&&selection.id===item.id} onClick={()=>{onSelect({type:'insert',id:item.id});onSeek(item.start_ms/1000);}}>Imported media <small>{((item.end_ms-item.start_ms)/1000).toFixed(1)}s</small></button>)}{index<segments.length-1&&<button type="button" data-editor-insert-after={s.id} className="editor-insert-target" style={{left:(offset-.01)*scale}} aria-label={`Insert media after clip ${index+1}`}>+</button>}</Fragment>;})}
     </div>
-    {captions.length>0&&<div aria-label="Caption lane" className="editor-lane">{captions.map(c=><button key={c.id} type="button" style={blockStyle(c.start_ms/1000,c.end_ms/1000)} className="editor-caption-block" aria-pressed={selection?.type==='caption' && selection.id===c.id} onClick={()=>onSelect({type:'caption',id:c.id})}>{c.text}</button>)}</div>}
+    {captionGroups.length>0&&<div aria-label="Caption lane" className="editor-lane editor-caption-lane">{captionGroups.map((group,index)=><button key={group.id} type="button" style={blockStyle(group.start_ms/1000,group.end_ms/1000)} className="editor-caption-group" aria-label={`Open caption phrase ${index+1}: ${group.text}`} title={group.text} aria-pressed={selectedCaptionGroup?.id===group.id} onClick={()=>{onSelect({type:'caption',id:group.cues[0].id});onSeek(group.start_ms/1000);}}><span>{group.text}</span></button>)}</div>}
     {(!!peaks?.length||mediaLoading)&&<div aria-label="Audio lane" className="editor-lane editor-audio-lane">{peaks?.length?<svg width={width} height="26" role="img" aria-label="Source audio waveform" preserveAspectRatio="none" viewBox={`0 0 ${peaks.length} 2`}><path className="editor-waveform-center" d={`M0 1 H${peaks.length}`}/><path className="editor-waveform-envelope" d={`M0 1 ${peaks.map((p,i)=>`L${i+.5} ${(1-p*.28).toFixed(3)}`).join(' ')} L${peaks.length} 1 ${peaks.map((_,i)=>`L${peaks.length-i-.5} ${(1+peaks[peaks.length-i-1]*.28).toFixed(3)}`).join(' ')} Z`}/></svg>:<span>{mediaLoading?'Loading audio…':'Waveform unavailable'}</span>}</div>}
     {!!hook&&<div aria-label="Hook lane" className="editor-lane">{hook && <div className="editor-hook-block" style={blockStyle(0,Math.min(3,duration))}>{hook}</div>}</div>}
     <div aria-hidden="true" className="editor-playhead" style={{left:outputTime*scale}}><span style={{transform:outputTime*scale<24?'none':outputTime*scale>width-24?'translateX(-100%)':'translateX(-50%)'}}>{Math.floor(outputTime/60).toString().padStart(2,'0')}:{Math.floor(outputTime%60).toString().padStart(2,'0')}</span></div>
