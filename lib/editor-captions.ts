@@ -1,8 +1,33 @@
 import type { ClipEditDraftV2, ClipEditDraftV3 } from "./clip-edit-draft.ts";
 import type { SavedClip } from "./clip-ui.ts";
+import type { CaptionStyle } from "./clips.ts";
 import { buildCaptionCues, HOOK_DURATION_MS, normalizeTimedCues } from "./captions.ts";
 import { outputSpansForSourceCue, outputDuration, type CaptionCue } from "./editor-timeline.ts";
 export { captionAppearance } from "./captions.ts";
+
+function automaticCaptionCues(draft: ClipEditDraftV3, clip: SavedClip, style: CaptionStyle): CaptionCue[] {
+ const words = draft.words ?? clip.words ?? [];
+ return buildCaptionCues(words, clip.start_seconds * 1000, clip.end_seconds * 1000,
+  style === "KLYP" || style === "SPARK" ? 1 : 4)
+  .map((cue, index) => ({ id: `auto-${index}`, text: cue.text,
+   start_ms: cue.startMs + clip.start_seconds * 1000,
+   end_ms: cue.endMs + clip.start_seconds * 1000 }));
+}
+
+/** Regroup generated cues when switching between phrase and word templates; keep hand edits intact. */
+export function changeCaptionTemplate(draft: ClipEditDraftV3, clip: SavedClip, style: CaptionStyle): ClipEditDraftV3 {
+ if (style === draft.caption_style) return draft;
+ const current = draft.caption_cues;
+ const generated = automaticCaptionCues(draft, clip, draft.caption_style);
+ const untouched = current?.length && current.length === generated.length &&
+  current.every((cue, index) => cue.id === generated[index].id && cue.text === generated[index].text &&
+   cue.start_ms === generated[index].start_ms && cue.end_ms === generated[index].end_ms);
+ const caption_color = style === "KLYP" || style === "SPARK" || style === "KEYWORD" ? "green"
+  : style === "PULSE" || style === "BOUNCE" || style === "COMIC" ? "yellow"
+  : style === "GLOW" ? "pink" : "white";
+ return { ...draft, caption_style: style, caption_color,
+  caption_cues: untouched ? automaticCaptionCues(draft, clip, style) : current };
+}
 
 /** Source anchors remain in the draft; only this resolved view uses edited time. */
 export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip): CaptionCue[] {
