@@ -14,6 +14,7 @@
  *   5. Stream the MP4 back as a file download
  */
 import { NextRequest, NextResponse } from "next/server";
+import { hasProAccess } from "@/lib/tier";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -319,7 +320,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
   }
   // "Pro" requires a real, confirmed subscription — see SparksProvider.tsx for
   // why the raw tier flag alone isn't trusted (it can drift from reality).
-  const isPro = profile.tier === "pro" && !!profile.stripe_subscription_id;
+  const isPro = hasProAccess(profile);
   const sparksBalance = profile.sparks;
 
   format = resolveExportFormat(format, isPro);

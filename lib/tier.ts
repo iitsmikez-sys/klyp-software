@@ -15,5 +15,11 @@ export type Profile = {
   sparks_reset_at: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  /** Server-managed Auth metadata; never derived from user_metadata. */
+  complimentary_pro?: boolean;
   vertical_layout?: import("./vertical-layout").VerticalLayoutV1 | null;
 };
+
+export function hasProAccess(profile: Pick<Profile, "tier" | "stripe_subscription_id" | "complimentary_pro">): boolean {
+  return profile.tier === "pro" && (!!profile.stripe_subscription_id || profile.complimentary_pro === true);
+}

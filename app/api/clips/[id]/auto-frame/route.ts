@@ -7,6 +7,7 @@ import { bearerToken, getProfileFromToken } from '@/lib/profile-token';
 import { acquireUserProcessingSlot } from '@/lib/clip-access';
 import { parseFrameSuggestion, readBoundedFrameBody, validateFrameSamples } from '@/lib/auto-frame';
 import { withCors, corsPreflight } from '@/lib/cors';
+import { hasProAccess } from '@/lib/tier';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -28,7 +29,7 @@ async function handle(req: NextRequest, context: { params: Promise<{ id: string 
   let profile;
   try { profile = await getProfileFromToken(token); } catch { return NextResponse.json({ error: 'Could not check your account.' }, { status: 500 }); }
   if (!profile) return NextResponse.json({ error: 'Sign in to suggest a frame.' }, { status: 401 });
-  if (profile.tier !== 'pro' || !profile.stripe_subscription_id) return NextResponse.json({ error: 'Framing suggestions require a confirmed Pro subscription.' }, { status: 403 });
+  if (!hasProAccess(profile)) return NextResponse.json({ error: 'Framing suggestions require Pro access.' }, { status: 403 });
   const { id } = await context.params;
   const { data: clip, error: clipError } = await createAdminClient().from('clips').select('id').eq('id', id).eq('user_id', profile.id).maybeSingle();
   if (clipError) return NextResponse.json({ error: 'Could not check this clip.' }, { status: 500 });

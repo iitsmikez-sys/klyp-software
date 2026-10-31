@@ -12,7 +12,7 @@ export async function getProfile(): Promise<Profile | null> {
   if (!user) return null;
   const { data, error } = await supabase.rpc("get_profile");
   if (error) throw new Error(`Failed to load profile: ${error.message}`);
-  return data as Profile;
+  return { ...(data as Profile), complimentary_pro: user.app_metadata?.klyp_complimentary_pro === true };
 }
 
 /** Atomically deduct Sparks for the logged-in user. Returns the new balance. */

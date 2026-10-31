@@ -41,7 +41,7 @@ export async function getProfileFromToken(token: string): Promise<Profile | null
   if (userError || !user) return null;
   const { data, error } = await supabase.rpc("get_profile");
   if (error) throw new Error(`Failed to load profile: ${error.message}`);
-  return data as Profile;
+  return { ...(data as Profile), complimentary_pro: user.app_metadata?.klyp_complimentary_pro === true };
 }
 
 export async function consumeSparksFromToken(token: string, amount: number, reference?: string): Promise<number> {

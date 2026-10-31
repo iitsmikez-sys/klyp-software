@@ -20,6 +20,7 @@ import { EditorAssetError } from './editor-assets.ts';
 import { resolveCutawaySpans } from './editor-timeline.ts';
 import { layoutForFocus, resolveFocusSpans, splitCuesForFocus } from './editor-focus.ts';
 import * as cutawayRenderer from './editor-cutaway-render.ts';
+import { hasProAccess } from './tier.ts';
 const legacyCode=ts.transpileModule(readFileSync(new URL('./legacy-clip-export-route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
 const routeCode=ts.transpileModule(readFileSync(new URL('../app/api/clip/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
 const clip={id:'owned',url:'https://twitch.tv/videos/123',title:'Original moment',start_seconds:100,end_seconds:110,words:null,edit_draft:null};
@@ -33,6 +34,7 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  class NextResponse extends Response{static json(body:unknown,init?:ResponseInit){return new NextResponse(JSON.stringify(body),init);}}
  const modules:Record<string,unknown>={
  'next/server':{NextResponse},'fs/promises':fs,os:{tmpdir},path,
+ '@/lib/tier':{hasProAccess},
  '@/lib/supabase/admin':{createAdminClient:()=>({from:()=>db})},
  '@/lib/editor-render':{validateEditorExportRequest,renderKeptSegments:async(...args:any[])=>{record('render',...args);if(options.failRender)throw new Error('render failed');return {duration:2,hasAudio:true};}},
  '@/lib/editor-timeline':{resolveCutawaySpans},
