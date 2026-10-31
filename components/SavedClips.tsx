@@ -23,7 +23,7 @@ export default function SavedClips() {
       .then(({ data }) => { if (active) { setClips(data ?? []); setLoading(false); } });
     return () => { active = false; };
   }, []);
-  const pendingIds = clips.filter(c => c.archive_status !== 'stored' && c.archive_status !== 'unavailable').map(c => c.id).join(',');
+  const pendingIds = clips.filter(c => !['stored', 'unavailable', 'expired'].includes(c.archive_status ?? '')).map(c => c.id).join(',');
   useEffect(() => {
     if (!pendingIds) return;
     let active = true;

@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
+import { uploadFileToR2 } from "@/lib/r2-browser-upload";
 
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
@@ -281,6 +282,26 @@ export default function AnalyzePanel() {
 
     setUploadedFile(null);
     setUploadPct(0);
+    // R2 is opt-in on the processing service. A connection/configuration
+    // failure must not silently route a large upload back to Railway disk.
+    try {
+      const capabilities = await processingFetch('/api/upload/r2');
+      if (!capabilities.ok) throw new Error('Upload storage is unavailable. Try again shortly.');
+      const { enabled } = await capabilities.json();
+      if (enabled) {
+        const data = await uploadFileToR2(file, processingFetch, fetch, localStorage, setUploadPct);
+        setUploadedFile({ id: data.uploadId, name: file.name, size: file.size,
+          durationSeconds: data.durationSeconds, sparks: data.sparks });
+        setEstimatedSparks(data.sparks);
+        setPreviewDuration(data.durationSeconds);
+        setUploadPct(null);
+        return;
+      }
+    } catch (error) {
+      setUploadPct(null);
+      setFileError(error instanceof Error ? error.message : 'Upload failed.');
+      return;
+    }
     // XMLHttpRequest instead of fetch — it reports upload progress. Not a
     // fetch call, so it needs the processing-service URL + auth token attached
     // by hand rather than going through processingFetch().
@@ -1079,7 +1100,7 @@ export default function AnalyzePanel() {
                     : "border-border bg-surface-2 text-foreground-muted hover:border-subtle hover:text-foreground"
                 }`}
               >
-                <span className="block">{n} clips</span>
+                <span className="block">{n === MAX_CLIP_COUNT ? `${n} MAX clips` : `${n} clips`}</span>
                 <span className="mt-0.5 block font-normal opacity-85">{CLIP_COUNT_COST[n]} Sparks <span aria-hidden="true" className="ml-0.5 text-[11px] text-amber-400">⚡</span></span>
               </button>
             ))}

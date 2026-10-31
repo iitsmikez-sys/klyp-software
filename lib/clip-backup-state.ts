@@ -10,6 +10,7 @@ export function backupState(status: string | null | undefined, source?: string):
     case "failed": return { kind: "failed", message: "Backup failed · clip not protected" };
     case "unavailable": return { kind: "unavailable", message: source?.startsWith('upload:')
       ? "Upload lost before backup · reupload VOD" : "Footage unavailable · backup not saved" };
+    case "expired": return { kind: "unavailable", message: "Saved copy expired · footage unavailable" };
     default: return { kind: "unconfirmed", message: "Backup not confirmed" };
   }
 }

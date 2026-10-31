@@ -387,7 +387,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
               Math.abs(end - archived.originalEndSeconds) > 0.001) {
             throw new RangeError("Edited clip does not match the saved original.");
           }
-          const bytes = await readArchivedObject(archived.masterPath);
+          const bytes = await readArchivedObject(archived.masterPath, archived.provider);
           if (bytes) {
             archivedMaster = path.join(CACHE_DIR, `master-${archived.id}.mp4`);
             await mkdir(CACHE_DIR, { recursive: true });
@@ -404,7 +404,7 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
         sourcePath = archivedMaster;
         offsetSeconds = archivedClipTiming(start).sourceStart;
       } else {
-        const resolved = await resolveSourceSegment(url, start, end);
+        const resolved = await resolveSourceSegment(url, start, end, 1080, 10 * 60_000, profile.id);
         sourcePath = resolved.path;
         offsetSeconds = resolved.offsetSeconds;
         log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);

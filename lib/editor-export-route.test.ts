@@ -63,7 +63,8 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
 }
 test('source fallback uses owned URL/envelope, server-resolved cues and zero-based final cut without charge',async()=>{
  const {response,calls}=await exportRoute();assert.equal(response.status,200);
- assert.deepEqual(calls.find(c=>c.name==='download')?.args,[clip.url,101,109]);
+ assert.deepEqual(calls.find(c=>c.name==='download')?.args.slice(0,3),[clip.url,101,109]);
+ assert.equal(calls.find(c=>c.name==='download')?.args[5],'user');
  assert.ok(calls.some(c=>c.name==='eq'&&c.args[0]==='user_id'&&c.args[1]==='user'));
  assert.deepEqual(calls.find(c=>c.name==='render')?.args.slice(0,3),['/source.mp4',100,draft.segments]);
  const cues=calls.find(c=>c.name==='cues')!.args;assert.deepEqual(cues[0].map((c:any)=>[c.start_ms,c.end_ms,c.text]),[[500,1000,'corrected'],[1000,1500,'corrected']]);

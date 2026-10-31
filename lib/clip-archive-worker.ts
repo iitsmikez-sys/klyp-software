@@ -10,6 +10,9 @@ import { CLIP_BUCKET } from "@/lib/clip-archive";
 import { runQueued } from "@/lib/job-queue";
 import { archiveUsageEvent } from "@/lib/analysis-meter";
 import { vodSourceKey } from "@/lib/vod-source";
+import { r2Storage } from "@/lib/r2";
+import { archiveClipFilesToR2 } from "@/lib/r2-clip-archive";
+import { recordR2UsageEvent } from "@/lib/r2-usage";
 
 const MAX_OBJECT_BYTES = 50 * 1024 * 1024;
 type ArchiveJob = {
@@ -17,11 +20,11 @@ type ArchiveJob = {
   start_seconds: number; end_seconds: number; attempts: number;
 };
 
-async function makeAssets(job: ArchiveJob, dir: string) {
+async function makeAssets(job: ArchiveJob, dir: string, usesR2: boolean) {
   const sourceStart = Math.floor(job.start_seconds);
   const sourceEnd = Math.ceil(job.end_seconds);
   const { path: source, offsetSeconds } = await resolveSourceSegment(
-    job.url, sourceStart, sourceEnd, 1080
+    job.url, sourceStart, sourceEnd, 1080, 10 * 60_000, job.user_id
   );
   const start = Math.max(0, sourceStart - offsetSeconds);
   const duration = sourceEnd - sourceStart;
@@ -39,8 +42,8 @@ async function makeAssets(job: ArchiveJob, dir: string) {
   await encode(master, 1080, 25);
   // Supabase's Free tier rejects objects over 50 MB. Retry a compact master
   // instead of leaving a long clip permanently unarchived.
-  if ((await stat(master)).size > MAX_OBJECT_BYTES) await encode(master, 720, 30);
-  if ((await stat(master)).size > MAX_OBJECT_BYTES) await encode(master, 720, 30, "1500k");
+  if (!usesR2 && (await stat(master)).size > MAX_OBJECT_BYTES) await encode(master, 720, 30);
+  if (!usesR2 && (await stat(master)).size > MAX_OBJECT_BYTES) await encode(master, 720, 30, "1500k");
   await encode(proxy, 540, 28);
   await run(resolveBin("ffmpeg"), [
     "-ss", String(start + duration / 2), "-i", source,
@@ -52,29 +55,50 @@ async function makeAssets(job: ArchiveJob, dir: string) {
 async function archiveOne(job: ArchiveJob): Promise<void> {
   const startedAt = Date.now();
   const admin = createAdminClient();
+  // Reads can stay on during a write rollback so existing R2 archives remain
+  // playable. New writes require a separate explicit activation.
+  const r2 = process.env.R2_WRITES_ENABLED === '1' ? r2Storage() : null;
+  if (process.env.R2_WRITES_ENABLED === '1' && !r2) {
+    throw new Error('R2 writes enabled without private R2 configuration.');
+  }
   const dir = await mkdtemp(path.join(tmpdir(), "klyp-archive-"));
   try {
-    const assets = await runQueued(`archive:${job.clip_id}`, () => makeAssets(job, dir));
+    const assets = await runQueued(`archive:${job.clip_id}`, () => makeAssets(job, dir, !!r2));
     const base = `${job.user_id}/${job.clip_id}`;
     let bytes = 0;
-    for (const [name, local, contentType] of [
-      ["master.mp4", assets.master, "video/mp4"],
-      ["proxy.mp4", assets.proxy, "video/mp4"],
-      ["poster.jpg", assets.poster, "image/jpeg"],
-    ]) {
-      const data = await readFile(local);
-      if (data.byteLength > MAX_OBJECT_BYTES) throw new Error(`${name} exceeds the media storage size limit`);
-      const { error } = await admin.storage.from(CLIP_BUCKET).upload(`${base}/${name}`, data,
-        { contentType, upsert: true });
+    if (r2) {
+      const manifest = await archiveClipFilesToR2(job.user_id, job.clip_id, assets, r2, dir);
+      bytes = manifest.reduce((sum, file) => sum + file.bytes, 0);
+      for (const file of manifest) {
+        await recordR2UsageEvent({ eventKey: `archive:${job.clip_id}:${file.name}:write`,
+          userId: job.user_id, objectKey: file.key, operation: 'archive_write', bytes: file.bytes });
+        await recordR2UsageEvent({ eventKey: `archive:${job.clip_id}:${file.name}:verify`,
+          userId: job.user_id, objectKey: file.key, operation: 'archive_verify_read', bytes: file.bytes });
+      }
+      const { error } = await admin.rpc('finish_clip_archive_job_r2', {
+        p_clip_id: job.clip_id, p_manifest: manifest,
+      });
       if (error) throw error;
-      bytes += data.byteLength;
+    } else {
+      for (const [name, local, contentType] of [
+        ["master.mp4", assets.master, "video/mp4"],
+        ["proxy.mp4", assets.proxy, "video/mp4"],
+        ["poster.jpg", assets.poster, "image/jpeg"],
+      ]) {
+        const data = await readFile(local);
+        if (data.byteLength > MAX_OBJECT_BYTES) throw new Error(`${name} exceeds the media storage size limit`);
+        const { error } = await admin.storage.from(CLIP_BUCKET).upload(`${base}/${name}`, data,
+          { contentType, upsert: true });
+        if (error) throw error;
+        bytes += data.byteLength;
+      }
+      const { error } = await admin.rpc("finish_clip_archive_job", {
+        p_clip_id: job.clip_id,
+        p_master: `${base}/master.mp4`, p_proxy: `${base}/proxy.mp4`,
+        p_poster: `${base}/poster.jpg`, p_bytes: bytes,
+      });
+      if (error) throw error;
     }
-    const { error } = await admin.rpc("finish_clip_archive_job", {
-      p_clip_id: job.clip_id,
-      p_master: `${base}/master.mp4`, p_proxy: `${base}/proxy.mp4`,
-      p_poster: `${base}/poster.jpg`, p_bytes: bytes,
-    });
-    if (error) throw error;
     console.log("[clip-archive] stored", job.clip_id, bytes);
     console.log(`[analysis-archive] ${JSON.stringify(archiveUsageEvent(vodSourceKey(job.url), job.clip_id, bytes, Date.now() - startedAt))}`);
   } finally {

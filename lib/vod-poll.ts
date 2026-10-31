@@ -24,6 +24,7 @@ import { vodSourceKey } from "@/lib/vod-source";
 import { anthropicCreditGate, isAnthropicCreditBalanceError, pauseAutomaticClipping } from "@/lib/anthropic-credit";
 import { preferencesForUser } from "@/lib/creator-feedback-data";
 import { processClipArchiveJobs } from "@/lib/clip-archive-worker";
+import { processR2Maintenance } from "@/lib/r2-maintenance";
 import { runQueued } from "@/lib/job-queue";
 import { estimateSparks, clipCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
 import type { Profile } from "@/lib/tier";
@@ -322,8 +323,12 @@ export function startAutoClipWorker(): void {
   setInterval(() => {
     processClipArchiveJobs().catch((err) => log("processClipArchiveJobs crashed", err));
   }, JOB_INTERVAL_MS);
+  setInterval(() => {
+    processR2Maintenance().catch((err) => log("processR2Maintenance crashed", err instanceof Error ? err.name : 'error'));
+  }, 15 * 60_000);
 
   processPendingChecks().catch((err) => log("processPendingChecks crashed", err));
   processAutoVodJobs().catch((err) => log("processAutoVodJobs crashed", err));
   processClipArchiveJobs().catch((err) => log("processClipArchiveJobs crashed", err));
+  processR2Maintenance().catch((err) => log("processR2Maintenance crashed", err instanceof Error ? err.name : 'error'));
 }

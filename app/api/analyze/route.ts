@@ -163,7 +163,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
 
   let uploadedPath: string | null = null;
   if (uploadId) {
-    uploadedPath = await findUploadedVideo(uploadId);
+    try { uploadedPath = await findUploadedVideo(uploadId, profile.id); }
+    catch { return fail("validate", "Uploaded VOD storage is temporarily unavailable. Please retry.", 503); }
     if (!uploadedPath) return fail("validate", "Uploaded file not found — upload your VOD again.", 400);
   }
   if (!process.env.ASSEMBLYAI_API_KEY) {

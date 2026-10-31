@@ -40,6 +40,7 @@ test('published Twitch VOD runs analysis, saves clips, charges once, and notifie
     '@/lib/anthropic-credit':{anthropicCreditGate:{blockOn(){}},isAnthropicCreditBalanceError:()=>false,pauseAutomaticClipping:async()=>{}},
     '@/lib/creator-feedback-data':{preferencesForUser:async()=>''},
     '@/lib/clip-archive-worker':{processClipArchiveJobs:async()=>{}},
+    '@/lib/r2-maintenance':{processR2Maintenance:async()=>{}},
     '@/lib/job-queue':{runQueued:(_label,fn)=>fn()},
     '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
   };
@@ -81,6 +82,7 @@ test('insufficient Sparks stops automatic clipping before any provider call', as
     '@/lib/vod-source':{vodSourceKey:()=> 'twitch:123'},
     '@/lib/anthropic-credit':{anthropicCreditGate:{blockOn(){}},isAnthropicCreditBalanceError:()=>false,pauseAutomaticClipping:async()=>{}},
     '@/lib/creator-feedback-data':{preferencesForUser:async()=>''},'@/lib/clip-archive-worker':{processClipArchiveJobs:async()=>{}},
+    '@/lib/r2-maintenance':{processR2Maintenance:async()=>{}},
     '@/lib/job-queue':{runQueued:(_label,fn)=>fn()},
     '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
   };

@@ -13,6 +13,7 @@
 /.next/
 /.next-browser-test/
 /.next-release-check/
+/.next-r2-check/
 /.next-smoke*/
 /.tmp-smoke/
 /AGENTS.md
