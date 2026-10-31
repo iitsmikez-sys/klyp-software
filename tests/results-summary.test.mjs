@@ -10,4 +10,3 @@ test('actual charge explains the analysis and qualifying clip portions',()=>{
   assert.equal(resultsChargeMessage(0,60,50,0),'No Sparks were charged.');
   assert.equal(resultsChargeMessage(3,60,50,1),'You saved 57 Sparks — charged 3 of the estimated 60.');
 });
-
