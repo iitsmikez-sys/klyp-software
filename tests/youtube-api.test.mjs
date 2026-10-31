@@ -41,6 +41,7 @@ test('disconnect revokes the refresh token and preserves connection on provider 
 });
 
 test('scheduled upload uses private status and native publishAt', async () => {
+  const publishAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
   const calls = [];
   const fetcher = async (url, request) => {
     calls.push({ url, request });
@@ -49,11 +50,11 @@ test('scheduled upload uses private status and native publishAt', async () => {
     return Response.json({ id: 'video123' });
   };
   const id = await uploadToYouTube({ accessToken: 'access', bytes: Buffer.from('fake mp4'),
-    title: 'Clip', description: 'Funny moment', publishAt: '2027-01-31T12:00:00.000Z', privacyStatus: 'public' }, fetcher);
+    title: 'Clip', description: 'Funny moment', publishAt, privacyStatus: 'public' }, fetcher);
   assert.equal(id, 'video123');
   const metadata = JSON.parse(calls[0].request.body);
   assert.equal(metadata.status.privacyStatus, 'private');
-  assert.equal(metadata.status.publishAt, '2027-01-31T12:00:00.000Z');
+  assert.equal(metadata.status.publishAt, publishAt);
   assert.equal(calls[1].request.method, 'PUT');
   assert.equal(calls[1].request.headers.Authorization, 'Bearer access');
 });

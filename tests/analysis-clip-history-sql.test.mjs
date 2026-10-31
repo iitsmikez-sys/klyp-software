@@ -36,13 +36,14 @@ async function database(savedClip = false) {
   }
   await db.exec(await readFile(new URL("../supabase/migrations/012_sparks_ledger.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../supabase/migrations/014_analysis_clip_history.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/035_clip_discovery_counts.sql", import.meta.url), "utf8"));
   return db;
 }
 
-async function run(db, clips, key = source, duration = 3600) {
+async function run(db, clips, key = source, duration = 3600, requested = 3) {
   const result = await db.query(
-    "select * from public.record_analysis_clips($1, $2::jsonb, $3, 3)",
-    [key, JSON.stringify(clips), duration]
+    "select * from public.record_analysis_clips($1, $2::jsonb, $3, $4)",
+    [key, JSON.stringify(clips), duration, requested]
   );
   return result.rows[0];
 }
@@ -63,6 +64,15 @@ test("repeat returns only new windows and does not charge for exhausted results"
     });
     const ledger = await db.query("select delta from public.spark_transactions where reason = 'analysis' order by created_at");
     assert.deepEqual(ledger.rows.map((row) => row.delta), [-45, -42]);
+  } finally { await db.close(); }
+});
+
+test("one- and two-clip requests charge only delivered clips plus the analysis base", async () => {
+  const db = await database();
+  try {
+    assert.equal((await run(db, [clip(100)], source, 3600, 1)).sparks_spent, 39);
+    assert.equal((await run(db, [clip(200)], source, 3600, 2)).sparks_spent, 39);
+    assert.equal((await run(db, [], source, 3600, 2)).sparks_spent, 0);
   } finally { await db.close(); }
 });
 

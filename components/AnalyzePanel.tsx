@@ -29,7 +29,7 @@ const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
 // Keep older clip counts valid for existing jobs, but offer a focused set for new runs.
-const CLIP_COUNT_CHOICES = [3, 5, 7, 10] as const satisfies readonly ClipCount[];
+const CLIP_COUNT_CHOICES = [1, 2, 3, 5, 7, 10] as const satisfies readonly ClipCount[];
 
 /** Export can include a first-time source download + full-quality burn — generous but finite. */
 const EXPORT_TIMEOUT_MS = 10 * 60_000;

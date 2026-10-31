@@ -39,6 +39,10 @@ import { recordProviderUsage } from "@/lib/provider-cost";
 import { clipInsideObservedCoverage } from "@/lib/vod-candidates";
 import { reviewClipBatch, type FlaggedClip } from "@/lib/clip-boundaries";
 import { formatTranscript } from "@/lib/format-transcript";
+import { discoveryPoolSize } from "@/lib/discovery-pool";
+import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/analysis-result-cache";
+import { reviewProcessingBudget } from "@/lib/vod-budget";
+import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
 /* ── Stage 2: download audio with yt-dlp ── */
@@ -91,18 +95,9 @@ export async function extractAudio(sourcePath: string, dir: string): Promise<str
   return outPath;
 }
 
-/* ── Segmented audio for long Twitch VODs ──────────────────────────
- * Full-VOD audio is ~216kbps, so a 10.9h stream is ~1GB and roughly five
- * minutes of download before transcription even starts — and AssemblyAI then
- * bills and chews through all 10.9 hours. For long Twitch VODs we already
- * know where the interesting moments are (chat spikes), so we fetch only
- * windows around them: ~20 × 60s ≈ 32MB instead of 1GB.
- *
- * Deliberately NOT used for YouTube or uploaded files: detectChatSpikes()
- * returns null for anything that isn't a twitch.tv/videos/ URL, so there
- * would be no candidate windows and the analysis would find nothing. Those
- * keep the full-transcript path.
- */
+/* The former chat-spike-only segment path is retained below for old helpers,
+ * but disabled in runAnalysisPipeline. It omitted quiet entertaining moments.
+ * Full-VOD processing now has a budget check before any download or paid call. */
 
 /** Below this length, full audio is quick enough that segmenting isn't worth
  *  trading transcript coverage for. */
@@ -550,7 +545,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
     );
   }
   clips.length = 0;
-  clips.push(...deduped.slice(0, clipCount));
+  clips.push(...deduped.filter(clip => clip.viral_score >= 65).slice(0, clipCount));
 
   console.log(
     `[analyze] content=${contentType} types:`,
@@ -630,6 +625,9 @@ export async function runAnalysisPipeline(opts: {
   creatorPreferences?: string;
   chatSpikesPromise?: Promise<ChatSpike[] | null> | null;
   costRunId?: string;
+  sourceKey?: string;
+  userId?: string;
+  client?: SupabaseClient;
   onProgress?: PipelineProgress;
   cachedTranscript?: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" };
   onTranscript?: (transcript: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" }) => Promise<void>;
@@ -638,21 +636,16 @@ export async function runAnalysisPipeline(opts: {
   // Check before downloading or transcribing, both of which can incur costs.
   anthropicCreditGate.assertAvailable();
   const { uploadedPath, url, durationHint, clipCount, workDir, onProgress } = opts;
+  const cachedTranscript = opts.cachedTranscript?.coverageMode === "full" ? opts.cachedTranscript : undefined;
   const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
   const keyword = opts.keyword;
   const progress: PipelineProgress = onProgress ?? (() => {});
 
   memSnapshot("pipeline start");
 
-  // Long Twitch VODs: fetch audio only around chat spikes instead of the whole
-  // stream. Needs the spikes BEFORE downloading, so resolve them up front —
-  // they're cheap (sampled GQL pages) and reused for the prompt later.
-  const canSegment =
-    !opts.cachedTranscript &&
-    !uploadedPath &&
-    !!durationHint &&
-    durationHint >= SEGMENT_MIN_VOD_S &&
-    twitchVideoId(url) !== null;
+  // Full coverage is required regardless of clip count. Chat-spike-only
+  // sampling would miss quiet entertaining moments.
+  const canSegment = false;
   let spikesForPlan: ChatSpike[] | null = null;
   if (canSegment) {
     spikesForPlan = await (
@@ -662,13 +655,13 @@ export async function runAnalysisPipeline(opts: {
   const windows =
     canSegment && spikesForPlan?.length ? spikeWindows(spikesForPlan, durationHint!) : [];
 
-  if (!opts.cachedTranscript) progress("download", "running", durationHint ? Math.max(10, Math.round(durationHint / 60)) : undefined);
+  if (!cachedTranscript) progress("download", "running", durationHint ? Math.max(10, Math.round(durationHint / 60)) : undefined);
   let words: TimedWord[];
   let durationSeconds: number;
 
-  if (opts.cachedTranscript) {
-    words = opts.cachedTranscript.words;
-    durationSeconds = opts.cachedTranscript.durationSeconds;
+  if (cachedTranscript) {
+    words = cachedTranscript.words;
+    durationSeconds = cachedTranscript.durationSeconds;
     progress("download", "done");
     progress("transcribe", "done");
   } else if (windows.length > 0) {
@@ -691,8 +684,13 @@ export async function runAnalysisPipeline(opts: {
     // both reason about positions in the original stream.
     durationSeconds = Math.round(durationHint!);
   } else {
+    if (durationHint && durationHint >= SEGMENT_MIN_VOD_S) {
+      const ceiling = Number(process.env.KLYP_MAX_VOD_ESTIMATED_USD ?? 5);
+      const budget = reviewProcessingBudget([{ start: 0, end: durationHint }], ceiling);
+      if (budget.requiresReview) throw new Error(`This VOD needs an estimated $${budget.projectedUsd.toFixed(2)} processing budget, above the $${ceiling.toFixed(2)} limit. No audio was dropped; review the budget before continuing.`);
+    }
     const audioPath = await withMem("download", () =>
-      uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir)
+      uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir, !!durationHint && durationHint >= SEGMENT_MIN_VOD_S)
     );
     progress("download", "done");
 
@@ -701,11 +699,11 @@ export async function runAnalysisPipeline(opts: {
     words = result.words;
     durationSeconds = result.durationSeconds;
   }
-  const coverageMode = opts.cachedTranscript?.coverageMode ?? (windows.length ? "chat-sampled" : "full");
-  if (!opts.cachedTranscript) await opts.onTranscript?.({ words, durationSeconds, coverageMode });
+  const coverageMode = cachedTranscript?.coverageMode ?? (windows.length ? "chat-sampled" : "full");
+  if (!cachedTranscript) await opts.onTranscript?.({ words, durationSeconds, coverageMode });
   if (opts.costRunId) console.log(`[analysis-usage] ${JSON.stringify({ runId: opts.costRunId, vodSeconds: durationSeconds, mode: coverageMode })}`);
   console.log(`[mem] transcribe produced ${words.length} words`);
-  if (!opts.cachedTranscript) progress("transcribe", "done");
+  if (!cachedTranscript) progress("transcribe", "done");
 
   progress("analyze", "running", Math.min(90, 30 + Math.round(durationSeconds / 120)));
   let chatSpikesPromise = opts.chatSpikesPromise;
@@ -727,24 +725,73 @@ export async function runAnalysisPipeline(opts: {
   if (keyword) {
     console.log(`[analyze] keyword="${keyword}" matched ${keywordMatchSeconds.length} time(s) in transcript`);
   }
-  const { clips, skipped } = await withMem("find-clips", () =>
-    findClips(transcriptText, durationSeconds, chatSpikes, clipCount, contentType, keyword, keywordMatchSeconds, opts.priorWindows ?? [], opts.creatorPreferences ?? "", opts.costRunId)
-  );
-  const boundaryReview = reviewClipBatch(clips, words, durationSeconds);
-  for (const item of boundaryReview.flagged) {
+  const priorWindows = opts.priorWindows ?? [];
+  const poolSize = discoveryPoolSize(clipCount);
+  const cacheInput = { sourceKey: opts.sourceKey ?? "", durationSeconds, contentType,
+    keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
+    windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const };
+  const cache = opts.client && opts.userId && opts.sourceKey
+    ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
+  let judged = cache ? await cache.load() : null;
+  let skipped = 0;
+  if (judged === null) {
+    const selected = await withMem("find-clips", () =>
+      findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
+        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId));
+    judged = selected.clips;
+    skipped = selected.skipped;
+    await cache?.save(judged);
+  }
+  const schema = clipSchemaForContentType(contentType);
+  if (judged.some(clip => !schema.safeParse(clip).success)) throw new Error("Cached clip candidates failed validation");
+  const visualCache = cache && createResultCache(opts.client!, opts.userId!, opts.sourceKey!, durationSeconds,
+    resultCacheKey({ ...cacheInput, pipeline: "legacy-visual" }));
+  let readyPool = visualCache ? await visualCache.load() : null;
+  let flagged: FlaggedClip<Clip>[] = [];
+  if (readyPool === null) {
+    const review = reviewClipBatch(judged, words, durationSeconds);
+    flagged = review.flagged;
+    readyPool = await withMem("vision-check", () =>
+      validateFinalistVisuals(review.ready, uploadedPath ?? url, workDir, !!uploadedPath, opts.costRunId));
+    await visualCache?.save(readyPool);
+  }
+  let clips = availableCachedClips(readyPool, priorWindows, clipCount);
+  if (!clips.length && readyPool.length > 0 && priorWindows.length && cache) {
+    const nextCache = createResultCache(opts.client!, opts.userId!, opts.sourceKey!, durationSeconds,
+      resultCacheKey({ ...cacheInput, priorWindows }));
+    let nextJudged = await nextCache.load();
+    if (nextJudged === null) {
+      const next = await withMem("find-clips-more", () =>
+        findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
+          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId));
+      nextJudged = next.clips;
+      skipped += next.skipped;
+      await nextCache.save(nextJudged);
+    }
+    if (nextJudged.some(clip => !schema.safeParse(clip).success)) throw new Error("Cached repeat candidates failed validation");
+    const nextVisualCache = createResultCache(opts.client!, opts.userId!, opts.sourceKey!, durationSeconds,
+      resultCacheKey({ ...cacheInput, pipeline: "legacy-visual", priorWindows }));
+    let nextReady = await nextVisualCache.load();
+    if (nextReady === null) {
+      const nextReview = reviewClipBatch(nextJudged, words, durationSeconds);
+      flagged.push(...nextReview.flagged);
+      nextReady = await withMem("vision-check-more", () =>
+        validateFinalistVisuals(nextReview.ready, uploadedPath ?? url, workDir, !!uploadedPath, opts.costRunId));
+      await nextVisualCache.save(nextReady);
+    }
+    clips = availableCachedClips(nextReady, priorWindows, clipCount);
+  }
+  for (const item of flagged) {
     console.warn(`[analyze] clip ${item.clip.start_seconds}-${item.clip.end_seconds} needs boundary review: ${item.flags.join(", ")}`);
   }
-  const visuallyCheckedClips = await withMem("vision-check", () =>
-    validateFinalistVisuals(boundaryReview.ready, uploadedPath ?? url, workDir, !!uploadedPath, opts.costRunId));
-
-  const clipsWithWords = visuallyCheckedClips.map((clip) => ({
+  const clipsWithWords = clips.map((clip) => ({
     ...clip,
     words: words.filter((w) => w.start >= clip.start_seconds * 1000 - 200 && w.start < clip.end_seconds * 1000),
   }));
   memSnapshot("pipeline end");
 
   const result = { clips: clipsWithWords, skipped, durationSeconds, transcriptChars: transcriptText.length, words,
-    boundaryReview: boundaryReview.flagged };
+    boundaryReview: flagged };
   await opts.onAnalysis?.(result);
   progress("analyze", "done");
   return result;
