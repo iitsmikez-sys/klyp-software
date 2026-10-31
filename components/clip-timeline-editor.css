@@ -532,6 +532,7 @@
 .editor-inspector-section-heading h3 { margin:0 }
 .editor-inspector-section-heading span { color:#9dbab0; font-size:10px }
 .editor-inspector .editor-caption-notice { margin:0 0 12px; padding:9px 10px; border-left:2px solid #6dbe9f; background:#192a28; color:#d6e8df; line-height:1.45 }
+.editor-inspector .editor-caption-notice p { color:inherit; margin:0 }
 .editor-inspector .editor-caption-style-select { display:flex; align-items:center; gap:9px; margin-bottom:12px }
 .editor-inspector .editor-caption-style-select span { float:none }
 .editor-caption-style-select>span:last-child { flex:1; min-width:0 }
