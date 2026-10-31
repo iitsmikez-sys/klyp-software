@@ -213,9 +213,9 @@
 .caption-template-card[data-style=pulse] .caption-template-sample b { color:#ffe773; transform:scale(1.08) }
 .caption-template-card[data-style=slide] .caption-template-sample b { transform:translateY(-3px) }
 .caption-template-card[data-style=bounce] .caption-template-sample b { color:#fff3c2; transform:rotate(-2deg) scale(1.08) }
-.caption-template-card[data-style=glow] .caption-template-sample { background:radial-gradient(circle at 50% 70%,#5e3273,#172130 68%) }
+.caption-template-card[data-style=glow] .caption-template-sample { background:#292233 }
 .caption-template-card[data-style=glow] .caption-template-sample b { color:#ffd8f8; font-weight:700; text-shadow:0 0 7px #ff8fe4,0 0 18px #c653dc }
-.caption-template-card[data-style=comic] .caption-template-sample { background:radial-gradient(circle at 40% 65%,#565033,#182027 70%) }
+.caption-template-card[data-style=comic] .caption-template-sample { background:#292b23 }
 .caption-template-card[data-style=comic] .caption-template-sample b { color:#ffdf00; font-style:italic; transform:rotate(-3deg) scale(1.05); text-shadow:-2px -2px 0 #06090b,2px -2px 0 #06090b,-2px 2px 0 #06090b,2px 2px 0 #06090b,0 4px 8px #000 }
 .caption-template-card[data-style=keyword] .caption-template-sample b { font-size:13px; line-height:1.1 }
 .caption-template-card[data-style=keyword] .caption-template-sample em { color:#35ef85; font-style:normal }
@@ -578,4 +578,12 @@
 .editor-inspector .editor-suggestions { margin-top:8px }
 .editor-inspector .editor-suggestions button { width:100%; min-height:30px; padding:6px 8px; border-radius:5px; text-align:left }
 .editor-inspector .editor-pro-note { color:#ead7b6 }
+.clip-editor .caption-template-more { width:100%; min-height:36px; margin-top:8px; border:1px solid #33464c; border-radius:6px; background:#172329; color:#b8ead7; font-size:11px; font-weight:600 }
+.clip-editor .caption-template-more:hover { border-color:#6dc7a6; color:#e5fff5 }
+.editor-inspector .editor-fine-tune { margin:0 0 16px; border-top:1px solid #2a363b; border-bottom:1px solid #2a363b }
+.editor-inspector .editor-fine-tune summary { cursor:pointer; min-height:42px; display:flex; align-items:center; color:#d9e8e2; font-size:12px; font-weight:600 }
+.editor-inspector .editor-fine-tune[open] summary { margin-bottom:8px; color:#7be7bd }
+.editor-inspector .editor-fine-tune section { margin:0 0 16px }
+.editor-inspector .editor-position-options button { min-height:32px }
+.clip-editor .editor-generate-captions { text-align:center; font-size:12px; min-height:38px }
 

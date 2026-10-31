@@ -27,6 +27,7 @@ async function assertAligned(page, kind) {
       });
       await page.goto(url);
       await page.locator('video').waitFor();
+      await page.getByRole('button', { name: 'Hook', exact: true }).click();
       await page.getByLabel('Hook text').fill('AURA');
       for (const label of ['On-video placement', 'Hook size', 'Caption size']) {
         if (await page.getByText(label, { exact: true }).count()) throw new Error(`${label} should not be in the inspector`);
@@ -50,7 +51,8 @@ async function assertAligned(page, kind) {
       await page.mouse.down();
       await page.mouse.move(corner.x + corner.width / 2 + 20, corner.y + corner.height / 2 + 20, { steps: 4 });
       await page.mouse.up();
-      await page.getByRole('button', { name: 'Generate captions from transcript' }).click();
+      await page.getByRole('button', { name: 'Captions', exact: true }).click();
+      await page.getByRole('button', { name: 'Add captions' }).click();
       const caption = page.locator('[data-text-kind="caption"]');
       await caption.waitFor({ state: 'visible', timeout: 2000 });
       await caption.scrollIntoViewIfNeeded();
