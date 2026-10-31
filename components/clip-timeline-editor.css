@@ -58,9 +58,9 @@
 .editor-panel-heading span { font-size:11px; color:var(--editor-muted) }
 .editor-transcript>input { flex-shrink:0; font-size:13px!important; margin-bottom:12px }
 .editor-transcript-lines { overflow:auto; flex:1; padding-bottom:12px }
-.editor-transcript-lines button { display:flex; width:100%; gap:16px; text-align:left; padding:12px 10px; border-radius:6px; font-size:14px; line-height:1.6 }
-.editor-transcript-lines time { color:var(--editor-muted); font-size:12px; font-variant-numeric:tabular-nums; flex-shrink:0; padding-top:2px }
-.editor-transcript-lines button[aria-current=true] { background:#14362f; color:#a6ffe2 }
+.editor-transcript-lines button { display:flex; flex-direction:column; align-items:flex-start; width:100%; gap:5px; text-align:left; padding:12px 8px 16px; border-bottom:1px solid #283238; border-radius:0; font-size:13px; line-height:1.55; font-weight:550 }
+.editor-transcript-lines time { color:var(--editor-muted); font-size:12px; font-variant-numeric:tabular-nums; flex-shrink:0 }
+.editor-transcript-lines button[aria-current=true] { background:#172520; color:#f0faf6 }
 .editor-transcript-lines button[aria-current=true] time { color:var(--editor-mint) }
 .editor-transcript p { color:var(--editor-muted); line-height:1.7; margin:16px 8px }
 .editor-cleanup { flex-shrink:0; margin:0 0 14px; padding:13px; border:1px solid #315147; border-radius:9px; background:#14211f }
@@ -79,6 +79,10 @@
 .clip-editor .editor-cleanup-apply { width:100%; padding:9px 10px; margin-bottom:7px; border-radius:7px; background:var(--editor-mint); color:#06251b; font-size:11px; font-weight:800 }
 .clip-editor .editor-cleanup-apply:disabled { background:#315047; color:#a4bdb1 }
 .editor-cleanup p { font-size:11px; margin:6px 0 0 }
+.editor-cleanup-collapsed { margin:8px 0 12px; padding:0; border-color:var(--editor-border); background:transparent }
+.editor-cleanup-collapsed summary { padding:10px 12px; color:var(--editor-muted); font-size:12px; cursor:pointer }
+.editor-cleanup-collapsed[open] summary { color:#eafff7; border-bottom:1px solid var(--editor-border) }
+.editor-cleanup-content { padding:0 10px 12px }
 .editor-audio-polish { margin-top:14px; padding:13px!important; border:1px solid var(--editor-border)!important; border-radius:9px; background:#141e22!important }
 .editor-audio-polish p { margin:5px 0 12px; color:#a9beb9; font-size:11px; line-height:1.5 }
 .editor-frame-controls { margin:18px 0 0; padding:15px!important; border:1px solid var(--editor-border)!important; border-radius:9px; background:#141e22!important }
@@ -397,8 +401,9 @@
 .editor-transcript { padding:16px 12px 0 }
 .editor-panel-heading { margin-bottom:12px }
 .editor-panel-heading h2,.editor-media-library h2 { font-size:14px }
-.editor-transcript-lines button { padding:8px; gap:10px; line-height:1.45; font-size:12px }
+.editor-transcript-lines button { padding:11px 8px 14px; gap:5px; line-height:1.55; font-size:13px }
 .editor-cleanup { padding:10px; margin-bottom:10px; background:#17221f }
+.editor-cleanup.editor-cleanup-collapsed { padding:0; margin:8px 0 10px; background:transparent }
 .editor-media-compact { padding-top:8px; padding-bottom:12px }
 .editor-media-actions button { min-height:40px; font-size:12px }
 .editor-player { background:#090e12 }
