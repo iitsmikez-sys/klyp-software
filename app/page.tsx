@@ -466,6 +466,7 @@ export default function LandingPage() {
               ["Features", "#features"],
               ["How it works", "#how-it-works"],
               ["Pricing", "#pricing"],
+              ["Privacy", "/privacy"],
             ].map(([label, href]) => (
               <a key={label} href={href} className="hover:text-foreground transition-colors">
                 {label}

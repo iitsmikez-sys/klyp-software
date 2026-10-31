@@ -124,7 +124,7 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
       : !connection ? <div className="youtube-dialog-body"><p>{error ? 'Could not check your YouTube connection.' : 'Checking your YouTube connection…'}</p>
         {error && <button type="button" onClick={() => { setError(null); setReload(value => value + 1); }}>Try again</button>}
         </div>
-      : !connection.connected ? <div className="youtube-dialog-body"><p>Connect the YouTube channel where you want to post your finished clip.</p>
+      : !connection.connected ? <div className="youtube-dialog-body"><p>Connect the YouTube channel where you want to post your finished clip. <a href="/privacy" target="_blank" rel="noopener noreferrer">How Klyp uses YouTube access</a></p>
         <a className="youtube-dialog-primary" href={`/api/youtube/connect?clip_id=${encodeURIComponent(clipId)}`}>Connect YouTube</a></div>
       : result ? <div className="youtube-dialog-body" role="status"><p>{result.status === 'scheduled'
           ? 'YouTube received your clip and scheduled its publication.'
