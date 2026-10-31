@@ -5,10 +5,12 @@ import {
   canRetryUncertainPost,
 } from '../lib/youtube-publishing.ts';
 
-test('publishing requires a confirmed Pro subscription', () => {
+test('publishing accepts paid or complimentary Pro access', () => {
   assert.equal(isConfirmedPro({ tier: 'pro', stripe_subscription_id: 'sub_123' }), true);
+  assert.equal(isConfirmedPro({ tier: 'pro', stripe_subscription_id: null, complimentary_pro: true }), true);
   assert.equal(isConfirmedPro({ tier: 'pro', stripe_subscription_id: null }), false);
   assert.equal(isConfirmedPro({ tier: 'free', stripe_subscription_id: 'sub_123' }), false);
+  assert.equal(isConfirmedPro({ tier: 'free', stripe_subscription_id: null, complimentary_pro: true }), false);
 });
 
 test('YouTube title, description, and future schedule are validated', () => {
