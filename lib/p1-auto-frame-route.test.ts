@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { z } from 'zod';
 import { parseFrameSuggestion, readBoundedFrameBody, validateFrameSamples } from './auto-frame.ts';
+import { hasProAccess } from './tier.ts';
 
 const code = ts.transpileModule(readFileSync(new URL('../app/api/clips/[id]/auto-frame/route.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
 const jpg = Buffer.from([0xff, 0xd8, 0xff, 0x00, 0xff, 0xd9]).toString('base64');
@@ -20,6 +21,7 @@ async function request(options: { token?: boolean; tier?: string; owned?: boolea
     '@/lib/clip-access': { acquireUserProcessingSlot: () => () => {} },
     '@/lib/auto-frame': { parseFrameSuggestion, readBoundedFrameBody, validateFrameSamples },
     '@/lib/cors': { withCors: (value: Response) => value, corsPreflight: () => {} },
+    '@/lib/tier': { hasProAccess },
   };
   const exports: any = {};
   vm.runInNewContext(code, { exports, require: (name: string) => { if (!(name in modules)) throw new Error(name); return modules[name]; }, process: { env: { DEPLOYMENT_TARGET: 'processing', ANTHROPIC_API_KEY: 'fixture' } }, globalThis: {}, Buffer, Response, Date, JSON, Map });

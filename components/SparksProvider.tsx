@@ -2,12 +2,13 @@
 
 import { createContext, useContext, useCallback, useEffect, useState, ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Tier, Profile } from "@/lib/tier";
+import { hasProAccess, type Tier, type Profile } from "@/lib/tier";
 
 type SparksContextValue = {
   /** null while loading (or if not signed in) */
   balance: number | null;
   tier: Tier;
+  complimentaryPro: boolean;
   /** When the allowance next refills (profiles.sparks_reset_at), null while
    *  loading. A rolling 30 days from the last reset, not a calendar month. */
   resetAt: string | null;
@@ -20,6 +21,7 @@ type SparksContextValue = {
 const SparksContext = createContext<SparksContextValue>({
   balance: null,
   tier: "free",
+  complimentaryPro: false,
   resetAt: null,
   sync: () => {},
   refresh: async () => {},
@@ -28,6 +30,7 @@ const SparksContext = createContext<SparksContextValue>({
 export function SparksProvider({ children }: { children: ReactNode }) {
   const [balance, setBalance] = useState<number | null>(null);
   const [tier, setTier] = useState<Tier>("free");
+  const [complimentaryPro, setComplimentaryPro] = useState(false);
   const [resetAt, setResetAt] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -45,7 +48,9 @@ export function SparksProvider({ children }: { children: ReactNode }) {
     // dashboard edit, a bug, a webhook mis-fire); every part of the app that
     // gates on tier goes through this one derivation, so fixing it here fixes
     // it everywhere at once.
-    setTier(profile.tier === "pro" && profile.stripe_subscription_id ? "pro" : "free");
+    const granted = user.app_metadata?.klyp_complimentary_pro === true;
+    setTier(hasProAccess({ ...profile, complimentary_pro: granted }) ? "pro" : "free");
+    setComplimentaryPro(granted);
   }, []);
 
   useEffect(() => {
@@ -55,7 +60,7 @@ export function SparksProvider({ children }: { children: ReactNode }) {
   const sync = useCallback((next: number) => setBalance(next), []);
 
   return (
-    <SparksContext.Provider value={{ balance, tier, resetAt, sync, refresh }}>
+    <SparksContext.Provider value={{ balance, tier, complimentaryPro, resetAt, sync, refresh }}>
       {children}
     </SparksContext.Provider>
   );

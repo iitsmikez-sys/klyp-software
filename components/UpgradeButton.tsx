@@ -10,7 +10,7 @@ import { SparkIcon } from "./SparksBalance";
  * pricing page), Pro users get "Manage billing" (Stripe customer portal).
  */
 export default function UpgradeButton() {
-  const { tier } = useSparks();
+  const { tier, complimentaryPro } = useSparks();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [billingSetupNeeded, setBillingSetupNeeded] = useState(false);
@@ -25,6 +25,10 @@ export default function UpgradeButton() {
         Upgrade to Pro
       </Link>
     );
+  }
+
+  if (complimentaryPro) {
+    return <span className="rounded-full border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent whitespace-nowrap">Pro active</span>;
   }
 
   const openPortal = async () => {
