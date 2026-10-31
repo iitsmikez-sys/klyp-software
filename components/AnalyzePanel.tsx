@@ -114,6 +114,7 @@ export default function AnalyzePanel() {
   const savingRef = useRef(false);
   const exportLock = useRef(false);
   const submittedEstimate = useRef<number | null>(null);
+  const submittedAnalysisCost = useRef<number | null>(null);
   const recoveringSource = useRef<string | null>(null);
   const [editorSettings, setEditorSettings] = useState<Partial<Record<number, EditorExportSettings>>>({});
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -443,7 +444,9 @@ export default function AnalyzePanel() {
       setClipFormats(Object.fromEntries(event.clips.map((_, i) => [i, "9:16" as ExportFormat])));
       // All clips start unsaved — the user decides what enters their library.
       setClipStatus(Object.fromEntries(event.clips.map((_, i) => [i, "unsaved" as const])));
-      const charge = resultsChargeMessage(event.sparksSpent, submittedEstimate.current);
+      const charge = resultsChargeMessage(
+        event.sparksSpent, submittedEstimate.current, submittedAnalysisCost.current, event.clips.length
+      );
       setAnalysisNote(event.clips.length === 0
         ? `No new moments cleared the quality floor. ${charge} Try another VOD or adjust your topic.`
         : charge);
@@ -524,6 +527,7 @@ export default function AnalyzePanel() {
   const runAnalysis = async () => {
     if (exportLock.current || savingRef.current) return;
     submittedEstimate.current = totalEstimate;
+    submittedAnalysisCost.current = estimatedSparks;
     setLoading(true);
     setError(null);
     setClips(null);
@@ -1143,21 +1147,21 @@ export default function AnalyzePanel() {
           <div className="mt-3 rounded-lg border border-border bg-surface-2/70 p-3" aria-live="polite">
             <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               <div className="col-span-2 sm:col-span-1">
-                <p className="text-xs text-foreground-muted">Estimated total</p>
+                <p className="text-xs text-foreground-muted">Maximum estimate</p>
                 <p className={`mt-0.5 flex items-center gap-1.5 text-lg font-semibold tabular-nums ${cantAfford ? "text-red-400" : "text-accent"}`}>
                   <SparkIcon size={17} />{totalEstimate} Sparks
                 </p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
-                <p className="text-xs text-foreground-muted">VOD analysis {previewDuration ? `(${fmtTime(previewDuration)})` : ""}</p>
+                <p className="text-xs text-foreground-muted">Analyze VOD {previewDuration ? `(${fmtTime(previewDuration)})` : ""}</p>
                 <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{estimatedSparks} Sparks</p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
-                <p className="text-xs text-foreground-muted">{clipCount} clips requested</p>
+                <p className="text-xs text-foreground-muted">Up to {clipCount} clips</p>
                 <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{CLIP_COUNT_COST[clipCount]} Sparks</p>
               </div>
             </div>
-            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Only clips that meet the quality bar are charged. Fewer results can cost less than this estimate.</p>
+            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">VOD analysis is {estimatedSparks} Sparks. Clip charges depend on how many qualify.</p>
             {cantAfford && <p role="alert" className="mt-2 text-xs text-red-400">Not enough Sparks: this costs {totalEstimate}, and you have {balance}. <a href="/dashboard/upgrade" className="font-semibold underline">Upgrade to Pro</a></p>}
           </div>
         )}
@@ -1349,3 +1353,4 @@ export default function AnalyzePanel() {
     </section>
   );
 }
+
