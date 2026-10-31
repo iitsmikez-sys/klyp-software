@@ -3,9 +3,9 @@ import { POST as renderClip } from '@/app/api/clip/route';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { bearerToken, getProfileFromToken } from '@/lib/profile-token';
 import { withCors, corsPreflight } from '@/lib/cors';
-import { youtubeConfig, youtubeTokenKey } from '@/lib/youtube-config';
-import { refreshYouTubeAccessToken, uploadToYouTube, YouTubeUploadError } from '@/lib/youtube-api';
-import { decryptRefreshToken, isConfirmedPro, validateYouTubePost } from '@/lib/youtube-publishing';
+import { uploadToYouTube, YouTubeUploadError } from '@/lib/youtube-api';
+import { isConfirmedPro, validateYouTubePost } from '@/lib/youtube-publishing';
+import { requestWorkerAccessToken } from '@/lib/youtube-worker-token';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -41,7 +41,8 @@ async function publish(req: NextRequest): Promise<Response> {
     clipId = String(clipPayload?.clip_id ?? '');
     requestKey = String(body.requestKey ?? '');
     if (!UUID.test(clipId) || !UUID.test(requestKey)) throw new Error('Choose a saved clip to publish.');
-    details = validateYouTubePost({ title: body.title, description: body.description, publishAt: body.publishAt });
+    details = validateYouTubePost({ title: body.title, description: body.description,
+      publishAt: body.publishAt, privacyStatus: body.privacyStatus });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid YouTube post.' }, { status: 400 });
   }
@@ -51,7 +52,7 @@ async function publish(req: NextRequest): Promise<Response> {
   if (clipError) return NextResponse.json({ error: 'Could not load this clip.' }, { status: 500 });
   if (!clip) return NextResponse.json({ error: 'Clip not found.' }, { status: 404 });
   const { data: connection, error: connectionError } = await admin.from('youtube_connections')
-    .select('refresh_token_enc').eq('user_id', profile.id).maybeSingle();
+    .select('user_id').eq('user_id', profile.id).maybeSingle();
   if (connectionError) return NextResponse.json({ error: 'Could not check YouTube connection.' }, { status: 500 });
   if (!connection) return NextResponse.json({ error: 'Connect your YouTube channel first.' }, { status: 409 });
 
@@ -80,9 +81,6 @@ async function publish(req: NextRequest): Promise<Response> {
 
   let acceptedVideoId: string | null = null;
   try {
-    const config = youtubeConfig();
-    const refreshToken = decryptRefreshToken(connection.refresh_token_enc, youtubeTokenKey());
-    const accessToken = await refreshYouTubeAccessToken(config, refreshToken);
     const renderRequest = new NextRequest(new URL('/api/clip', req.url), {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -98,6 +96,7 @@ async function publish(req: NextRequest): Promise<Response> {
     if (!bytes.length || bytes.length > 256 * 1024 * 1024) throw new Error('The finished clip exceeds the YouTube publishing size limit.');
     // Rendering can take minutes. Never hand YouTube a now-expired schedule.
     if (details.publishAt) validateYouTubePost(details);
+    const accessToken = await requestWorkerAccessToken(post.id);
     const videoId = await uploadToYouTube({ ...details, accessToken, bytes });
     acceptedVideoId = videoId;
     const status = details.publishAt ? 'scheduled' : 'uploaded';

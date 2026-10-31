@@ -2,14 +2,14 @@
 
 /**
  * Cheapest possible analysis — used as the "can you afford anything at all"
- * floor: shortest VOD (10⚡) + fewest clips (10⚡).
+ * floor: shortest VOD (10⚡) + one clip (4⚡).
  */
-export const MIN_ANALYZE_COST = 20;
+export const MIN_ANALYZE_COST = 14;
 
 /** Selectable clip counts and their Sparks cost (added to the VOD length cost). */
-export const CLIP_COUNT_OPTIONS = [3, 5, 7, 10, 12, 20] as const;
+export const CLIP_COUNT_OPTIONS = [1, 2, 3, 5, 7, 10, 12, 20] as const;
 export type ClipCount = (typeof CLIP_COUNT_OPTIONS)[number];
-export const CLIP_COUNT_COST: Record<ClipCount, number> = { 3: 10, 5: 20, 7: 30, 10: 40, 12: 50, 20: 80 };
+export const CLIP_COUNT_COST: Record<ClipCount, number> = { 1: 4, 2: 7, 3: 10, 5: 20, 7: 30, 10: 40, 12: 50, 20: 80 };
 export const DEFAULT_CLIP_COUNT: ClipCount = 5;
 /** The MAX tier — priciest run; the UI requires explicit confirmation before analyzing. */
 export const MAX_CLIP_COUNT: ClipCount = 20;

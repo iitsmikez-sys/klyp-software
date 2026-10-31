@@ -9,9 +9,10 @@ export type ResultKeyInput = {
   sourceKey: string; durationSeconds: number; contentType: string; keyword: string;
   creatorPreferences: string; windows: AudioWindow[];
   priorWindows?: { start_seconds: number; end_seconds: number }[];
+  pipeline?: 'legacy' | 'legacy-visual' | 'v2' | 'v2-visual';
 };
 export function resultCacheKey(input: ResultKeyInput): string {
-  return createHash('sha256').update(JSON.stringify({ version: 'v2', model: 'claude-opus-4-8',
+  return createHash('sha256').update(JSON.stringify({ version: 'v3-fixed-pool', model: 'claude-opus-4-8',
     ...input, windows: [...input.windows].sort((a, b) => a.start - b.start) })).digest('hex');
 }
 
