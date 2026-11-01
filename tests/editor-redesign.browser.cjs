@@ -78,6 +78,8 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   assert.equal(await page.getByRole('button',{name:'Center caption position'}).getAttribute('aria-pressed'),'true');
   await page.getByRole('button',{name:'Hook',exact:true}).click();
   assert.equal(await page.getByLabel('Hook text').count(),1);
+  await page.getByRole('button',{name:'White box hook style'}).click();
+  assert.equal(await page.getByRole('button',{name:'White box hook style'}).getAttribute('aria-pressed'),'true');
   await page.getByRole('button',{name:'Show saved hook suggestions'}).click();
   assert.equal(await page.getByRole('button',{name:'GEOGRAPHY LIVE'}).count(),1);
   assert.equal(await page.getByRole('heading',{name:'Hook style'}).count(),1);

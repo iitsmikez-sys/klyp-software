@@ -164,6 +164,7 @@ const zodFile=path.relative(process.cwd(),require.resolve('zod')).replaceAll('\\
  await page.getByRole('button',{name:'Media panel',exact:true}).click();await page.getByRole('button',{name:'Add photo',exact:true}).click();assert.equal(await page.getByLabel('Choose photo').isDisabled(),false);
  await page.getByLabel('Clip title').fill('Free edited title');
  await page.getByRole('button',{name:'Hook',exact:true}).click();assert.equal(await page.getByText('Editing requires Pro. Free exports use the original clip.').count(),0);
+ await page.getByRole('button',{name:'White box hook style'}).click();assert.equal(await page.getByRole('button',{name:'White box hook style'}).getAttribute('aria-pressed'),'true');
  await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByText('Edits saved',{exact:true}).waitFor();
  await page.getByLabel('Export aspect ratio').selectOption('Original');
  await page.getByRole('button',{name:'Export clip',exact:true}).click();await page.getByRole('button',{name:'Exporting…',exact:true}).waitFor();

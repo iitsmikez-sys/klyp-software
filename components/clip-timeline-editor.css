@@ -199,6 +199,8 @@
 .editor-options strong { display:block; font-size:22px; line-height:1.2; margin-bottom:6px }
 .editor-options i { display:block; width:22px; height:22px; border-radius:50%; margin:0 auto 7px; box-shadow:0 1px 5px #0006 }
 .editor-options [aria-pressed=true],.editor-suggestions [aria-pressed=true] { border-color:var(--editor-mint); background:#16332b }
+.editor-hook-style-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)) }
+.editor-hook-style-options button[data-hook-style=white_box] strong { display:table; margin:0 auto 6px; padding:1px 5px; border-radius:3px; background:#fff; color:#111; font-family:Arial,sans-serif; font-weight:900 }
 .editor-suggestions { display:flex; flex-direction:column; align-items:flex-start; gap:8px }
 .editor-suggestions button { text-align:left; padding:8px 12px; border:1px solid #35404d; border-radius:8px; font-size:11px; color:#b8c3ce }
 .editor-suggestions [aria-pressed=true] { color:#a6ffe2 }

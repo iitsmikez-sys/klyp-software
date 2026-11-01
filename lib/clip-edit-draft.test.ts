@@ -84,6 +84,12 @@ test("unknown styles, format, title and hook limits fail", () => {
   ]) assert.throws(() => validateClipEditDraft(draft(bad), clip));
 });
 
+test("white box hook style survives saving and export", () => {
+  const checked = validateClipEditDraft(draft({ hook_style: "WHITE_BOX" }), clip);
+  assert.equal(checked.hook_style, "WHITE_BOX");
+  assert.equal(toClipExportPayload(clip, checked).hook_style, "WHITE_BOX");
+});
+
 test("caption correction may change text but never timestamps or word count", () => {
   assert.throws(() => validateClipEditDraft(draft({ words: [{ text: "this", start: 101001, end: 101400 }, clip.words![1]] }), clip));
   assert.throws(() => validateClipEditDraft(draft({ words: [clip.words![0]] }), clip));

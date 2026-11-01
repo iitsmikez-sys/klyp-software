@@ -36,6 +36,7 @@ const HOOK_STYLE_LABELS: Record<HookStyle, string> = {
   YELLOW: "Yellow — subtitle yellow",
   BOXED: "Boxed — white on black bar",
   NEON: "Neon — Klyp green",
+  WHITE_BOX: "White box — bold black text on white",
 };
 
 function fmtClipTime(seconds: number) {

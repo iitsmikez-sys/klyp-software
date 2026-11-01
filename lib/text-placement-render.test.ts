@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { captionAppearance, generateHookAss, generateTimedCueAss, layoutTimedCaption } from './captions.ts';
+import { captionAppearance, generateHookAss, generateTimedCueAss, hookTextLayout, layoutTimedCaption, wrapCaptionText } from './captions.ts';
 import { drawHookPreview } from './hook-preview.ts';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -27,6 +27,15 @@ test('resized hook uses the selected center and size in canvas and ASS', () => {
   const ctx={save(){},restore(){},measureText:(text:string)=>({width:text.length*14}),strokeText(_text:string,x:number,y:number){points.push([x,y]);},fillText(_text:string,x:number,y:number){points.push([x,y]);}} as unknown as CanvasRenderingContext2D;
   drawHookPreview(ctx,0,'A MOMENT','IMPACT',1080,1920,placement);
   assert.ok(points.some(([x,y])=>x===270 && Math.abs(y-1536)<80));
+});
+
+test('moving a white box hook keeps its default line breaks', () => {
+  const hook = 'THE FRONT IS THE RISKIEST PART TO CUT';
+  const expected = wrapCaptionText(hook, 'BOLD', 18);
+  const moved = hookTextLayout(hook, { w: 540, h: 960 }, 'WHITE_BOX', { x: .5, y: .3, scale: 1 });
+  assert.deepEqual(moved.lines, expected);
+  const ass = generateHookAss(hook, { w: 540, h: 960 }, 'WHITE_BOX', { x: .5, y: .3, scale: 1 });
+  assert.ok(ass.includes(expected.join('\\N')));
 });
 
 test('large moved captions wrap and remain inside the export frame', () => {
