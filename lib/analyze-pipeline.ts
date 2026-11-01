@@ -23,7 +23,7 @@ import {
   type ContentType,
   type TimedWord,
 } from "@/lib/clips";
-import { ffmpegLocationArgs, resolveBin, run, runYtDlpWithRetry, ytDlpThreadCapArgs, FFMPEG_THREADS } from "@/lib/bin";
+import { ffmpegLocationArgs, resolveBin, run, runCapture, runYtDlpWithRetry, ytDlpThreadCapArgs, FFMPEG_THREADS } from "@/lib/bin";
 import {
   type ChatSpike,
   type AudioWindow,
@@ -42,6 +42,8 @@ import { formatTranscript } from "@/lib/format-transcript";
 import { discoveryPoolSize } from "@/lib/discovery-pool";
 import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/analysis-result-cache";
 import { reviewProcessingBudget } from "@/lib/vod-budget";
+import { budgetForRun } from "@/lib/provider-budget";
+import { quoteTextMessage, quoteTranscription } from "@/lib/provider-budget-core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
@@ -162,6 +164,7 @@ async function transcribeWindows(paths: string[], windows: AudioWindow[], costRu
       const { words } = await transcribe(audioPath, costRunId);
       return words.map((w) => ({ ...w, start: w.start + offsetMs, end: w.end + offsetMs }));
     } catch (err) {
+      if (/provider budget|cannot be bounded|durable job ID|bounded price/i.test(String(err))) throw err;
       // A silent window (transcribe throws on zero words) must not sink the
       // whole analysis — the other windows still carry the good moments.
       console.warn(`[analyze] window ${windows[i].start}-${windows[i].end}s produced no transcript:`, err);
@@ -175,8 +178,11 @@ async function transcribeWindows(paths: string[], windows: AudioWindow[], costRu
 export async function transcribe(audioPath: string, costRunId?: string): Promise<{ words: TimedWord[]; durationSeconds: number }> {
   const aai = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! });
 
-  // The SDK uploads the local file and polls until the transcript is ready.
-  const transcript = await aai.transcripts.transcribe({ audio: audioPath });
+  // Probe the exact submitted file, then reserve before the SDK uploads it.
+  const measured = Number((await runCapture(resolveBin('ffprobe'), ['-v', 'error', '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1', audioPath], { maxRunMs: 20_000 })).trim());
+  const transcript = await budgetForRun(costRunId).call('transcribe', quoteTranscription(measured),
+    () => aai.transcripts.transcribe({ audio: audioPath, speech_model: 'best' }));
 
   if (transcript.status === "error") {
     throw new Error(`AssemblyAI transcription failed: ${transcript.error}`);
@@ -356,7 +362,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     ? `\n\n## CREATOR FEEDBACK\n${creatorPreferences} Use this only as a tiebreaker between equally strong candidates. Never lower the quality floor or change factual scoring to match taste.`
     : "";
 
-  const { data: response, response: rawResponse } = await client.messages.create({
+  const request = {
     model: "claude-opus-4-8",
     max_tokens: 16000,
     thinking: { type: "adaptive" },
@@ -465,7 +471,10 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
       },
     ],
     output_config: { format: zodOutputFormat(clipAnalysisSchemaForContentType(contentType)) },
-  }).withResponse();
+  } as Anthropic.MessageCreateParamsNonStreaming;
+  const { data: response, response: rawResponse } = await budgetForRun(costRunId).call('select',
+    quoteTextMessage('claude-opus-4-8', JSON.stringify(request), request.max_tokens),
+    () => client.messages.create(request, { maxRetries: 0 }).withResponse());
 
   logAnthropicRateLimits(rawResponse.headers, "findClips");
   if (costRunId) recordProviderUsage({

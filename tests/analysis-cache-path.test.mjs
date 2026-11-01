@@ -9,10 +9,11 @@ const nativeRequire = createRequire(import.meta.url);
 const source = await readFile(new URL("../lib/analyze-pipeline.ts", import.meta.url), "utf8");
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
 
-function pipelineHarness() {
+function pipelineHarness({ denyBudget = false } = {}) {
   const calls = { download: 0, transcription: 0, ai: 0 };
+  let providerSubmissions = 0;
   const provider = class {
-    constructor() { calls.transcription++; this.transcripts = { transcribe: async () => ({ status: "completed", words: [{ text: "hello", start: 0, end: 500 }], audio_duration: 10 }) }; }
+    constructor() { calls.transcription++; this.transcripts = { transcribe: async () => { providerSubmissions++; return { status: "completed", words: [{ text: "hello", start: 0, end: 500 }], audio_duration: 10 }; } }; }
   };
   const modules = {
     "@anthropic-ai/sdk": class { constructor() { calls.ai++; } },
@@ -20,7 +21,7 @@ function pipelineHarness() {
     "@/lib/anthropic-rate-limits": { logAnthropicRateLimits: () => {} },
     assemblyai: { AssemblyAI: provider },
     "@/lib/clips": { DEFAULT_CONTENT_TYPE: "gaming", CLIP_TYPES_BY_CONTENT: { gaming: [] } },
-    "@/lib/bin": { run: async () => { calls.download++; }, runYtDlpWithRetry: async () => { calls.download++; }, resolveBin: () => "ffmpeg", FFMPEG_THREADS: 1, ffmpegLocationArgs: () => [], ytDlpThreadCapArgs: () => [] },
+    "@/lib/bin": { run: async () => { calls.download++; }, runCapture: async () => "10", runYtDlpWithRetry: async () => { calls.download++; }, resolveBin: () => "ffmpeg", FFMPEG_THREADS: 1, ffmpegLocationArgs: () => [], ytDlpThreadCapArgs: () => [] },
     "@/lib/twitch-chat": { twitchVideoId: () => null, detectChatSpikes: async () => null },
     "@/lib/vision-validation": { validateFinalistVisuals: async (clips) => clips },
     "@/lib/anthropic-credit": { anthropicCreditGate: { assertAvailable: () => {} } },
@@ -31,10 +32,15 @@ function pipelineHarness() {
     "@/lib/discovery-pool": { discoveryPoolSize: () => 10 },
     "@/lib/analysis-result-cache": { createResultCache: () => null, resultCacheKey: () => "cache", selectReviewedCachedClips: () => ({ clips: [], flagged: [], readyCount: 0 }) },
     "@/lib/vod-budget": { reviewProcessingBudget: () => ({ requiresReview: false }) },
+    "@/lib/provider-budget": { budgetForRun: () => ({ call: async (_stage, _amount, fn) => {
+      if (denyBudget) throw new Error('provider budget exceeded');
+      return fn();
+    } }) },
+    "@/lib/provider-budget-core": { quoteTranscription: () => 1167, quoteTextMessage: () => 1000 },
   };
   const context = { exports: {}, require: (id) => modules[id] ?? nativeRequire(id), process, console, Buffer, setTimeout, clearTimeout };
   vm.runInNewContext(code, context, { filename: "analyze-pipeline.ts" });
-  return { run: context.exports.runAnalysisPipeline, calls };
+  return { run: context.exports.runAnalysisPipeline, calls, get providerSubmissions() { return providerSubmissions; } };
 }
 
 test("completed transcript bypasses download and paid transcription", async () => {
@@ -58,4 +64,12 @@ test("fresh transcription checkpoint runs before AI analysis", async () => {
   assert.equal(calls.transcription, 1);
   assert.equal(calls.ai, 0);
   assert.equal(checkpoint.words[0].text, "hello");
+});
+
+test('transcription never reaches AssemblyAI if the budget reservation fails', async () => {
+  const harness = pipelineHarness({ denyBudget: true });
+  await assert.rejects(harness.run({ uploadedPath: '/fake/local.mp4', url: '', clipCount: 3,
+    workDir: '/unused', costRunId: '11111111-1111-4111-8111-111111111111' }), /provider budget exceeded/);
+  assert.equal(harness.providerSubmissions, 0);
+  assert.equal(harness.calls.ai, 0);
 });
