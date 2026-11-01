@@ -59,37 +59,26 @@ test('scheduled upload uses private status and native publishAt', async () => {
   assert.equal(calls[1].request.headers.Authorization, 'Bearer access');
 });
 
-test('immediate upload is public and rejects foreign upload session URLs', async () => {
+test('immediate upload is rejected before contacting YouTube', async () => {
   let count = 0;
-  const fetcher = async (_url, request) => {
-    count++;
-    if (count === 1) {
-      const metadata = JSON.parse(request.body);
-      assert.equal(metadata.status.privacyStatus, 'public');
-      assert.equal(metadata.status.publishAt, undefined);
-      return new Response(null, { status: 200, headers: { Location: 'https://attacker.example/upload' } });
-    }
-    throw new Error('Second request must not happen');
-  };
+  const fetcher = async () => { count++; throw new Error('No upload should start'); };
   await assert.rejects(uploadToYouTube({ accessToken: 'access', bytes: Buffer.from('mp4'),
-    title: 'Clip', description: '', publishAt: null }, fetcher), /upload session/i);
+    title: 'Clip', description: '', publishAt: null, privacyStatus: 'public' }, fetcher), /schedule/i);
+  assert.equal(count, 0);
+});
+
+test('scheduled upload rejects foreign upload session URLs', async () => {
+  let count = 0;
+  await assert.rejects(uploadToYouTube({ accessToken: 'access', bytes: Buffer.from('mp4'),
+    title: 'Clip', description: '', publishAt: new Date(Date.now() + 60 * 60_000).toISOString(), privacyStatus: 'public' },
+  async () => { count++; return new Response(null, { status: 200,
+    headers: { Location: 'https://attacker.example/upload' } }); }), /upload session/i);
   assert.equal(count, 1);
 });
 
-test('private and unlisted uploads use the selected YouTube visibility', async () => {
-  for (const privacyStatus of ['private', 'unlisted']) {
-    const fetcher = async (_url, request) => {
-      const metadata = JSON.parse(request.body);
-      assert.equal(metadata.status.privacyStatus, privacyStatus);
-      return new Response(null, { status: 200, headers: { Location: 'https://invalid.example/upload' } });
-    };
-    await assert.rejects(uploadToYouTube({ accessToken: 'access', bytes: Buffer.from('mp4'),
-      title: 'Clip', description: '', publishAt: null, privacyStatus }, fetcher), /upload session/i);
-  }
-});
-
 test('rejected upload initialization is safe to retry; uncertain completion is not', async () => {
-  const input = { accessToken: 'access', bytes: Buffer.from('mp4'), title: 'Clip', description: '', publishAt: null };
+  const input = { accessToken: 'access', bytes: Buffer.from('mp4'), title: 'Clip', description: '',
+    publishAt: new Date(Date.now() + 60 * 60_000).toISOString(), privacyStatus: 'public' };
   await assert.rejects(uploadToYouTube(input, async () => new Response(null, { status: 401 })),
     error => error instanceof YouTubeUploadError && error.mayHaveReachedYouTube === false);
   let calls = 0;

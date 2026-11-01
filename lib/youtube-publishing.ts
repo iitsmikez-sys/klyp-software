@@ -44,6 +44,7 @@ export function validateYouTubePost(input: {
     if (time < now + 30 * 60_000) throw new Error('Schedule at least 30 minutes in the future.');
     publishAt = new Date(time).toISOString();
   }
+  if (!publishAt) throw new Error('Choose a date and time to schedule this clip.');
   if (publishAt && privacyStatus !== 'public') throw new Error('Scheduled videos publish publicly; choose Public visibility.');
   return { title, description, publishAt, privacyStatus };
 }

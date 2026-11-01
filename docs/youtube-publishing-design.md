@@ -5,8 +5,8 @@ Klyp users with a confirmed Pro subscription can upload a finished clip to their
 ## Flow
 
 1. The user connects YouTube with Google's OAuth authorization-code flow and the `youtube.upload` scope. Klyp requests offline access so a scheduled upload can finish if the initial access token expires. A random state cookie binds the callback to the initiating browser. The refresh token is encrypted at rest; only server code and the service role can read it.
-2. In the clip editor, the user reviews the final clip, enters a YouTube title and description, then chooses Post now or Schedule. The current edit draft is rendered by the existing processing service with the confirmed Pro watermark behavior.
-3. Klyp uploads the rendered MP4 to YouTube immediately. For Schedule, it uploads as private with YouTube's `status.publishAt`; YouTube stores the video and releases it at the chosen time. Klyp does not need a separate delayed upload worker or duplicate stored MP4.
+2. In the clip editor, the user reviews the final clip, enters a YouTube title and description, then chooses a future publication date and time. The current edit draft is rendered by the existing processing service with the confirmed Pro watermark behavior.
+3. Klyp uploads the rendered MP4 to YouTube immediately. It uploads as private with YouTube's `status.publishAt`; YouTube stores the video and releases it at the chosen time. Klyp does not need a separate delayed upload worker or duplicate stored MP4.
 4. Klyp records the YouTube video ID, intended time, and status, and returns the YouTube link. A stable request ID prevents a double click from creating two posts. Ambiguous upload outcomes must not be retried automatically. If a process dies, the user can explicitly clear an unresolved post after one hour only after checking their YouTube channel for a duplicate.
 
 ## Boundaries

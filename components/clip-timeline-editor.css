@@ -41,6 +41,12 @@
 .youtube-dialog-body .youtube-dialog-primary { display:flex; align-items:center; justify-content:center; width:100%; min-height:46px; padding:10px 14px; border:0; border-radius:8px; background:var(--editor-mint); color:#06251c; text-decoration:none; font-size:14px; font-weight:700; text-align:center }
 .youtube-dialog-body .youtube-dialog-primary:hover:not(:disabled) { background:#a6ffe6 }
 .youtube-dialog-body small { color:var(--editor-muted); line-height:1.45 }
+.youtube-dialog-review { display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 10px; padding:10px 12px; border:1px solid var(--editor-border); border-radius:8px; font-size:13px }
+.youtube-dialog-review strong { color:#fff }
+.youtube-dialog-review span { flex:1; min-width:180px }
+.youtube-dialog-review a { color:var(--editor-mint) }
+.youtube-dialog-review button { border:0; padding:0; background:transparent; color:var(--editor-mint); cursor:pointer }
+.youtube-dialog-timezone { margin:-8px 0 0!important; color:var(--editor-muted); font-size:12px }
 .youtube-dialog-reconnect { color:var(--editor-mint); font-size:12px; align-self:center }
 .youtube-dialog-error { margin:0 24px 24px; padding:12px; border:1px solid #8c3b43; border-radius:7px; background:#33191d; color:#ffb6bc; line-height:1.45 }
 .youtube-dialog-error a { display:block; margin-top:6px; color:#d7fff1; text-decoration:underline }
