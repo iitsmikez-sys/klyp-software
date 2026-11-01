@@ -302,7 +302,10 @@ export function whiteBoxCardGeometry(lines: string[], fontSize: number, lineHeig
   const scale = res.h / DEFAULT_RES.h;
   const padX = Math.max(6, Math.round(20 * scale));
   const padY = Math.max(4, Math.round(9 * scale));
-  const textWidth = Math.max(0, ...lines.map(line => line.length * fontSize * .62));
+  // Character-aware estimate keeps wide glyphs inside the card without making
+  // ordinary spoken hooks needlessly wide. ASS and canvas use this same bound.
+  const textWidth = Math.max(0, ...lines.map(line => [...line].reduce((sum, char) =>
+    sum + fontSize * (char === " " ? .35 : /[MW@]/.test(char) ? .82 : /[IJL1!.,:]/.test(char) ? .45 : .67), 0)));
   const width = Math.min(res.w - 8, Math.ceil(textWidth + padX * 2));
   const height = Math.ceil((lines.length - 1) * lineHeight + fontSize + padY * 2);
   const x = Math.round(Math.max(4, Math.min(res.w - width - 4, cx - width / 2)));

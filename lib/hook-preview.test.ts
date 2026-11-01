@@ -68,3 +68,24 @@ test("FFmpeg renders the white hook card with dark lettering", t => {
     assert.ok(pixel(card.x, card.y).every(channel => channel < 100), "card should have a rounded corner");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("wide hook letters stay inside the unified card in export", t => {
+  if (spawnSync("ffmpeg", ["-version"]).error) { t.skip("FFmpeg unavailable"); return; }
+  const directory = mkdtempSync(path.join(tmpdir(), "klyp-wide-hook-"));
+  try {
+    const hook = "WWWWWWWWWWWWWWWWWW";
+    writeFileSync(path.join(directory, "overlay.ass"), generateHookAss(hook, { w: 540, h: 960 }, "WHITE_BOX"));
+    const result = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0x404040:s=540x960:r=1:d=1", "-vf", "subtitles=overlay.ass", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { cwd: directory, maxBuffer: 2_000_000 });
+    assert.equal(result.status, 0, result.stderr.toString());
+    const card = whiteBoxCardGeometry([hook], 31, 39, 270, 130, { w: 540, h: 960 });
+    let black = 0;
+    for (let y = 100; y < 210; y++) for (let x = 0; x < 540; x++) {
+      const at = (y * 540 + x) * 3;
+      if ([...result.stdout.subarray(at, at + 3)].every(channel => channel < 25)) {
+        black++;
+        assert.ok(x > card.x + 2 && x < card.x + card.width - 2, `black letter at x=${x} escaped card ${card.x}..${card.x + card.width}`);
+      }
+    }
+    assert.ok(black > 100);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
