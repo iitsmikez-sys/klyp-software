@@ -12,8 +12,9 @@ const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKi
 function pipelineHarness({ denyBudget = false } = {}) {
   const calls = { download: 0, transcription: 0, ai: 0 };
   let providerSubmissions = 0;
+  let submittedOptions = null;
   const provider = class {
-    constructor() { calls.transcription++; this.transcripts = { transcribe: async () => { providerSubmissions++; return { status: "completed", words: [{ text: "hello", start: 0, end: 500 }], audio_duration: 10 }; } }; }
+    constructor() { calls.transcription++; this.transcripts = { transcribe: async (options) => { providerSubmissions++; submittedOptions = options; return { status: "completed", words: [{ text: "hello", start: 0, end: 500 }], audio_duration: 10 }; } }; }
   };
   const modules = {
     "@anthropic-ai/sdk": class { constructor() { calls.ai++; } },
@@ -40,7 +41,7 @@ function pipelineHarness({ denyBudget = false } = {}) {
   };
   const context = { exports: {}, require: (id) => modules[id] ?? nativeRequire(id), process, console, Buffer, setTimeout, clearTimeout };
   vm.runInNewContext(code, context, { filename: "analyze-pipeline.ts" });
-  return { run: context.exports.runAnalysisPipeline, calls, get providerSubmissions() { return providerSubmissions; } };
+  return { run: context.exports.runAnalysisPipeline, calls, get providerSubmissions() { return providerSubmissions; }, get submittedOptions() { return submittedOptions; } };
 }
 
 test("completed transcript bypasses download and paid transcription", async () => {
@@ -53,8 +54,9 @@ test("completed transcript bypasses download and paid transcription", async () =
   assert.deepEqual(calls, { download: 0, transcription: 0, ai: 0 });
 });
 
-test("fresh transcription checkpoint runs before AI analysis", async () => {
-  const { run, calls } = pipelineHarness();
+test("fresh transcription uses supported speech models before AI analysis", async () => {
+  const harness = pipelineHarness();
+  const { run, calls } = harness;
   const stop = new Error("checkpointed");
   let checkpoint = null;
   await assert.rejects(run({ uploadedPath: "/fake/local.mp4", url: "", clipCount: 3,
@@ -64,6 +66,8 @@ test("fresh transcription checkpoint runs before AI analysis", async () => {
   assert.equal(calls.transcription, 1);
   assert.equal(calls.ai, 0);
   assert.equal(checkpoint.words[0].text, "hello");
+  assert.deepEqual(Array.from(harness.submittedOptions.speech_models ?? []), ["universal-3-5-pro", "universal-2"]);
+  assert.equal(harness.submittedOptions.speech_model, undefined);
 });
 
 test('transcription never reaches AssemblyAI if the budget reservation fails', async () => {

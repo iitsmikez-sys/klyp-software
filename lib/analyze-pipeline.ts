@@ -182,7 +182,7 @@ export async function transcribe(audioPath: string, costRunId?: string): Promise
   const measured = Number((await runCapture(resolveBin('ffprobe'), ['-v', 'error', '-show_entries', 'format=duration',
     '-of', 'default=noprint_wrappers=1:nokey=1', audioPath], { maxRunMs: 20_000 })).trim());
   const transcript = await budgetForRun(costRunId).call('transcribe', quoteTranscription(measured),
-    () => aai.transcripts.transcribe({ audio: audioPath, speech_model: 'best' }));
+    () => aai.transcripts.transcribe({ audio: audioPath, speech_models: ['universal-3-5-pro', 'universal-2'] }));
 
   if (transcript.status === "error") {
     throw new Error(`AssemblyAI transcription failed: ${transcript.error}`);
