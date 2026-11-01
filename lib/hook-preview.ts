@@ -4,7 +4,7 @@
  * user sees in the player matches what FFmpeg burns on export: top-center,
  * uppercase, visible for the first HOOK_DURATION_MS of the clip.
  */
-import { HOOK_DURATION_MS, HOOK_TOP_MARGIN_REF, hookTextLayout, type HookStyle } from "./captions.ts";
+import { HOOK_DURATION_MS, HOOK_TOP_MARGIN_REF, hookTextLayout, wrapCaptionText, type HookStyle } from "./captions.ts";
 import type { TextPlacement } from "./text-placement.ts";
 
 type PreviewParams = {
@@ -14,6 +14,7 @@ type PreviewParams = {
   bold: boolean;
   outline: number; // stroke width at reference size (ignored when boxed)
   boxed: boolean; // black bar behind the text instead of an outline
+  boxColor?: string;
 };
 
 /** Keep in sync with HOOK_STYLE_PARAMS in lib/captions.ts. */
@@ -23,6 +24,7 @@ const PREVIEW_PARAMS: Record<HookStyle, PreviewParams> = {
   YELLOW: { font: "'Arial Black'", fontSize: 66, color: "#ffff00", bold: true, outline: 4, boxed: false },
   BOXED: { font: "Arial", fontSize: 64, color: "#ffffff", bold: true, outline: 0, boxed: true },
   NEON: { font: "Arial", fontSize: 72, color: "#00E5A0", bold: true, outline: 4, boxed: false },
+  WHITE_BOX: { font: "'Arial Black'", fontSize: 62, color: "#000000", bold: true, outline: 0, boxed: true, boxColor: "#ffffff" },
 };
 
 /** Greedy word-wrap against the current ctx.font. */
@@ -67,14 +69,14 @@ export function drawHookPreview(
   const fs = custom?.fontSize ?? Math.max(10, Math.round(p.fontSize * scale));
   const lineHeight = custom?.lineHeight ?? Math.round(fs * 1.25);
   const cx = custom?.x ?? W / 2;
-  const maxWidth = W-Math.round(80*scale);
+  const maxWidth = style === "WHITE_BOX" ? W * 0.7 : W-Math.round(80*scale);
 
   ctx.save();
   ctx.font = `${p.bold ? "bold " : ""}${fs}px ${p.font}, Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
 
-  const lines = custom?.lines ?? wrapLines(ctx, text, maxWidth);
+  const lines = custom?.lines ?? (style === "WHITE_BOX" ? wrapCaptionText(text, "BOLD", 18) : wrapLines(ctx, text, maxWidth));
   const firstY = custom?.firstY ?? Math.round(HOOK_TOP_MARGIN_REF*scale);
 
   lines.forEach((line, i) => {
@@ -83,7 +85,7 @@ export function drawHookPreview(
       const w = ctx.measureText(line).width;
       const padX = Math.round(18 * scale);
       const padY = Math.round(8 * scale);
-      ctx.fillStyle = "black";
+      ctx.fillStyle = p.boxColor ?? "black";
       ctx.fillRect(cx - w / 2 - padX, y - padY, w + padX * 2, fs + padY * 2);
     } else {
       ctx.lineJoin = "round";

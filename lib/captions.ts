@@ -270,7 +270,7 @@ export function generateAss(
 export const HOOK_DURATION_MS = 3000;
 
 /** Hook text style presets — CapCut-style looks. Fonts must exist on the server. */
-export const HOOK_STYLES = ["CLASSIC", "IMPACT", "YELLOW", "BOXED", "NEON"] as const;
+export const HOOK_STYLES = ["CLASSIC", "IMPACT", "YELLOW", "BOXED", "NEON", "WHITE_BOX"] as const;
 export type HookStyle = (typeof HOOK_STYLES)[number];
 
 /**
@@ -281,7 +281,7 @@ export type HookStyle = (typeof HOOK_STYLES)[number];
  */
 const HOOK_STYLE_PARAMS: Record<
   HookStyle,
-  { font: string; fontSize: number; color: string; bold: 0 | 1; outline: number; borderStyle: 1 | 3 }
+  { font: string; fontSize: number; color: string; bold: 0 | 1; outline: number; borderStyle: 1 | 3; boxColor?: string }
 > = {
   // Bold white, thick black outline — classic meme caption.
   CLASSIC: { font: "Arial", fontSize: 72, color: "&H00FFFFFF", bold: 1, outline: 12, borderStyle: 1 },
@@ -293,6 +293,8 @@ const HOOK_STYLE_PARAMS: Record<
   BOXED: { font: "Arial", fontSize: 64, color: "&H00FFFFFF", bold: 1, outline: 14, borderStyle: 3 },
   // Klyp green (#00E5A0) — branded neon look.
   NEON: { font: "Arial", fontSize: 72, color: "&H00A0E500", bold: 1, outline: 4, borderStyle: 1 },
+  // Heavy black text on a compact white card, for spoken-story hooks.
+  WHITE_BOX: { font: "Arial Black", fontSize: 62, color: "&H00000000", bold: 1, outline: 14, borderStyle: 3, boxColor: "&H00FFFFFF" },
 };
 
 /** Shared geometry for manually placed hooks in canvas and ASS export. */
@@ -300,7 +302,7 @@ export function hookTextLayout(hook:string,res:PlayRes,style:HookStyle,placement
   const p=HOOK_STYLE_PARAMS[style],fontSize=Math.max(10,Math.round(p.fontSize*res.h/DEFAULT_RES.h*placement.scale));
   const lineHeight=Math.round(fontSize*1.25);
   const available=2*Math.min(placement.x,1-placement.x);
-  const limit=Math.max(6,Math.floor(30*available/placement.scale));
+  const limit=Math.max(6,Math.floor((style === "WHITE_BOX" ? 18 : 30)*available/placement.scale));
   const lines=wrapCaptionText(hook.toUpperCase(),"BOLD",limit);
   const margin=Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));
   const height=lines.length*lineHeight;
@@ -326,10 +328,12 @@ export function generateHookAss(
   const size = custom?.fontSize ?? Math.round(p.fontSize * scale);
   const outline = Math.max(1, Math.round(p.outline * scale * (placement?.scale ?? 1)));
   const marginV = placement ? 0 : Math.round(HOOK_TOP_MARGIN_REF * scale);
+  const marginH = style === "WHITE_BOX" ? Math.round(res.w * 0.15) : 40;
+  const whiteBoxLines = style === "WHITE_BOX" && !custom ? wrapCaptionText(hook.toUpperCase(), "BOLD", 18) : null;
   const hookStyle = [
     "[V4+ Styles]",
     STYLES_FORMAT,
-    `Style: Hook,${p.font},${size},${p.color},${p.color},&H00000000,&H00000000,${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${outline},0,${placement ? 5 : 8},40,40,${marginV},1`,
+    `Style: Hook,${p.font},${size},${p.color},${p.color},${p.boxColor ?? '&H00000000'},&H00000000,${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${outline},0,${placement ? 5 : 8},${marginH},${marginH},${marginV},1`,
   ].join("\n");
 
   return [
@@ -338,7 +342,7 @@ export function generateHookAss(
     hookStyle,
     "",
     EVENTS_HEADER,
-    dialogue(0, HOOK_DURATION_MS, `${custom ? `{\\an5\\pos(${custom.x},${custom.y})}` : ''}${custom ? custom.lines.map(sanitizeAssText).join('\\N') : sanitizeAssText(hook).toUpperCase()}`, "Hook"),
+    dialogue(0, HOOK_DURATION_MS, `${custom ? `{\\an5\\pos(${custom.x},${custom.y})}` : ''}${custom ? custom.lines.map(sanitizeAssText).join('\\N') : whiteBoxLines ? whiteBoxLines.map(sanitizeAssText).join('\\N') : sanitizeAssText(hook).toUpperCase()}`, "Hook"),
   ].join("\n");
 }
 
