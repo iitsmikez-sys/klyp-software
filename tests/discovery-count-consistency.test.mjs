@@ -13,7 +13,7 @@ const code = ts.transpileModule(source, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
 } }).outputText;
 
-function harness() {
+function harness({ denyProviderSpend = false } = {}) {
   const saved = new Map();
   const calls = { selection: 0, prompts: [], visualPools: [] };
   const moments = [100, 200, 300, 400, 500, 600].map((start_seconds, index) => ({
@@ -46,6 +46,11 @@ function harness() {
     } },
     '@/lib/anthropic-credit': { anthropicCreditGate: { assertAvailable: () => {} } },
     '@/lib/provider-cost': { recordProviderUsage: () => {} },
+    '@/lib/provider-budget': { budgetForRun: () => ({ call: async (_stage, _quote, fn) => {
+      if (denyProviderSpend) throw new Error('provider budget exceeded');
+      return fn();
+    } }) },
+    '@/lib/provider-budget-core': { quoteTextMessage: () => 500_000, quoteTranscription: () => 100_000 },
     '@/lib/vod-candidates': { clipInsideObservedCoverage: () => true },
     '@/lib/clip-boundaries': { reviewClipBatch: clips => ({ ready: clips, flagged: [] }) },
     '@/lib/format-transcript': { formatTranscript: () => 'Full VOD transcript: quiet joke at 600 seconds.' },
@@ -69,12 +74,18 @@ function harness() {
   vm.runInNewContext(code, context, { filename: 'analyze-pipeline.ts' });
   const run = count => context.exports.runAnalysisPipeline({ uploadedPath: null,
     url: 'https://www.twitch.tv/videos/123', durationHint: 1000, clipCount: count,
-    workDir: '/unused', sourceKey: 'twitch:123', userId: 'test-user', client: {},
+    workDir: '/unused', sourceKey: 'twitch:123', userId: 'test-user', client: {}, costRunId: '11111111-1111-4111-8111-111111111111',
     cachedTranscript: { words: [{ text: 'joke', start: 600000, end: 600500 }],
       durationSeconds: 1000, coverageMode: 'full' },
   });
   return { run, calls };
 }
+
+test('selection never reaches Anthropic when the durable budget rejects it', async () => {
+  const { run, calls } = harness({ denyProviderSpend: true });
+  await assert.rejects(run(3), /provider budget exceeded/);
+  assert.equal(calls.selection, 0);
+});
 
 test('requests of 1, 2, 3, 5, and 10 use the same complete discovery pool', async () => {
   const { run, calls } = harness();
