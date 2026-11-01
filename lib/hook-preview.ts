@@ -4,7 +4,7 @@
  * user sees in the player matches what FFmpeg burns on export: top-center,
  * uppercase, visible for the first HOOK_DURATION_MS of the clip.
  */
-import { HOOK_DURATION_MS, HOOK_TOP_MARGIN_REF, hookTextLayout, wrapCaptionText, type HookStyle } from "./captions.ts";
+import { HOOK_DURATION_MS, HOOK_TOP_MARGIN_REF, hookTextLayout, whiteBoxCardGeometry, wrapCaptionText, type HookStyle } from "./captions.ts";
 import type { TextPlacement } from "./text-placement.ts";
 
 type PreviewParams = {
@@ -79,15 +79,23 @@ export function drawHookPreview(
   const lines = custom?.lines ?? (style === "WHITE_BOX" ? wrapCaptionText(text, "BOLD", 18) : wrapLines(ctx, text, maxWidth));
   const firstY = custom?.firstY ?? Math.round(HOOK_TOP_MARGIN_REF*scale);
 
+  if (style === "WHITE_BOX") {
+    const card = whiteBoxCardGeometry(lines, fs, lineHeight, cx, firstY, {w:W,h:H});
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.roundRect(card.x, card.y, card.width, card.height, card.radius);
+    ctx.fill();
+  }
+
   lines.forEach((line, i) => {
     const y = firstY + i * lineHeight;
-    if (p.boxed) {
+    if (p.boxed && style !== "WHITE_BOX") {
       const w = ctx.measureText(line).width;
       const padX = Math.round(18 * scale);
       const padY = Math.round(8 * scale);
       ctx.fillStyle = p.boxColor ?? "black";
       ctx.fillRect(cx - w / 2 - padX, y - padY, w + padX * 2, fs + padY * 2);
-    } else {
+    } else if (style !== "WHITE_BOX") {
       ctx.lineJoin = "round";
       ctx.lineWidth = Math.max(2, p.outline * 2 * scale);
       ctx.strokeStyle = "black";

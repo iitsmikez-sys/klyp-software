@@ -195,8 +195,8 @@ export function wrapCaptionText(text: string, style: CaptionStyle, characterLimi
  * Build a Dialogue line from ASS-component parts.
  * `startMs` / `endMs` are already relative to the clip's start (0-based).
  */
-function dialogue(startMs: number, endMs: number, text: string, style = "Default"): string {
-  return `Dialogue: 0,${assTime(startMs)},${assTime(endMs)},${style},,0,0,0,,${text}`;
+function dialogue(startMs: number, endMs: number, text: string, style = "Default", layer = 0): string {
+  return `Dialogue: ${layer},${assTime(startMs)},${assTime(endMs)},${style},,0,0,0,,${text}`;
 }
 
 /** The same step timing selects the green word in canvas and ASS export. */
@@ -294,8 +294,30 @@ const HOOK_STYLE_PARAMS: Record<
   // Klyp green (#00E5A0) — branded neon look.
   NEON: { font: "Arial", fontSize: 72, color: "&H00A0E500", bold: 1, outline: 4, borderStyle: 1 },
   // Heavy black text on a compact white card, for spoken-story hooks.
-  WHITE_BOX: { font: "Arial Black", fontSize: 62, color: "&H00000000", bold: 1, outline: 14, borderStyle: 3, boxColor: "&H00FFFFFF" },
+  WHITE_BOX: { font: "Arial Black", fontSize: 62, color: "&H00000000", bold: 1, outline: 0, borderStyle: 1 },
 };
+
+/** One card around all hook lines, shared by canvas preview and ASS export. */
+export function whiteBoxCardGeometry(lines: string[], fontSize: number, lineHeight: number, cx: number, firstY: number, res: PlayRes) {
+  const scale = res.h / DEFAULT_RES.h;
+  const padX = Math.max(6, Math.round(20 * scale));
+  const padY = Math.max(4, Math.round(9 * scale));
+  // Character-aware estimate keeps wide glyphs inside the card without making
+  // ordinary spoken hooks needlessly wide. ASS and canvas use this same bound.
+  const textWidth = Math.max(0, ...lines.map(line => [...line].reduce((sum, char) =>
+    sum + fontSize * (char === " " ? .35 : /[MW@]/.test(char) ? .82 : /[IJL1!.,:]/.test(char) ? .45 : .67), 0)));
+  const width = Math.min(res.w - 8, Math.ceil(textWidth + padX * 2));
+  const height = Math.ceil((lines.length - 1) * lineHeight + fontSize + padY * 2);
+  const x = Math.round(Math.max(4, Math.min(res.w - width - 4, cx - width / 2)));
+  const y = Math.round(Math.max(4, Math.min(res.h - height - 4, firstY - padY)));
+  return { x, y, width, height, radius: Math.max(3, Math.round(9 * scale)) };
+}
+
+function roundedCardPath(width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  const c = Math.round(r * .55), right = width - r, bottom = height - r;
+  return `m ${r} 0 l ${right} 0 b ${right+c} 0 ${width} ${r-c} ${width} ${r} l ${width} ${bottom} b ${width} ${bottom+c} ${right+c} ${height} ${right} ${height} l ${r} ${height} b ${r-c} ${height} 0 ${bottom+c} 0 ${bottom} l 0 ${r} b 0 ${r-c} ${r-c} 0 ${r} 0`;
+}
 
 /** Shared geometry for manually placed hooks in canvas and ASS export. */
 export function hookTextLayout(hook:string,res:PlayRes,style:HookStyle,placement:TextPlacement) {
@@ -336,13 +358,21 @@ export function generateHookAss(
     `Style: Hook,${p.font},${size},${p.color},${p.color},${p.boxColor ?? '&H00000000'},&H00000000,${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${outline},0,${placement ? 5 : 8},${marginH},${marginH},${marginV},1`,
   ].join("\n");
 
+  const lines = custom?.lines ?? whiteBoxLines;
+  const card = style === "WHITE_BOX" && lines
+    ? whiteBoxCardGeometry(lines, size, custom?.lineHeight ?? Math.round(size * 1.25), custom?.x ?? res.w / 2, custom?.firstY ?? marginV, res)
+    : null;
+  const cardEvent = card
+    ? dialogue(0, HOOK_DURATION_MS, `{\\an7\\pos(${card.x},${card.y})\\p1\\1c&H00FFFFFF&\\bord0\\shad0}${roundedCardPath(card.width,card.height,card.radius)}`, "Hook", 0)
+    : null;
   return [
     assHeader(res),
     "",
     hookStyle,
     "",
     EVENTS_HEADER,
-    dialogue(0, HOOK_DURATION_MS, `${custom ? `{\\an5\\pos(${custom.x},${custom.y})}` : ''}${custom ? custom.lines.map(sanitizeAssText).join('\\N') : whiteBoxLines ? whiteBoxLines.map(sanitizeAssText).join('\\N') : sanitizeAssText(hook).toUpperCase()}`, "Hook"),
+    ...(cardEvent ? [cardEvent] : []),
+    dialogue(0, HOOK_DURATION_MS, `${custom ? `{\\an5\\pos(${custom.x},${custom.y})}` : ''}${custom ? custom.lines.map(sanitizeAssText).join('\\N') : whiteBoxLines ? whiteBoxLines.map(sanitizeAssText).join('\\N') : sanitizeAssText(hook).toUpperCase()}`, "Hook", cardEvent ? 1 : 0),
   ].join("\n");
 }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateHookAss, HOOK_STYLES } from "./captions.ts";
+import { generateHookAss, HOOK_STYLES, whiteBoxCardGeometry, wrapCaptionText } from "./captions.ts";
 import { drawHookPreview } from "./hook-preview.ts";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -21,20 +21,24 @@ test("hook stays inside a 260px top safe margin in both export and preview", () 
   assert.ok(positions.every(y => y === 130));
 });
 
-test("white box hook uses black uppercase text on a white background in preview and export", () => {
+test("white box hook draws one rounded card behind every line", () => {
   assert.ok((HOOK_STYLES as readonly string[]).includes("WHITE_BOX"));
   const ass = generateHookAss("Front cut", { w: 1080, h: 1920 }, "WHITE_BOX");
-  assert.match(ass, /Style: Hook,Arial Black,62,&H00000000,&H00000000,&H00FFFFFF,&H00000000,1,0,0,0,100,100,0,0,3,14,0,8,/);
+  assert.match(ass, /\\p1/);
   assert.match(ass, /FRONT CUT/);
   const colors: string[] = [];
+  let cards = 0;
   const ctx = {
     fillStyle: "",
     save() {}, restore() {}, measureText: (text: string) => ({ width: text.length * 20 }),
-    fillRect(this: { fillStyle: string }) { colors.push(this.fillStyle); },
-    fillText(this: { fillStyle: string }, text: string) { assert.equal(text, "FRONT CUT"); colors.push(this.fillStyle); },
+    beginPath() {}, roundRect() { cards++; }, fill(this: { fillStyle: string }) { colors.push(this.fillStyle); },
+    fillText(this: { fillStyle: string }, _text: string) { colors.push(this.fillStyle); },
   } as unknown as CanvasRenderingContext2D;
-  drawHookPreview(ctx, 0, "Front cut", "WHITE_BOX", 1080, 1920);
-  assert.deepEqual(colors, ["#ffffff", "#000000"]);
+  drawHookPreview(ctx, 0, "THE FRONT IS THE RISKIEST PART TO CUT", "WHITE_BOX", 1080, 1920);
+  assert.equal(cards, 1);
+  assert.equal(colors[0], "#ffffff");
+  assert.ok(colors.slice(1).length > 1);
+  assert.ok(colors.slice(1).every(color => color === "#000000"));
 });
 
 test("FFmpeg renders the white hook card with dark lettering", t => {
@@ -55,5 +59,33 @@ test("FFmpeg renders the white hook card with dark lettering", t => {
     }
     assert.ok(white > 1000, `expected visible white card, got ${white} white pixels`);
     assert.ok(black > 100, `expected dark letters on the card, got ${black} dark pixels`);
+    const lines = wrapCaptionText("THE FRONT IS THE RISKIEST PART TO CUT", "BOLD", 18);
+    const card = whiteBoxCardGeometry(lines, 31, Math.round(31 * 1.25), 270, 130, { w: 540, h: 960 });
+    const pixel = (x: number, y: number) => [...result.stdout.subarray((y * 540 + x) * 3, (y * 540 + x) * 3 + 3)];
+    for (const y of [card.y + card.radius + 2, card.y + Math.floor(card.height / 2), card.y + card.height - card.radius - 3]) {
+      assert.ok(pixel(card.x + 3, y).every(channel => channel > 225), `card should keep a straight left edge at y=${y}`);
+    }
+    assert.ok(pixel(card.x, card.y).every(channel => channel < 100), "card should have a rounded corner");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("wide hook letters stay inside the unified card in export", t => {
+  if (spawnSync("ffmpeg", ["-version"]).error) { t.skip("FFmpeg unavailable"); return; }
+  const directory = mkdtempSync(path.join(tmpdir(), "klyp-wide-hook-"));
+  try {
+    const hook = "WWWWWWWWWWWWWWWWWW";
+    writeFileSync(path.join(directory, "overlay.ass"), generateHookAss(hook, { w: 540, h: 960 }, "WHITE_BOX"));
+    const result = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0x404040:s=540x960:r=1:d=1", "-vf", "subtitles=overlay.ass", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { cwd: directory, maxBuffer: 2_000_000 });
+    assert.equal(result.status, 0, result.stderr.toString());
+    const card = whiteBoxCardGeometry([hook], 31, 39, 270, 130, { w: 540, h: 960 });
+    let black = 0;
+    for (let y = 100; y < 210; y++) for (let x = 0; x < 540; x++) {
+      const at = (y * 540 + x) * 3;
+      if ([...result.stdout.subarray(at, at + 3)].every(channel => channel < 25)) {
+        black++;
+        assert.ok(x > card.x + 2 && x < card.x + card.width - 2, `black letter at x=${x} escaped card ${card.x}..${card.x + card.width}`);
+      }
+    }
+    assert.ok(black > 100);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
