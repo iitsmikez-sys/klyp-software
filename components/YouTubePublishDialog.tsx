@@ -17,14 +17,19 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
   const [connection, setConnection] = useState<Status | null>(null);
   const [title, setTitle] = useState(clipTitle.slice(0, 100));
   const [description, setDescription] = useState('');
-  const [privacyStatus, setPrivacyStatus] = useState<'public' | 'private' | 'unlisted'>('public');
-  const [mode, setMode] = useState<'now' | 'schedule'>('now');
   const [scheduledLocal, setScheduledLocal] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ status: string; youtubeUrl: string } | null>(null);
+  const [result, setResult] = useState<{ status: string; youtubeUrl: string; publishAt: string } | null>(null);
   const [reload, setReload] = useState(0);
   const previous = connection?.posts?.find(post => post.clip_id === clipId);
+  const scheduledDate = scheduledLocal ? new Date(scheduledLocal) : null;
+  const validSchedule = !!scheduledDate && Number.isFinite(scheduledDate.getTime()) &&
+    scheduledDate.getTime() >= Date.now() + 30 * 60_000;
+  const scheduleLabel = validSchedule && scheduledDate
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(scheduledDate)
+    : null;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   useEffect(() => {
     let active = true;
@@ -45,15 +50,11 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
   async function submit() {
     if (busy) return;
     setError(null);
-    let publishAt: string | null = null;
-    if (mode === 'schedule') {
-      const date = new Date(scheduledLocal);
-      if (!scheduledLocal || !Number.isFinite(date.getTime()) || date.getTime() < Date.now() + 30 * 60_000) {
-        setError('Choose a time at least 30 minutes from now.');
-        return;
-      }
-      publishAt = date.toISOString();
+    if (!validSchedule || !scheduledDate) {
+      setError('Choose a date and time at least 30 minutes from now.');
+      return;
     }
+    const publishAt = scheduledDate.toISOString();
     let clipPayload: Record<string, unknown>;
     try { clipPayload = makePayload(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Check your clip edits.'); return; }
@@ -67,13 +68,13 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
       }
       const response = await processingFetch('/api/youtube/publish', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestKey, clipPayload, title, description, publishAt, privacyStatus }),
+        body: JSON.stringify({ requestKey, clipPayload, title, description, publishAt, privacyStatus: 'public' }),
       });
       const data = await response.json();
       if (data.status === 'failed') localStorage.removeItem(keyName);
       if (!response.ok) throw new Error(data.error ?? 'YouTube publishing failed.');
       if (data.youtubeUrl) {
-        setResult({ status: data.status, youtubeUrl: data.youtubeUrl });
+        setResult({ status: data.status, youtubeUrl: data.youtubeUrl, publishAt });
         localStorage.removeItem(keyName);
       } else setError(data.status === 'needs_review'
         ? 'The upload outcome is uncertain. Check your YouTube channel before trying again.'
@@ -118,7 +119,7 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
     if (event.target === event.currentTarget && !busy) onClose();
   }}>
     <section className="youtube-dialog" role="dialog" aria-modal="true" aria-labelledby="youtube-dialog-title">
-      <header><div><p>Pro publishing</p><h2 id="youtube-dialog-title">Post to YouTube</h2></div>
+      <header><div><p>Pro publishing</p><h2 id="youtube-dialog-title">Schedule for YouTube</h2></div>
         <button type="button" aria-label="Close YouTube publishing" disabled={busy} onClick={onClose}>×</button></header>
       {!pro || connection?.proRequired ? <div className="youtube-dialog-body"><p>YouTube publishing is included with an active Pro subscription.</p>
         <a className="youtube-dialog-primary" href="/dashboard/upgrade">View Pro</a></div>
@@ -128,7 +129,7 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
       : !connection.connected ? <div className="youtube-dialog-body"><p>Connect the YouTube channel where you want to post your finished clip. <a href="/privacy" target="_blank" rel="noopener noreferrer">How Klyp uses YouTube access</a></p>
         <a className="youtube-dialog-primary" href={`/api/youtube/connect?clip_id=${encodeURIComponent(clipId)}`}>Connect YouTube</a></div>
       : result ? <div className="youtube-dialog-body" role="status"><p>{result.status === 'scheduled'
-          ? 'YouTube received your clip and scheduled its publication.'
+          ? `YouTube received your clip. It is private until ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(result.publishAt))}.`
           : 'YouTube received your clip. Processing may take a few minutes.'}</p>
         <a className="youtube-dialog-primary" href={result.youtubeUrl} target="_blank" rel="noopener noreferrer">View on YouTube ↗</a></div>
       : previous?.status === 'processing' || previous?.status === 'needs_review'
@@ -145,28 +146,21 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
           <a className="youtube-dialog-primary" href={`https://www.youtube.com/watch?v=${previous.youtube_video_id}`} target="_blank" rel="noopener noreferrer">View on YouTube ↗</a>
           <button type="button" onClick={() => { setConnection(current => current ? { ...current,
             posts: current.posts?.filter(post => post !== previous) } : current); localStorage.removeItem(`klyp.youtube.publish.${clipId}`); }}>
-            Post this clip again</button></div>
+            Schedule this clip again</button></div>
       : <div className="youtube-dialog-body">
-        <p>Review the exact clip you edited. Klyp will render and upload it to your connected channel.</p>
+        <p>Review your finished clip and choose when it should go live. Klyp uploads it privately to YouTube first.</p>
+        <div className="youtube-dialog-review"><strong>Clip</strong><span>{clipTitle}</span>
+          <button type="button" onClick={onClose}>Review in editor</button></div>
+        <div className="youtube-dialog-review"><strong>Destination</strong><span>Your connected YouTube channel</span>
+          <a href={`/api/youtube/connect?clip_id=${encodeURIComponent(clipId)}`}>Switch channel</a></div>
         <label>Video title<input maxLength={100} value={title} onChange={event => setTitle(event.target.value)} /></label>
         <label>Description<textarea maxLength={5000} rows={3} value={description} onChange={event => setDescription(event.target.value)} /></label>
-        {mode === 'now' && <fieldset><legend>Who can watch?</legend>
-          {(['public', 'unlisted', 'private'] as const).map(option => <label key={option}>
-            <input type="radio" name="youtube-privacy" checked={privacyStatus === option}
-              onChange={() => setPrivacyStatus(option)} /> {option[0].toUpperCase() + option.slice(1)}
-          </label>)}
-        </fieldset>}
-        <fieldset><legend>When should it go live?</legend>
-          <label><input type="radio" name="youtube-publish-mode" checked={mode === 'now'} onChange={() => setMode('now')} /> Post now</label>
-          <label><input type="radio" name="youtube-publish-mode" checked={mode === 'schedule'} onChange={() => {
-            setMode('schedule'); setPrivacyStatus('public');
-          }} /> Schedule</label>
-        </fieldset>
-        {mode === 'schedule' && <label>Publication time<input type="datetime-local" value={scheduledLocal}
-          onChange={event => setScheduledLocal(event.target.value)} /></label>}
-        {mode === 'schedule' && <small>Scheduled videos stay private until YouTube publishes them publicly at your chosen time.</small>}
-        <button className="youtube-dialog-primary" type="button" disabled={busy || !title.trim()} onClick={() => void submit()}>
-          {busy ? 'Rendering and uploading…' : mode === 'schedule' ? 'Schedule on YouTube' : 'Post to YouTube'}
+        <div className="youtube-dialog-review"><strong>Visibility</strong><span>Private until your scheduled publication time</span></div>
+        <label>Publication date and time<input type="datetime-local" value={scheduledLocal}
+          onChange={event => setScheduledLocal(event.target.value)} required /></label>
+        <p className="youtube-dialog-timezone">Time zone: {timeZone}. Choose a time at least 30 minutes from now.</p>
+        <button className="youtube-dialog-primary" type="button" disabled={busy || !title.trim() || !validSchedule} onClick={() => void submit()}>
+          {busy ? 'Rendering and scheduling…' : scheduleLabel ? `Schedule for ${scheduleLabel}` : 'Choose a date and time to schedule'}
         </button>
         <small>Keep this window open until YouTube confirms the upload. Scheduling happens on YouTube after upload.</small>
         <a className="youtube-dialog-reconnect" href={`/api/youtube/connect?clip_id=${encodeURIComponent(clipId)}`}>

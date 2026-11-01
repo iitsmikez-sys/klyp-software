@@ -15,8 +15,7 @@ test('publishing accepts paid or complimentary Pro access', () => {
 
 test('YouTube title, description, and future schedule are validated', () => {
   const now = Date.parse('2026-10-30T12:00:00Z');
-  assert.deepEqual(validateYouTubePost({ title: '  A great clip  ', description: ' hi ', publishAt: null }, now),
-    { title: 'A great clip', description: 'hi', publishAt: null, privacyStatus: 'public' });
+  assert.throws(() => validateYouTubePost({ title: '  A great clip  ', description: ' hi ', publishAt: null }, now), /schedule/i);
   assert.equal(validateYouTubePost({ title: 'Short', description: '', publishAt: '2026-10-30T13:00:00Z' }, now).publishAt,
     '2026-10-30T13:00:00.000Z');
   assert.throws(() => validateYouTubePost({ title: '', description: '' }, now), /title/i);
@@ -27,11 +26,10 @@ test('YouTube title, description, and future schedule are validated', () => {
   assert.throws(() => validateYouTubePost({ title: 'Clip', description: '', publishAt: 'bad' }, now), /date/i);
 });
 
-test('users can choose public, unlisted, or private visibility; scheduled posts publish publicly later', () => {
+test('scheduled posts require public visibility when they go live', () => {
   const now = Date.parse('2026-10-30T12:00:00Z');
-  for (const privacyStatus of ['public', 'unlisted', 'private']) {
-    assert.equal(validateYouTubePost({ title: 'Clip', description: '', privacyStatus }, now).privacyStatus, privacyStatus);
-  }
+  assert.equal(validateYouTubePost({ title: 'Clip', description: '', privacyStatus: 'public',
+    publishAt: '2026-10-30T13:00:00Z' }, now).privacyStatus, 'public');
   assert.throws(() => validateYouTubePost({ title: 'Clip', description: '', privacyStatus: 'hidden' }, now), /privacy/i);
   assert.throws(() => validateYouTubePost({ title: 'Clip', description: '', privacyStatus: 'private',
     publishAt: '2026-10-30T13:00:00Z' }, now), /public/i);

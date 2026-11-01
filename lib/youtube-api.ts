@@ -75,11 +75,10 @@ export async function revokeYouTubeToken(refreshToken: string, fetcher: Fetcher 
 /** Uploads a rendered clip once. Ambiguous outcomes are not automatically retried. */
 export async function uploadToYouTube(input: YouTubePostDetails & { accessToken: string; bytes: Buffer },
   fetcher: Fetcher = fetch): Promise<string> {
+  if (!input.publishAt) throw new YouTubeUploadError('Choose a date and time to schedule this clip.', false);
   const metadata = {
     snippet: { title: input.title, description: input.description },
-    status: input.publishAt
-      ? { privacyStatus: 'private', publishAt: input.publishAt }
-      : { privacyStatus: input.privacyStatus ?? 'public' },
+    status: { privacyStatus: 'private', publishAt: input.publishAt },
   };
   const start = await fetcher('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
     method: 'POST',
