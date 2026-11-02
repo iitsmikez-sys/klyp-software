@@ -141,7 +141,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
               <b>{usd(DISCOUNTED_CENTS)}</b> once, then <b>{usd(RETENTION.PRICE_CENTS)}/month</b>
             </p>
             <p className="text-xs text-foreground-muted">
-              Applies to your payment on {day(state.periodEnd)}. Available once every 6 months.
+              Applies to your payment on {day(state.periodEnd)}.
             </p>
             <button type="button" className={primary} disabled={!!busy}
               onClick={() => void run<Done>("Confirming with Stripe…", "discount", { eventId }, (d) => { setDone(d); setStep("done_discount"); void loadState(); })}>
