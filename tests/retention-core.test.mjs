@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  addMonthsUtc, applyDiscount, applyPause, cancelSubscription, DISCOUNTED_CENTS, getRetentionState,
+  addMonthsUtc, applyDiscount, applyPause, cancelSubscription, DISCOUNT_SAVING_CENTS, DISCOUNTED_CENTS, getRetentionState,
   OFFERS_BY_REASON, RETENTION, recordSurvey, runRetentionAction, undoCancellation,
 } from "../lib/retention-core.ts";
 import { syncUserFromStripe } from "../lib/stripe-sync.ts";
@@ -101,9 +101,10 @@ test("survey: an unknown reason is refused, long feedback is cut to 1000 charact
 });
 
 /* ───────────── the 40% discount ───────────── */
-test("discount: the price shown is $16.80 for one payment and $28.00 after", () => {
+test("discount: the price shown is $16.80 for one payment and $28 after", () => {
   assert.equal(RETENTION.PRICE_CENTS, 2800);
   assert.equal(DISCOUNTED_CENTS, 1680);
+  assert.equal(DISCOUNT_SAVING_CENTS, 1120);
   assert.equal(RETENTION.DISCOUNT_PERCENT, 40);
 });
 
