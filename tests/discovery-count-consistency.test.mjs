@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { discoveryPoolSize, fullVodCoverage } from '../lib/discovery-pool.ts';
-import { clipCharge, estimateSparks } from '../lib/sparks.ts';
+import { analysisCharge, clipCharge, estimateSparks } from '../lib/sparks.ts';
 
 const require = createRequire(import.meta.url);
 const source = await readFile(new URL('../lib/analyze-pipeline.ts', import.meta.url), 'utf8');
@@ -100,9 +100,13 @@ test('requests of 1, 2, 3, 5, and 10 use the same complete discovery pool', asyn
   assert.ok(calls.prompts[0].messages[0].content.includes('quiet joke'));
 });
 
-test('analysis charge stays while clip charge follows successfully returned count', () => {
-  assert.equal(estimateSparks(3600) + clipCharge(10, 6), 59);
-  assert.equal(estimateSparks(3600) + clipCharge(10, 0), 35);
+test('the charge is per video with clips included; nothing found costs half', () => {
+  assert.equal(estimateSparks(3600), 50);
+  assert.equal(analysisCharge(3600, 6), 50);
+  assert.equal(analysisCharge(3600, 1), 50);
+  assert.equal(analysisCharge(3600, 0), 25);
+  assert.equal(analysisCharge(20 * 60, 0), 10);
+  assert.equal(clipCharge(10, 6), 0);
 });
 
 test('full VOD coverage leaves no quiet interval or hour-boundary gap', () => {

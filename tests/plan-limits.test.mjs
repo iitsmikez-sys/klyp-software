@@ -85,23 +85,24 @@ test("limits are summarized for the dashboard", () => {
 });
 
 /* ── things that must NOT change with the plan structure ── */
-import { estimateSparks, CLIP_COUNT_COST, clipCharge, UPSCALE_COST } from "../lib/sparks.ts";
+import { analysisCharge, estimateSparks, CLIP_COUNT_COST, clipCharge, UPSCALE_COST } from "../lib/sparks.ts";
 import { SPARKS_ALLOWANCE } from "../lib/tier.ts";
 
-test("Spark pricing and allowances are exactly what they were", () => {
-  assert.deepEqual(CLIP_COUNT_COST, { 1: 4, 2: 7, 3: 10, 5: 20, 7: 30, 10: 40, 12: 50, 20: 80 });
-  assert.deepEqual([10, 29 * 60].map((s) => estimateSparks(s)), [10, 10]);
-  assert.equal(estimateSparks(45 * 60), 20);
-  assert.equal(estimateSparks(90 * 60), 35);
-  assert.equal(estimateSparks(2 * H), 50);
-  assert.equal(estimateSparks(6 * H), 50);
-  assert.equal(estimateSparks(8 * H), 90);
+test("Spark pricing: per video with clips included, allowances unchanged", () => {
+  assert.deepEqual(Object.values(CLIP_COUNT_COST), [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([10, 29 * 60].map((s) => estimateSparks(s)), [20, 20]);
+  assert.equal(estimateSparks(45 * 60), 35);
+  assert.equal(estimateSparks(90 * 60), 50);
+  assert.equal(estimateSparks(2 * H), 65);
+  assert.equal(estimateSparks(6 * H), 65);
+  assert.equal(estimateSparks(8 * H), 105);
   assert.equal(UPSCALE_COST, 35);
   assert.deepEqual(SPARKS_ALLOWANCE, { free: 60, pro: 500 });
 });
 
-test("clips are still charged by the number actually returned, not the number requested", () => {
-  assert.equal(clipCharge(10, 4), 16);
-  assert.equal(clipCharge(5, 0), 0);
-  assert.equal(clipCharge(5, 9), 20); // never more than requested
+test("clips add no charge; a run that finds none costs half", () => {
+  assert.equal(clipCharge(10, 4), 0);
+  assert.equal(clipCharge(10, 10), 0);
+  assert.equal(analysisCharge(45 * 60, 0), 18);
+  assert.equal(analysisCharge(45 * 60, 3), 35);
 });

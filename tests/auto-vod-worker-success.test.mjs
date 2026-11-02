@@ -47,7 +47,7 @@ test('published Twitch VOD runs analysis, saves clips, charges once, and notifie
     '@/lib/r2-maintenance':{processR2Maintenance:async()=>{}},
     '@/lib/job-queue':{runQueued:(_label,fn)=>fn()},
     '@/lib/plan-limits': planLimits, '@/lib/auto-clip-entitlement': entitlement,
-    '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
+    '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,analysisCharge:()=>40,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
   };
   const exports = {};
   vm.runInNewContext(code,{exports,require:name=>{if (!(name in modules)) throw new Error(`Unexpected import ${name}`);return modules[name];},process:{env:{}},console:{log(){},warn(){},error(){}},setInterval(){},setTimeout,Date,Error,Math,Number,String,Promise});
@@ -92,7 +92,7 @@ test('insufficient Sparks stops automatic clipping before any provider call', as
     '@/lib/r2-maintenance':{processR2Maintenance:async()=>{}},
     '@/lib/job-queue':{runQueued:(_label,fn)=>fn()},
     '@/lib/plan-limits': planLimits, '@/lib/auto-clip-entitlement': entitlement,
-    '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
+    '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,analysisCharge:()=>40,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
   };
   const exports = {};
   vm.runInNewContext(code,{exports,require:name=>{if (!(name in modules)) throw new Error(`Unexpected import ${name}`);return modules[name];},process:{env:{}},console:{log(){},warn(){},error(){}},setInterval(){},setTimeout,Date,Error,Math,Number,String,Promise});
