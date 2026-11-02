@@ -1,5 +1,6 @@
 -- Pricing change: analysis is charged per video (clips included, up to 10), not per clip.
---   under 30 min 20 | 30-60 min 35 | 1-2 h 50 | 2-6 h 65 | over 6 h 65 + 20 per started hour.
+--   under 30 min 20 | 30-60 min 35 | 1-2 h 50 | 2-4 h 65 | 4-6 h 80 | over 6 h 80 + 20 per started hour.
+-- Safe to run again (create or replace).
 -- A first analysis that returns no clips costs half. Apply this BEFORE deploying the matching code.
 begin;
 
@@ -59,12 +60,13 @@ begin
     end if;
   end loop;
 
-  -- Per-video price with clips included: 20 / 35 / 50 / 65, then +20 per started hour over 6 hours.
+  -- Per-video price with clips included: 20 / 35 / 50 / 65 / 80, then +20 per started hour over 6 hours.
   v_vod_cost := case when p_duration_seconds < 1800 then 20
     when p_duration_seconds < 3600 then 35
     when p_duration_seconds < 7200 then 50
-    when p_duration_seconds <= 21600 then 65
-    else 65 + 20 * ceil((p_duration_seconds - 21600) / 3600.0)::integer end;
+    when p_duration_seconds <= 14400 then 65
+    when p_duration_seconds <= 21600 then 80
+    else 80 + 20 * ceil((p_duration_seconds - 21600) / 3600.0)::integer end;
   -- An exhausted repeat has no new result to sell. A first analysis that found nothing above the
   -- quality floor still used the transcription and review, so it costs half the video price.
   v_cost := case when cardinality(v_accepted) > 0 then v_vod_cost

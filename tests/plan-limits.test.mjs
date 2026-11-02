@@ -94,8 +94,10 @@ test("Spark pricing: per video with clips included, allowances unchanged", () =>
   assert.equal(estimateSparks(45 * 60), 35);
   assert.equal(estimateSparks(90 * 60), 50);
   assert.equal(estimateSparks(2 * H), 65);
-  assert.equal(estimateSparks(6 * H), 65);
-  assert.equal(estimateSparks(8 * H), 105);
+  assert.equal(estimateSparks(4 * H), 65);
+  assert.equal(estimateSparks(4 * H + 1), 80);
+  assert.equal(estimateSparks(6 * H), 80);
+  assert.equal(estimateSparks(8 * H), 120);
   assert.equal(UPSCALE_COST, 35);
   assert.deepEqual(SPARKS_ALLOWANCE, { free: 60, pro: 500 });
 });
