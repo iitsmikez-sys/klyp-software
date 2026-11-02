@@ -217,15 +217,22 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         {step === "confirm_cancel" && (
           <>
             <h2 className="font-syne text-lg font-bold text-foreground">Cancel your subscription?</h2>
-            <p className="text-sm leading-relaxed text-foreground-muted">
-              Your subscription will end on <b className="text-foreground">{day(state?.periodEnd)}</b>. You keep Pro and your Sparks until then, and your
-              saved clips stay available. You won&apos;t be charged again.
+            <p className="text-sm text-foreground">
+              You&apos;ll keep Pro until <b>{day(state?.periodEnd)}</b>.
             </p>
+            <ul className="space-y-1.5 text-xs text-foreground-muted">
+              {["Pro features and your Sparks until then", "Your saved clips and account always stay", "You won't be charged again"].map((line) => (
+                <li key={line} className="flex gap-2"><span aria-hidden="true" className="text-accent">&#10003;</span><span>{line}</span></li>
+              ))}
+            </ul>
             <button type="button" className={primary} disabled={!!busy}
               onClick={() => void run<Done>("Confirming with Stripe…", "cancel", { eventId }, (d) => { setDone(d); setStep("done_cancel"); void loadState(); })}>
               {busy ?? "Confirm cancellation"}
             </button>
-            <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>Keep my subscription</button>
+            <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>Keep Pro</button>
+            {(reason === "break" || reason === "not_using") && (
+              <button type="button" className={quiet} disabled={!!busy} onClick={() => { setError(null); setStep("offer"); }}>Pause instead</button>
+            )}
           </>
         )}
         {step === "done_pause" && (
@@ -250,14 +257,17 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         )}
         {step === "done_cancel" && (
           <>
-            <h2 className="font-syne text-lg font-bold text-foreground">Your cancellation is confirmed</h2>
+            <h2 className="font-syne text-lg font-bold text-foreground">Done. Your subscription ends {day(done.accessUntil)}.</h2>
             <p className="text-sm leading-relaxed text-foreground-muted">
-              Stripe confirmed it. You keep Pro until <b className="text-foreground">{day(done.accessUntil)}</b>. Changed your mind? You can undo this before then.
+              You keep Pro until then. Download any clips you want a local copy of.
             </p>
-            <button type="button" className={secondary} disabled={!!busy}
-              onClick={() => void run<Done>("Undoing…", "undo-cancel", {}, () => { void loadState(); onClose(); })}>
-              {busy ?? "Undo cancellation"}
-            </button>
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-xs text-foreground-muted">Changed your mind?</p>
+              <button type="button" className={secondary} disabled={!!busy}
+                onClick={() => void run<Done>("Undoing…", "undo-cancel", {}, () => { void loadState(); onClose(); })}>
+                {busy ?? "Undo cancellation"}
+              </button>
+            </div>
             <button type="button" className={primary} onClick={onClose}>Done</button>
           </>
         )}
