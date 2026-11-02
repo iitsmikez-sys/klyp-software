@@ -46,6 +46,7 @@ import { createSafeEventSender } from "@/lib/analysis-sse";
 import { createOrLoadAnalysisJob, getAnalysisJob, claimAnalysisJob, checkpointAnalysisJob, failAnalysisJob, accountAnalysisJob, isAnalysisJobStale } from "@/lib/analysis-jobs";
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
+import { MAX_ANALYSES_PER_HOUR, startedAnalysesLastHour } from "@/lib/analysis-limits";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
 import { vodSourceKey } from "@/lib/vod-source";
@@ -188,8 +189,18 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const releaseSlot = acquireUserProcessingSlot(profile.id);
-  if (!releaseSlot) return fail("validate", "Too many requests are processing. Try again shortly.", 429);
+  const releaseShared = acquireUserProcessingSlot(profile.id);
+  if (!releaseShared) return fail("validate", "Too many requests are processing. Try again shortly.", 429);
+  // One analysis at a time per account. Each one is a paid run and the charge only
+  // lands when it finishes, so several at once could each pass the balance check
+  // above and then all but one fail to charge, leaving Klyp to pay for results
+  // nobody is billed for. (Reconnecting to a running job returns earlier.)
+  const releaseAnalysis = acquireUserProcessingSlot(profile.id, { scope: "analysis", max: 1 });
+  if (!releaseAnalysis) {
+    releaseShared();
+    return fail("validate", "You already have an analysis running. Wait for it to finish, then try again.", 409);
+  }
+  const releaseSlot = () => { releaseAnalysis(); releaseShared(); };
   // The browser's duration is only a display hint. Verify the source length
   // before any paid transcription or AI call, then pass that length to the
   // pipeline so long-VOD window planning cannot rely on a shortened hint.
@@ -217,6 +228,16 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return fail("validate", `Not enough Sparks — this will cost ${upfrontCost}⚡ but you only have ${profile.sparks}⚡ remaining. Upgrade to Pro.`, 402);
   }
   durationHint = verifiedDuration;
+  // Hourly cap on analyses that actually started (counted from analysis_jobs, so it
+  // survives restarts). A failed count never blocks a customer; it is logged.
+  const startedLastHour = await startedAnalysesLastHour(profile.id).catch((error) => {
+    console.error("[analyze] could not count recent analyses:", error);
+    return null;
+  });
+  if (startedLastHour !== null && startedLastHour >= MAX_ANALYSES_PER_HOUR) {
+    releaseSlot();
+    return fail("validate", "You've started a lot of analyses in the last hour. Please wait a little before starting another.", 429);
+  }
   let runToken: string | null;
   try { runToken = await claimAnalysisJob(job); }
   catch (error) {

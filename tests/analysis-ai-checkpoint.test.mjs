@@ -39,6 +39,7 @@ test("saved AI checkpoint bypasses all providers and commits through accounting 
       checkpointAnalysisJob: async () => {}, failAnalysisJob: async () => {}, accountAnalysisJob: async () => { accountingCalls++; return result; } },
     "@/lib/job-queue": { runQueued: async (_label, run) => run() },
     "@/lib/clip-access": { acquireUserProcessingSlot: () => () => {} },
+    "@/lib/analysis-limits": { MAX_ANALYSES_PER_HOUR: 10, startedAnalysesLastHour: async () => 0 },
     "@/lib/analyze-errors": { userFacingAnalysisError: (_stage, _url, message) => message },
     "@/lib/anthropic-credit": { anthropicCreditGate: { blockOn: () => {} } },
     "@/lib/vod-source": { vodSourceKey: () => "twitch:1" },
