@@ -22,7 +22,16 @@ export const RUN_PROVIDER_LIMIT_MICRO_USD = 3_000_000;
 // non-stop speech) at ~6.5 bytes a word, plus timestamps — streams are well
 // below that. The prompt overhead covers the system prompt, schema and the
 // prior-clips / preference sections.
-const TRANSCRIPT_BYTES_PER_HOUR_BOUND = 70_000;
+const DEFAULT_TRANSCRIPT_BYTES_PER_HOUR_BOUND = 70_000;
+/**
+ * KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND (20,000 to 150,000) replaces the default once real
+ * data is in: the 99th percentile of transcript_chars per audio hour from analysis_jobs,
+ * plus a margin. Too low and a dense speaker can still fail after transcription was paid for.
+ */
+export function transcriptBytesPerHourBound(env: Record<string, string | undefined> = process.env): number {
+  const raw = Number(env.KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND);
+  return Number.isFinite(raw) && raw >= 20_000 && raw <= 150_000 ? Math.round(raw) : DEFAULT_TRANSCRIPT_BYTES_PER_HOUR_BOUND;
+}
 const PROMPT_OVERHEAD_BYTES = 30_000;
 const SELECT_MODEL = 'claude-opus-4-8';
 const SELECT_MAX_OUTPUT_TOKENS = 16_000;
@@ -47,7 +56,7 @@ export function reservedMicroUsdForPass(audioSeconds: number): number | null {
   if (!Number.isFinite(audioSeconds) || audioSeconds <= 0) return 0;
   try {
     const transcript = quoteTranscription(audioSeconds);
-    const transcriptBytes = PROMPT_OVERHEAD_BYTES + Math.ceil((audioSeconds / 3600) * TRANSCRIPT_BYTES_PER_HOUR_BOUND);
+    const transcriptBytes = PROMPT_OVERHEAD_BYTES + Math.ceil((audioSeconds / 3600) * transcriptBytesPerHourBound());
     const select = quoteTextMessage(SELECT_MODEL, 'x'.repeat(transcriptBytes), SELECT_MAX_OUTPUT_TOKENS);
     const visual = VISUAL_CHECKS *
       quoteVisualMessage(visionModel(), 'x'.repeat(VISUAL_PROMPT_BYTES), VISUAL_MAX_OUTPUT_TOKENS, VISUAL_MAX_IMAGE_BYTES);

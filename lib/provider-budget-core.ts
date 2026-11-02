@@ -1,3 +1,5 @@
+import { AUDIO_USD_PER_HOUR } from './provider-cost.ts';
+
 /** Reservations remain spent after failure: a crashed request might still be billed. */
 export class ProviderBudget {
   private reserve: (stage: string, microUsd: number) => Promise<void>;
@@ -10,11 +12,31 @@ export class ProviderBudget {
   }
 }
 
-/** Best-quality AssemblyAI async model is $0.21/hour; reserve twice that rate. */
+/** The priciest AssemblyAI model Klyp may be billed at (micro-USD per audio hour), from the rate card. */
+export const ASSEMBLYAI_MAX_LIST_MICRO_USD_PER_HOUR = Math.round(Math.max(...Object.values(AUDIO_USD_PER_HOUR)) * 1_000_000);
+
+/**
+ * How far above the list price a transcription is reserved. AssemblyAI bills pre-recorded
+ * audio at a flat per-hour rate, "pro-rated to the exact second of audio processed" and only
+ * for the file actually submitted; failed requests aren't charged. Klyp sends audio only
+ * (no add-ons, no multichannel — "each channel is transcribed and billed separately" applies
+ * only when multichannel is enabled) and lists a cheaper fallback model, so the list price of
+ * the best model is the ceiling. 25% over it covers a modest price change. This used to be 2x.
+ * Source: assemblyai.com/docs/billing-and-pricing (checked 2026-11-02).
+ * KLYP_AAI_RESERVE_FACTOR (1 to 4) overrides it — set 2 to restore the old margin.
+ */
+export const DEFAULT_TRANSCRIPTION_RESERVE_FACTOR = 1.25;
+
+export function transcriptionReserveFactor(env: Record<string, string | undefined> = process.env): number {
+  const raw = Number(env.KLYP_AAI_RESERVE_FACTOR);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 4 ? raw : DEFAULT_TRANSCRIPTION_RESERVE_FACTOR;
+}
+
+/** Upper bound on what transcribing `seconds` of audio can cost, in micro-USD. */
 export function quoteTranscription(seconds: number): number {
   if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 10 * 3600 + 2)
     throw new Error('Transcription duration cannot be bounded');
-  return Math.ceil(seconds * 420_000 / 3600);
+  return Math.ceil(seconds * ASSEMBLYAI_MAX_LIST_MICRO_USD_PER_HOUR * transcriptionReserveFactor() / 3600);
 }
 
 const RATE: Record<string, { input: number; output: number }> = {

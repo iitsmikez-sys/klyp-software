@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import {
   RUN_PROVIDER_LIMIT_MICRO_USD,
+  transcriptBytesPerHourBound,
   maxFullPassSeconds,
   reservedMicroUsdForPass,
   reviewProcessingBudget,
@@ -149,4 +150,29 @@ test("pipeline: the dollar-ceiling pause keeps its own message", async () => {
     (err) => /estimated \$9\.50 processing budget/.test(err.message)
   );
   assert.equal(calls.download + calls.transcription + calls.ai, 0);
+});
+
+test("the transcript-size bound can be set from real data, and bad values fall back", () => {
+  assert.equal(transcriptBytesPerHourBound({}), 70_000);
+  assert.equal(transcriptBytesPerHourBound({ KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND: "55000" }), 55_000);
+  for (const bad of ["1000", "999999", "abc", ""]) assert.equal(transcriptBytesPerHourBound({ KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND: bad }), 70_000, bad);
+});
+
+test("a lower measured transcript size lets longer videos through, a higher one fewer", () => {
+  const base = maxFullPassSeconds();
+  process.env.KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND = "55000";
+  try { assert.ok(maxFullPassSeconds() > base + 1200, "55KB/h should allow noticeably longer"); } finally { delete process.env.KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND; }
+  process.env.KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND = "90000";
+  try { assert.ok(maxFullPassSeconds() < base, "90KB/h should allow less"); } finally { delete process.env.KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND; }
+});
+
+test("with the default settings the cutoff matches the plan: about 3.8 hours (70KB/h, 1.25x)", () => {
+  const hours = maxFullPassSeconds() / H;
+  assert.ok(hours > 3.7 && hours < 3.9, String(hours));
+});
+
+test("restoring the old 2x transcription margin restores the old (shorter) limit", () => {
+  const withNew = maxFullPassSeconds();
+  process.env.KLYP_AAI_RESERVE_FACTOR = "2";
+  try { assert.ok(maxFullPassSeconds() < withNew - 1800); } finally { delete process.env.KLYP_AAI_RESERVE_FACTOR; }
 });
