@@ -28,6 +28,10 @@ const SUB_OPTIONS: { id: SubReason; label: string }[] = [
   { id: "cut_off", label: "Clips cut off the punchline or reaction." },
   { id: "other", label: "Other." },
 ];
+/** When billing restarts after pausing `m` months from the end of the paid period (same math as the server). */
+const resumeIso = (periodEndIso: string, m: number) =>
+  new Date(addMonthsUtc(Math.floor(new Date(periodEndIso).getTime() / 1000), m) * 1000).toISOString();
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const day = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "the end of your billing period";
@@ -86,27 +90,42 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
   };
   const goCancel = () => { setError(null); setStep("confirm_cancel"); };
 
-  const pauseDates = state?.periodEnd
-    ? { proUntil: state.periodEnd, resumes: new Date(addMonthsUtc(Math.floor(new Date(state.periodEnd).getTime() / 1000), months) * 1000).toISOString() }
-    : null;
+  const pauseDates = state?.periodEnd ? { proUntil: state.periodEnd, resumes: resumeIso(state.periodEnd, months) } : null;
 
   const renderOffer = () => {
     if (!reason) return null;
     const pauseCard = (
-      <div className="space-y-3 rounded-xl border border-border bg-surface-2 p-4">
-        <p className="text-sm font-semibold text-foreground">Pause your subscription</p>
+      <div className="space-y-4 rounded-xl border border-border bg-surface-2 p-4">
+        <p className="text-sm font-semibold text-foreground">Pause instead of cancelling</p>
         <div className="grid grid-cols-2 gap-2">
           {([1, 2] as const).map((m) => (
-            <button key={m} type="button" aria-pressed={months === m} onClick={() => setMonths(m)} className={choice(months === m)}>{m} month{m > 1 ? "s" : ""}</button>
+            <button key={m} type="button" aria-pressed={months === m} onClick={() => setMonths(m)} className={`${choice(months === m)} flex-col gap-0.5 !items-center text-center`}>
+              <span className="font-semibold text-foreground">{m} month{m > 1 ? "s" : ""}</span>
+              {state?.periodEnd && <span className="text-xs">back {shortDay(resumeIso(state.periodEnd, m))}</span>}
+            </button>
           ))}
         </div>
         {pauseDates && (
-          <p className="text-xs leading-relaxed text-foreground-muted">
-            You keep Pro until <b className="text-foreground">{day(pauseDates.proUntil)}</b>. After that you won&apos;t be billed and your
-            account and saved clips stay put (Free plan). Billing resumes on <b className="text-foreground">{day(pauseDates.resumes)}</b> at{" "}
-            <b className="text-foreground">{usd(RETENTION.PRICE_CENTS)}</b>, with a fresh {SPARKS_ALLOWANCE.pro} Sparks. Stripe emails you before it resumes.
-          </p>
+          <ol className="space-y-0 text-sm">
+            {[
+              { dot: "bg-accent", title: `Now to ${shortDay(pauseDates.proUntil)}`, note: "You keep Pro" },
+              { dot: "bg-foreground-muted", title: `${shortDay(pauseDates.proUntil)} to ${shortDay(pauseDates.resumes)}`, note: "Paused. $0 charged. Your account and clips stay." },
+              { dot: "bg-accent", title: shortDay(pauseDates.resumes), note: `Pro returns at ${usd(RETENTION.PRICE_CENTS)} with ${SPARKS_ALLOWANCE.pro} new Sparks` },
+            ].map((row, i, all) => (
+              <li key={row.title} className="flex gap-3">
+                <span className="flex flex-col items-center">
+                  <span className={`mt-1.5 h-2.5 w-2.5 rounded-full ${row.dot}`} />
+                  {i < all.length - 1 && <span className="my-1 w-px flex-1 bg-border" />}
+                </span>
+                <span className="pb-3">
+                  <span className="block font-semibold text-foreground">{row.title}</span>
+                  <span className="block text-xs text-foreground-muted">{row.note}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
         )}
+        <p className="text-xs text-foreground-muted">We&apos;ll email you before it restarts.</p>
         <button type="button" className={primary} disabled={!!busy || !state || state.paused || state.cancelAtPeriodEnd}
           onClick={() => void run<Done>("Confirming with Stripe…", "pause", { eventId, months }, (d) => { setDone(d); setStep("done_pause"); void loadState(); })}>
           {busy ? busy : "Pause my subscription"}
@@ -158,7 +177,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         {reason === "other" && (
           <p className="rounded-xl border border-border bg-surface-2 p-4 text-sm text-foreground-muted">Thanks for telling us. Your feedback was saved.</p>
         )}
-        <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>Keep my subscription</button>
+        <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>{reason === "break" || reason === "not_using" ? "Never mind" : "Keep my subscription"}</button>
         <button type="button" className={quiet} disabled={!!busy} onClick={goCancel}>No thanks, continue cancellation</button>
       </div>
     );
