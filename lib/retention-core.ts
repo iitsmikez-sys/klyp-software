@@ -3,7 +3,8 @@
  * and the cancellation itself.
  *
  * Rules this module keeps (each one has a test in tests/retention-core.test.mjs):
- *  - Nothing is applied silently: every change is an explicit action by the signed-in subscriber.
+ *  - Nothing is applied silently: every change is an explicit action by the signed-in subscriber
+ *    (and a survey answer must come first, but any answer may take the discount).
  *  - Nothing is reported as done until Stripe shows it. After each Stripe write the subscription is
  *    read back and checked; if it does not show the change, the answer is "failed" and the offer
  *    does not count against the person.
@@ -28,13 +29,16 @@ export type Reason = (typeof REASONS)[number];
 export const SUB_REASONS = ["not_entertaining", "missing_moments", "cut_off", "other"] as const;
 export type SubReason = (typeof SUB_REASONS)[number];
 
-/** Which offers are shown for each answer. Only "too_expensive" ever shows the discount. */
+/**
+ * Which offers are shown for each answer. The reason-specific help comes first; the one-payment 40%
+ * discount is offered after every answer (once per 180 days per person, enforced in the database).
+ */
 export const OFFERS_BY_REASON: Record<Reason, readonly string[]> = {
-  not_good_clips: ["help", "feedback"],
-  break: ["pause"],
+  not_good_clips: ["help", "feedback", "discount"],
+  break: ["pause", "discount"],
   too_expensive: ["discount"],
-  not_using: ["tips", "pause"],
-  other: ["feedback"],
+  not_using: ["tips", "pause", "discount"],
+  other: ["feedback", "discount"],
 };
 
 type IdOrObject = string | { id: string } | null | undefined;
@@ -207,9 +211,6 @@ async function ensureCoupon(stripe: RetentionStripe): Promise<void> {
 export async function applyDiscount(deps: Deps, ctx: RetentionCtx, input: { eventId?: unknown }): Promise<RetentionResult> {
   const event = await loadEvent(deps, ctx, input.eventId);
   if (!event) return { status: 400, body: { error: "Start from the cancellation survey." } };
-  // The discount is only for people who said it is too expensive. Other answers never get it.
-  if (event.reason !== "too_expensive") return { status: 403, body: { error: "This offer isn't available for that answer." } };
-
   let sub: RetSubscription;
   try { sub = await readSub(deps.stripe, ctx.subscriptionId); } catch { return { status: 502, body: { error: FAIL_STRIPE } }; }
   if (!isLive(sub) || sub.cancel_at_period_end || isPaused(sub))
