@@ -9,6 +9,7 @@ import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { ffmpegLocationArgs, isDiskFullError, resolveBin, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
+import { diagnoseSegment } from "@/lib/segment-diagnose";
 import { ensureVideoSegment, hasVideoStream, isNoAudioSegmentError, videoOnlyFormat } from "@/lib/video-segment";
 import { locateUploadedFile, uploadDirectory } from "@/lib/upload-location";
 import { r2Storage } from "@/lib/r2";
@@ -419,6 +420,9 @@ export async function resolveSourceSegment(
       return { path: segPath, offsetSeconds: segStart };
     } catch (err) {
       log("segment download FAILED", key, err instanceof Error ? err.message : String(err));
+      if (isNoAudioSegmentError(err) || /no video stream/i.test(String((err as Error)?.message))) {
+        log("[segment-diagnose]", key, await diagnoseSegment(ref, `b[height<=${maxHeight}]/b`, segStart).catch(() => "unavailable"));
+      }
       await unlink(segPath).catch(() => {}); // no partial debris
       throw err;
     }
