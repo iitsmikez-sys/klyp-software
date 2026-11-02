@@ -16,6 +16,7 @@ function handlerWithPendingInsert(error) {
     if (name === 'next/server') return {NextResponse:{json:(body,init)=>Response.json(body,init)}};
     if (name === '@/lib/twitch') return {verifyEventSubSignature:()=>true};
     if (name === '@/lib/supabase/admin') return {createAdminClient:()=>admin};
+    if (name === '@/lib/auto-clip-entitlement') return {ensureAutoClipEntitled:async()=>true};
     throw new Error(`Unexpected import ${name}`);
   },process:{env:{DEPLOYMENT_TARGET:'processing'}},JSON,Date,Response,URL,console});
   return exports.POST;

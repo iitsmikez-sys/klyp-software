@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as planLimits from '../lib/plan-limits.ts';
+import * as entitlement from '../lib/auto-clip-entitlement.ts';
 
 const source = readFileSync(new URL('../lib/vod-poll.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module:ts.ModuleKind.CommonJS, target:ts.ScriptTarget.ES2022, esModuleInterop:true } }).outputText;
@@ -23,6 +25,8 @@ test('published Twitch VOD runs analysis, saves clips, charges once, and notifie
       throw new Error(`Unexpected RPC ${name}`);
     },
     from(table) {
+      if (table === 'streams') return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { id: job.stream_id, user_id: job.user_id, twitch_login: 'fixture' }, error: null }; } };
+      if (table === 'profiles') return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { tier: 'pro', stripe_subscription_id: 'sub_fixture' }, error: null }; } };
       if (table === 'pending_vod_checks') return pending;
       if (table === 'notifications') return {insert:async row=>{notifications.push(row);return {error:null};}};
       throw new Error(`Unexpected table ${table}`);
@@ -42,6 +46,7 @@ test('published Twitch VOD runs analysis, saves clips, charges once, and notifie
     '@/lib/clip-archive-worker':{processClipArchiveJobs:async()=>{}},
     '@/lib/r2-maintenance':{processR2Maintenance:async()=>{}},
     '@/lib/job-queue':{runQueued:(_label,fn)=>fn()},
+    '@/lib/plan-limits': planLimits, '@/lib/auto-clip-entitlement': entitlement,
     '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
   };
   const exports = {};
@@ -69,6 +74,8 @@ test('insufficient Sparks stops automatic clipping before any provider call', as
       throw new Error(`Unexpected RPC ${name}`);
     },
     from(table) {
+      if (table === 'streams') return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { id: job.stream_id, user_id: job.user_id, twitch_login: 'fixture' }, error: null }; } };
+      if (table === 'profiles') return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { tier: 'pro', stripe_subscription_id: 'sub_fixture' }, error: null }; } };
       if (table === 'pending_vod_checks') return pending;
       if (table === 'notifications') return {insert:async row=>{notices.push(row);return {error:null};}};
       throw new Error(`Unexpected table ${table}`);
@@ -84,6 +91,7 @@ test('insufficient Sparks stops automatic clipping before any provider call', as
     '@/lib/creator-feedback-data':{preferencesForUser:async()=>''},'@/lib/clip-archive-worker':{processClipArchiveJobs:async()=>{}},
     '@/lib/r2-maintenance':{processR2Maintenance:async()=>{}},
     '@/lib/job-queue':{runQueued:(_label,fn)=>fn()},
+    '@/lib/plan-limits': planLimits, '@/lib/auto-clip-entitlement': entitlement,
     '@/lib/sparks':{estimateSparks:()=>30,clipCharge:()=>10,CLIP_COUNT_COST:{3:10},DEFAULT_CLIP_COUNT:3},
   };
   const exports = {};

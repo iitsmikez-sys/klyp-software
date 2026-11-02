@@ -47,6 +47,8 @@ import { createOrLoadAnalysisJob, getAnalysisJob, claimAnalysisJob, checkpointAn
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { MAX_ANALYSES_PER_HOUR, startedAnalysesLastHour } from "@/lib/analysis-limits";
+import { UPLOAD_PRO_MESSAGE, checkSourceLimit, planOf, sourceKindOf, uploadsAllowed } from "@/lib/plan-limits";
+import { checkFreeCapacity, recordPlanAtStart } from "@/lib/free-capacity";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
 import { vodSourceKey } from "@/lib/vod-source";
@@ -151,6 +153,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!profile) {
     return fail("validate", "You must be signed in to analyze a VOD.", 401);
   }
+  // Plan rules are enforced here, on the server, for every import method. Uploads are
+  // Pro-only, refused before a job row exists or anything is probed or processed.
+  const plan = planOf(profile);
+  const sourceKind = sourceKindOf(sourceKey);
+  if (!sourceKind) return fail("validate", "Please provide a valid YouTube video or Twitch VOD URL.", 400);
+  if (sourceKind === "upload" && !uploadsAllowed(plan)) return fail("validate", UPLOAD_PRO_MESSAGE, 403);
   const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null };
   let job;
   try {
@@ -218,9 +226,22 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     releaseSlot();
     return fail("validate", err instanceof Error ? `Could not verify VOD duration: ${err.message}` : "Could not verify VOD duration.", 503);
   }
-  if (verifiedDuration > 10 * 60 * 60) {
+  // The plan's length limit for this import method (Free: YouTube 4h, Twitch 1h; Pro: 8h).
+  // Separate from the Sparks balance below and from the per-run provider budget.
+  const lengthCheck = checkSourceLimit(plan, sourceKind, verifiedDuration);
+  if (!lengthCheck.ok) {
     releaseSlot();
-    return fail("validate", "VODs over 10 hours are not supported during the limited launch.", 413);
+    return fail("validate", lengthCheck.message, lengthCheck.status);
+  }
+  // Free-plan daily capacity for long runs (a breaker against many throwaway accounts; Pro and
+  // short Free runs are never affected). Refused before anything is claimed or paid for.
+  const capacity = await checkFreeCapacity({
+    plan, durationSeconds: verifiedDuration,
+    alreadyCounted: (job as { plan_at_start?: string | null }).plan_at_start === "free",
+  });
+  if (!capacity.ok) {
+    releaseSlot();
+    return fail("validate", capacity.message, capacity.status);
   }
   const upfrontCost = estimateSparks(verifiedDuration) + CLIP_COUNT_COST[clipCount];
   if (profile.sparks < upfrontCost) {
@@ -248,6 +269,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     releaseSlot();
     return observeRunningJob(profile.id, jobId);
   }
+  // Remember the plan and expected cost for the Free capacity breaker (best effort, never fatal).
+  await recordPlanAtStart((changes) => checkpointAnalysisJob(jobId, runToken!, changes), plan, verifiedDuration);
   let workDir: string;
   try { workDir = await mkdtemp(path.join(tmpdir(), "klyp-")); }
   catch (err) {

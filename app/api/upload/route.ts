@@ -23,6 +23,7 @@ import { resolveBin, runCapture } from "@/lib/bin";
 import { UPLOAD_DIR } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { estimateSparks } from "@/lib/sparks";
+import { UPLOAD_PRO_MESSAGE, checkSourceLimit, planOf, uploadsAllowed } from "@/lib/plan-limits";
 import { withCors, corsPreflight } from "@/lib/cors";
 
 export const runtime = "nodejs";
@@ -60,6 +61,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   if (!profile) {
     return NextResponse.json({ error: "You must be signed in to upload a VOD." }, { status: 401 });
+  }
+  // Uploads are a Pro feature. Refused before a single byte of the body is read.
+  if (!uploadsAllowed(planOf(profile))) {
+    return NextResponse.json({ error: UPLOAD_PRO_MESSAGE }, { status: 403 });
   }
 
   const filename = decodeURIComponent(req.headers.get("x-file-name") ?? "");
@@ -112,6 +117,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     const durationSeconds = Math.round(Number(probed.trim()));
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
       throw new Error("Could not read the video's duration — is the file a valid video?");
+    }
+    // Over the plan's upload length: refuse now and free the disk, instead of letting it be analyzed later.
+    const lengthCheck = checkSourceLimit(planOf(profile), "upload", durationSeconds);
+    if (!lengthCheck.ok) {
+      rm(outPath, { force: true }).catch(() => {});
+      return NextResponse.json({ error: lengthCheck.message }, { status: lengthCheck.status });
     }
 
     return NextResponse.json({

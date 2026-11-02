@@ -3,6 +3,8 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as planLimits from '../lib/plan-limits.ts';
+import * as entitlement from '../lib/auto-clip-entitlement.ts';
 
 const source = readFileSync(new URL('../lib/vod-poll.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS,
@@ -25,6 +27,8 @@ test('automatic clipping skips an 11-hour VOD without paid work or a Sparks debi
       throw new Error(`Unexpected RPC: ${name}`);
     },
     from(table) {
+      if (table === 'streams') return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { id: job.stream_id, user_id: job.user_id, twitch_login: 'fixture' }, error: null }; } };
+      if (table === 'profiles') return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: { tier: 'pro', stripe_subscription_id: 'sub_fixture' }, error: null }; } };
       if (table === 'pending_vod_checks') return pending;
       if (table === 'notifications') return { insert: async row => {
         notifications.push(row); return { error: null };
@@ -49,6 +53,7 @@ test('automatic clipping skips an 11-hour VOD without paid work or a Sparks debi
     '@/lib/clip-archive-worker': { processClipArchiveJobs: async () => {} },
     '@/lib/r2-maintenance': { processR2Maintenance: async () => {} },
     '@/lib/job-queue': { runQueued: (_label, fn) => fn() },
+    '@/lib/plan-limits': planLimits, '@/lib/auto-clip-entitlement': entitlement,
     '@/lib/sparks': { estimateSparks: () => 50, clipCharge: () => 0,
       CLIP_COUNT_COST: { 5: 20 }, DEFAULT_CLIP_COUNT: 5 },
   };
@@ -63,5 +68,5 @@ test('automatic clipping skips an 11-hour VOD without paid work or a Sparks debi
   assert.equal(paidPipelineCalls, 0);
   assert.equal(completion?.p_cost, 0);
   assert.equal(completion?.p_clips?.length, 0);
-  assert.match(notifications[0]?.message ?? '', /10 hours/);
+  assert.match(notifications[0]?.message ?? '', /8 hours/);
 });

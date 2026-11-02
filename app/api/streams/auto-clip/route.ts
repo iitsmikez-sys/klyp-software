@@ -10,6 +10,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasAutoClipAccess } from "@/lib/auto-clip-entitlement";
+import { AUTO_CLIP_PRO_MESSAGE } from "@/lib/plan-limits";
 
 export const runtime = "nodejs";
 
@@ -46,6 +48,19 @@ export async function POST(req: NextRequest) {
   }
   if (!row || row.user_id !== user.id) {
     return NextResponse.json({ error: "Channel not found." }, { status: 404 });
+  }
+
+  // Automatic clipping is a Pro feature: turning it ON is refused for Free (turning it off is always allowed).
+  if (enabled) {
+    let allowed: boolean;
+    try {
+      allowed = await hasAutoClipAccess(admin, user.id);
+    } catch {
+      return NextResponse.json({ error: "Couldn't check your plan. Please try again." }, { status: 500 });
+    }
+    if (!allowed) {
+      return NextResponse.json({ error: AUTO_CLIP_PRO_MESSAGE }, { status: 403 });
+    }
   }
 
   const { error } = await admin

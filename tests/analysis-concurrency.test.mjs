@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import * as planLimits from "../lib/plan-limits.ts";
 
 const transpile = (path) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
@@ -105,7 +106,8 @@ function routeHarness({ startedLastHour = 0, countFails = false, jobStatus = "qu
     "@anthropic-ai/sdk": { default: class Anthropic {} },
     "@/lib/clips": { CONTENT_TYPES: ["gaming", "irl"], DEFAULT_CONTENT_TYPE: "gaming" },
     "@/lib/video-cache": { findUploadedVideo: async () => null },
-    "@/lib/profile-token": { bearerToken: () => "fixture-token", getProfileFromToken: async () => ({ id: "fixture-user", sparks: 500 }), tokenClient: () => ({}) },
+    "@/lib/profile-token": { bearerToken: () => "fixture-token", getProfileFromToken: async () => ({ id: "fixture-user", sparks: 500, tier: "pro", stripe_subscription_id: "sub_test" }), tokenClient: () => ({}) },
+    "@/lib/plan-limits": planLimits,
     "@/lib/cors": { withCors: (v) => v, corsPreflight: () => {} },
     "@/lib/sparks": { estimateSparks: () => 20, MIN_ANALYZE_COST: 14, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3 },
     "@/lib/twitch-chat": { detectChatSpikes: async () => null },
@@ -122,6 +124,7 @@ function routeHarness({ startedLastHour = 0, countFails = false, jobStatus = "qu
     "@/lib/clip-access": { acquireUserProcessingSlot: countingAcquire },
     "@/lib/analysis-limits": { MAX_ANALYSES_PER_HOUR: 10,
       startedAnalysesLastHour: async () => { if (countFails) throw new Error("count failed"); return startedLastHour; } },
+    "@/lib/free-capacity": { checkFreeCapacity: async () => ({ ok: true }), recordPlanAtStart: async () => {} },
     "@/lib/analyze-errors": { userFacingAnalysisError: (_s, _u, m) => m },
     "@/lib/anthropic-credit": { anthropicCreditGate: { blockOn: () => {} } },
     "@/lib/vod-source": { vodSourceKey: () => "twitch:123" },

@@ -79,14 +79,22 @@ export function maxFullPassSeconds(): number {
   return lo;
 }
 
+/**
+ * Conservative list-price estimate (USD) of one full pass over `audioSeconds`: AssemblyAI at the best
+ * model's rate, an Opus input allowance, the full 16k output cap, two vision checks, plus an
+ * infrastructure allowance. Used to size spend (e.g. the Free-plan daily capacity), not to bill anyone.
+ */
+export function projectedRunUsd(audioSeconds: number): number {
+  const hours = Math.max(0, audioSeconds) / 3600;
+  return Math.round((hours * 0.21 + (8000 + 25000 * hours) * 5 / 1_000_000 +
+    16000 * 25 / 1_000_000 + 0.05 + 0.25) * 1000) / 1000;
+}
+
 /** Conservative list-price preflight. It pauses the run; it never drops windows. */
 export function reviewProcessingBudget(windows: AudioWindow[], ceilingUsd: number): BudgetReview {
   const audioSeconds = windows.reduce((sum, window) => sum + Math.max(0, window.end - window.start), 0);
-  const hours = audioSeconds / 3600;
-  // AAI best-model rate, Opus input allowance, full 16k output cap, two vision checks,
-  // plus an infrastructure allowance. Actual provider units are logged separately.
-  const projectedUsd = Math.round((hours * 0.21 + (8000 + 25000 * hours) * 5 / 1_000_000 +
-    16000 * 25 / 1_000_000 + 0.05 + 0.25) * 1000) / 1000;
+  // Actual provider units are logged separately.
+  const projectedUsd = projectedRunUsd(audioSeconds);
 
   // The real gate reserves cumulatively per run and only fails AFTER the paid
   // transcription (and sometimes the Opus call) has already been spent. Refuse

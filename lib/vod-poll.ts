@@ -28,6 +28,8 @@ import { processR2Maintenance } from "@/lib/r2-maintenance";
 import { runQueued } from "@/lib/job-queue";
 import { estimateSparks, clipCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
 import type { Profile } from "@/lib/tier";
+import { PLAN_LIMITS } from "@/lib/plan-limits";
+import { ensureAutoClipEntitled } from "@/lib/auto-clip-entitlement";
 
 type Admin = ReturnType<typeof createAdminClient>;
 type StreamRow = {
@@ -99,7 +101,17 @@ type VodJob = {
 };
 
 async function processJob(admin: Admin, job: VodJob): Promise<void> {
-  if (job.duration_seconds > 10 * 60 * 60) {
+  // Automatic clipping is Pro-only. A job queued before this rule existed, or by a subscriber
+  // whose plan has since ended, is dropped here with no provider work and no Sparks debit.
+  // (If the plan cannot be read this throws and the job is retried later.)
+  const { data: stream, error: streamError } = await admin
+    .from("streams").select("id, user_id, twitch_login").eq("id", job.stream_id).maybeSingle();
+  if (streamError) throw streamError;
+  if (stream && !(await ensureAutoClipEntitled(admin, stream, (userId, message) => notify(admin, userId, message)))) {
+    log("skipped — owner has no Pro access", job.stream_id, job.video_id);
+    return;
+  }
+  if (job.duration_seconds > PLAN_LIMITS.pro.twitch + 30) {
     // Mark the published VOD as handled so the sweep cannot keep retrying it.
     // No provider work or Sparks debit is needed for an unsupported length.
     const { data: committed, error } = await admin.rpc("finish_auto_vod_job", {
@@ -107,7 +119,7 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
     });
     if (error) throw error;
     if (committed) await notify(admin, job.user_id,
-      "A new VOD was over 10 hours, so automatic clipping skipped it. Upload a shorter video to analyze it manually.");
+      `A new VOD was over ${PLAN_LIMITS.pro.twitch / 3600} hours, so automatic clipping skipped it. Upload a shorter video to analyze it manually.`);
     return;
   }
   const clipCount = DEFAULT_CLIP_COUNT;
@@ -257,6 +269,12 @@ async function processPendingChecks(): Promise<void> {
     }
 
     try {
+      // Pro-only: a channel whose owner has no Pro access is switched off (once, with a notice)
+      // instead of being polled.
+      if (!(await ensureAutoClipEntitled(admin, stream, (userId, message) => notify(admin, userId, message)))) {
+        await admin.from("pending_vod_checks").delete().eq("id", check.id);
+        continue;
+      }
       const outcome = await checkStreamForNewVod(admin, stream as StreamRow);
       if (outcome === "found") {
         await admin.from("pending_vod_checks").delete().eq("id", check.id);
@@ -296,6 +314,7 @@ async function runSafetyNetSweep(): Promise<void> {
   log("safety-net sweep starting —", (streams ?? []).length, "channels");
   for (const stream of streams ?? []) {
     try {
+      if (!(await ensureAutoClipEntitled(admin, stream, (userId, message) => notify(admin, userId, message)))) continue;
       await checkStreamForNewVod(admin, stream as StreamRow);
     } catch (err) {
       log("safety-net check failed", stream.id, err instanceof Error ? err.message : err);

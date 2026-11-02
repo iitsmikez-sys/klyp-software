@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
+import { UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
 
 const VOD_URL_PATTERN =
@@ -237,6 +238,10 @@ export default function AnalyzePanel() {
           setEstimatedForUrl(url);
           setPreviewDuration(data.durationSeconds);
           setPreviewMeta({ title: typeof data.title === "string" ? data.title : null, thumbnail: typeof data.thumbnail === "string" ? data.thumbnail : null });
+          // The plan's length limit for this link (the server enforces it again on Analyze).
+          if (data.planLimit && data.planLimit.ok === false && typeof data.planLimit.message === "string") {
+            setEstimateError(data.planLimit.message);
+          }
         }
       } catch {
         if (!cancelled) setEstimateError("Couldn’t confirm the VOD length or Sparks cost. Check the link and try again.");
@@ -250,6 +255,8 @@ export default function AnalyzePanel() {
 
   const switchMode = (mode: "url" | "file") => {
     if (mode === inputMode || loading) return;
+    // Uploads are a Pro feature (the server refuses them for Free regardless of this).
+    if (mode === "file" && !isPro) { setError(UPLOAD_PRO_MESSAGE); return; }
     setInputMode(mode);
     setFileError(null);
     if (mode === "file") {
@@ -941,6 +948,9 @@ export default function AnalyzePanel() {
               }`}
             >
               {label}
+              {mode === "file" && !isPro && (
+                <span className="ml-1.5 rounded bg-accent/15 px-1 py-px text-[9px] font-bold uppercase tracking-wide text-accent">Pro</span>
+              )}
             </button>
           ))}
         </div>
@@ -1217,7 +1227,7 @@ export default function AnalyzePanel() {
         {error && (
           <div className="mt-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400" role="alert">
             <p>{error}</p>
-            {isYouTubeBotBlockError(error) && (
+            {isYouTubeBotBlockError(error) && isPro && (
               <button type="button" onClick={() => { switchMode("file"); setError(null); }}
                 className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-background hover:bg-accent-dim">
                 Upload a video file instead

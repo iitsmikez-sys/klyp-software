@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as planLimits from '../lib/plan-limits.ts';
 
 const source = readFileSync(new URL('../app/api/analyze/route.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS,
@@ -23,7 +24,8 @@ function routeHarness({ duration = '7200', sparks = 20 } = {}) {
     '@/lib/clips': { CONTENT_TYPES: ['gaming', 'irl'], DEFAULT_CONTENT_TYPE: 'gaming' },
     '@/lib/video-cache': { findUploadedVideo: async () => null },
     '@/lib/profile-token': { bearerToken: () => 'fixture-token',
-      getProfileFromToken: async () => ({ id: 'fixture-user', sparks }), tokenClient: () => ({}) },
+      getProfileFromToken: async () => ({ id: 'fixture-user', sparks, tier: 'pro', stripe_subscription_id: 'sub_test' }), tokenClient: () => ({}) },
+    '@/lib/plan-limits': planLimits,
     '@/lib/cors': { withCors: value => value, corsPreflight: () => {} },
     '@/lib/sparks': { estimateSparks: seconds => seconds < 1800 ? 10 : seconds < 3600 ? 20 : seconds < 7200 ? 35 : 50,
       MIN_ANALYZE_COST: 20, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3 },
@@ -39,6 +41,7 @@ function routeHarness({ duration = '7200', sparks = 20 } = {}) {
     '@/lib/job-queue': { runQueued: (_label, fn) => fn() },
     '@/lib/clip-access': { acquireUserProcessingSlot: () => () => {} },
     '@/lib/analysis-limits': { MAX_ANALYSES_PER_HOUR: 10, startedAnalysesLastHour: async () => 0 },
+    '@/lib/free-capacity': { checkFreeCapacity: async () => ({ ok: true }), recordPlanAtStart: async () => {} },
     '@/lib/analyze-errors': { userFacingAnalysisError: (_stage, _url, message) => message },
     '@/lib/anthropic-credit': { anthropicCreditGate: { blockOn: () => {} } },
     '@/lib/vod-source': { vodSourceKey: () => 'twitch:123' },
@@ -67,10 +70,10 @@ test('understated browser duration cannot start paid analysis with an insufficie
   assert.equal(harness.paidPipelineCalls, 0);
 });
 
-test('a VOD beyond the 10-hour launch cap is rejected before paid processing', async () => {
+test('a VOD beyond the Pro 8-hour limit is rejected before paid processing', async () => {
   const harness = routeHarness({ duration: '36001', sparks: 500 });
   const result = await harness.post();
   assert.equal(result.status, 413);
-  assert.match((await result.json()).error, /10 hours/);
+  assert.match((await result.json()).error, /8 hours/);
   assert.equal(harness.paidPipelineCalls, 0);
 });

@@ -8,6 +8,7 @@ import { r2Storage } from '@/lib/r2';
 import { beginR2Upload, finishR2Upload, R2_PART_BYTES, signR2UploadPart } from '@/lib/r2-upload-flow';
 import { r2UploadRepository } from '@/lib/r2-upload-store';
 import { recordR2UsageEvent } from '@/lib/r2-usage';
+import { UPLOAD_PRO_MESSAGE, planOf, uploadsAllowed } from '@/lib/plan-limits';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -31,6 +32,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const token = bearerToken(req);
   const profile = token ? await getProfileFromToken(token) : null;
   if (!profile) return respond({ error: 'Sign in to resume an upload.' }, 401);
+  if (!uploadsAllowed(planOf(profile))) return respond({ error: UPLOAD_PRO_MESSAGE }, 403);
   const row = await r2UploadRepository.get(id);
   if (!row || row.userId !== profile.id) return respond({ error: 'Upload not found.' }, 404);
   if (row.status === 'expired') return respond({ error: 'Upload session expired.' }, 410);
@@ -53,6 +55,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const token = bearerToken(req);
   const profile = token ? await getProfileFromToken(token) : null;
   if (!profile) return respond({ error: 'Sign in to upload a VOD.' }, 401);
+  // Uploads are a Pro feature: every action (start, part, finish) is refused for Free.
+  if (!uploadsAllowed(planOf(profile))) return respond({ error: UPLOAD_PRO_MESSAGE }, 403);
   let body: Record<string, unknown>;
   try { body = await req.json(); }
   catch { return respond({ error: 'Invalid upload request.' }, 400); }
