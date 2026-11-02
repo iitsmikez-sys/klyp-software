@@ -37,7 +37,7 @@ function pipelineHarness({ denyBudget = false } = {}) {
       if (denyBudget) throw new Error('provider budget exceeded');
       return fn();
     } }) },
-    "@/lib/provider-budget-core": { quoteTranscription: () => 1167, quoteTextMessage: () => 1000 },
+    "@/lib/provider-budget-core": { quoteTranscription: () => 1167, quoteTextMessage: () => 1000, quoteSelectMessage: async () => ({ microUsd: 1000, basis: "bytes" }) },
   };
   const context = { exports: {}, require: (id) => modules[id] ?? nativeRequire(id), process, console, Buffer, setTimeout, clearTimeout };
   vm.runInNewContext(code, context, { filename: "analyze-pipeline.ts" });

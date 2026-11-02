@@ -1,5 +1,5 @@
 import type { AudioWindow } from './twitch-chat';
-import { quoteTextMessage, quoteTranscription, quoteVisualMessage } from './provider-budget-core.ts';
+import { quoteTextMessageFromTokens, quoteTranscription, quoteVisualMessage } from './provider-budget-core.ts';
 
 export type BudgetReview = {
   projectedUsd: number;
@@ -33,6 +33,13 @@ export function transcriptBytesPerHourBound(env: Record<string, string | undefin
   return Number.isFinite(raw) && raw >= 20_000 && raw <= 150_000 ? Math.round(raw) : DEFAULT_TRANSCRIPT_BYTES_PER_HOUR_BOUND;
 }
 const PROMPT_OVERHEAD_BYTES = 30_000;
+/**
+ * Transcript bytes per token assumed by the EARLY check. English runs near 4; 3 also covers mixed or
+ * non-English speech reasonably. This is an estimate, not a proof: it only decides whether a long
+ * video is worth starting. The real gate later reserves against the transcript's exact, API-counted
+ * token size (quoteSelectMessage), so the budget itself is never under-reserved.
+ */
+const ASSUMED_BYTES_PER_TOKEN = 3;
 const SELECT_MODEL = 'claude-opus-4-8';
 const SELECT_MAX_OUTPUT_TOKENS = 16_000;
 /** planVisualChecks() inspects the two strongest moments. */
@@ -57,7 +64,7 @@ export function reservedMicroUsdForPass(audioSeconds: number): number | null {
   try {
     const transcript = quoteTranscription(audioSeconds);
     const transcriptBytes = PROMPT_OVERHEAD_BYTES + Math.ceil((audioSeconds / 3600) * transcriptBytesPerHourBound());
-    const select = quoteTextMessage(SELECT_MODEL, 'x'.repeat(transcriptBytes), SELECT_MAX_OUTPUT_TOKENS);
+    const select = quoteTextMessageFromTokens(SELECT_MODEL, Math.ceil(transcriptBytes / ASSUMED_BYTES_PER_TOKEN), SELECT_MAX_OUTPUT_TOKENS);
     const visual = VISUAL_CHECKS *
       quoteVisualMessage(visionModel(), 'x'.repeat(VISUAL_PROMPT_BYTES), VISUAL_MAX_OUTPUT_TOKENS, VISUAL_MAX_IMAGE_BYTES);
     return transcript + select + visual;

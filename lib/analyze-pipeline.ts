@@ -43,7 +43,7 @@ import { discoveryPoolSize } from "@/lib/discovery-pool";
 import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/analysis-result-cache";
 import { reviewProcessingBudget } from "@/lib/vod-budget";
 import { budgetForRun } from "@/lib/provider-budget";
-import { quoteTextMessage, quoteTranscription } from "@/lib/provider-budget-core";
+import { quoteSelectMessage, quoteTranscription } from "@/lib/provider-budget-core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
@@ -472,8 +472,20 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
     ],
     output_config: { format: zodOutputFormat(clipAnalysisSchemaForContentType(contentType)) },
   } as Anthropic.MessageCreateParamsNonStreaming;
+  // Reserve against the request's REAL input size when the API can count it (the counting call is
+  // free), never more than the old byte-based bound, and fall back to that bound if counting fails.
+  const selectQuote = await quoteSelectMessage({
+    model: 'claude-opus-4-8',
+    requestText: JSON.stringify(request),
+    maxOutputTokens: request.max_tokens,
+    countInputTokens: async () => (await client.messages.countTokens({
+      model: request.model, system: request.system, messages: request.messages,
+      thinking: request.thinking, output_config: request.output_config,
+    }, { timeout: 20_000, maxRetries: 1 })).input_tokens,
+  });
+  if (costRunId) console.log(`[analysis-budget] select reservation ${selectQuote.microUsd} micro-USD (${selectQuote.basis})`);
   const { data: response, response: rawResponse } = await budgetForRun(costRunId).call('select',
-    quoteTextMessage('claude-opus-4-8', JSON.stringify(request), request.max_tokens),
+    selectQuote.microUsd,
     () => client.messages.create(request, { maxRetries: 0 }).withResponse());
 
   logAnthropicRateLimits(rawResponse.headers, "findClips");

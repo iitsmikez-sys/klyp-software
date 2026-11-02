@@ -58,6 +58,55 @@ export function quoteTextMessage(model: string, text: string, maxOutputTokens: n
   return quote(model, text, maxOutputTokens);
 }
 
+/**
+ * Margin on a token count from Anthropic's counting endpoint, which documents the number as "an
+ * estimate" that "might differ by a small amount" from what is billed: 5%.
+ * Source: platform.claude.com/docs/en/build-with-claude/token-counting (checked 2026-11-02).
+ */
+export const TOKEN_COUNT_MARGIN = 1.05;
+/**
+ * Tokens the counting call does not see: the structured-output schema and adaptive-thinking setup
+ * are sent with the real request but not with the count. Generous on purpose.
+ */
+export const UNCOUNTED_REQUEST_TOKENS = 4_096;
+
+/** Price a request whose input size is KNOWN in tokens (counted by the API), not guessed from bytes. */
+export function quoteTextMessageFromTokens(model: string, countedInputTokens: number, maxOutputTokens: number): number {
+  const rate = RATE[model];
+  if (!rate) throw new Error('Provider model has no bounded price');
+  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0 || maxOutputTokens > 16_000)
+    throw new Error('Output tokens cannot be bounded');
+  if (!Number.isFinite(countedInputTokens) || countedInputTokens <= 0 || countedInputTokens > 2_000_000)
+    throw new Error('Input tokens cannot be bounded');
+  const inputBound = Math.ceil(countedInputTokens * TOKEN_COUNT_MARGIN) + UNCOUNTED_REQUEST_TOKENS;
+  return Math.ceil(inputBound * rate.input + maxOutputTokens * rate.output);
+}
+
+/**
+ * What to reserve for the clip-selection call. When the API can count the request's real input
+ * tokens, reserve that (plus the margin above) — but never more than the old byte-based bound,
+ * which cannot under-estimate (a token is at least one byte). If counting fails for any reason,
+ * the byte-based bound is used, so the reservation is always a true upper bound.
+ */
+export async function quoteSelectMessage(opts: {
+  model: string;
+  /** The exact request text (what the byte-based bound is computed from). */
+  requestText: string;
+  maxOutputTokens: number;
+  /** Asks the API for the real input token count of this request. */
+  countInputTokens?: () => Promise<number>;
+}): Promise<{ microUsd: number; basis: 'counted' | 'bytes' }> {
+  const byBytes = quoteTextMessage(opts.model, opts.requestText, opts.maxOutputTokens);
+  if (!opts.countInputTokens) return { microUsd: byBytes, basis: 'bytes' };
+  try {
+    const counted = await opts.countInputTokens();
+    const byTokens = quoteTextMessageFromTokens(opts.model, counted, opts.maxOutputTokens);
+    return { microUsd: Math.min(byBytes, byTokens), basis: 'counted' };
+  } catch {
+    return { microUsd: byBytes, basis: 'bytes' };
+  }
+}
+
 export function quoteVisualMessage(model: string, text: string, maxOutputTokens: number, imageBytes: number): number {
   if (!Number.isSafeInteger(imageBytes) || imageBytes <= 0 || imageBytes > 300_000)
     throw new Error('Image input cannot be bounded');

@@ -11,7 +11,7 @@ import {
   reservedMicroUsdForPass,
   reviewProcessingBudget,
 } from "../lib/vod-budget.ts";
-import { quoteTextMessage, quoteTranscription, quoteVisualMessage } from "../lib/provider-budget-core.ts";
+import { quoteTextMessageFromTokens, quoteTranscription, quoteVisualMessage } from "../lib/provider-budget-core.ts";
 
 const H = 3600;
 
@@ -22,7 +22,7 @@ test("the early check's limit equals the database gate's limit (migration 036)",
   assert.equal(RUN_PROVIDER_LIMIT_MICRO_USD, 3_000_000);
 });
 
-test("reservation grows with length, and 1h, 2h and 3h videos fit while 4h and 10h do not", () => {
+test("reservation grows with length, and videos up to 6h fit while 7h and 10h do not", () => {
   let prev = 0;
   for (const h of [0.25, 0.5, 1, 1.5, 2, 2.5, 3, 5, 10]) {
     const reserved = reservedMicroUsdForPass(h * H);
@@ -31,14 +31,15 @@ test("reservation grows with length, and 1h, 2h and 3h videos fit while 4h and 1
   }
   assert.ok(reservedMicroUsdForPass(1 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD);
   assert.ok(reservedMicroUsdForPass(2 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD, "the advertised 2-hour tier must stay supported");
-  assert.ok(reservedMicroUsdForPass(3 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD);
-  assert.ok(reservedMicroUsdForPass(4 * H) > RUN_PROVIDER_LIMIT_MICRO_USD);
+  assert.ok(reservedMicroUsdForPass(4 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD);
+  assert.ok(reservedMicroUsdForPass(6 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD, "a 6-hour video must fit");
+  assert.ok(reservedMicroUsdForPass(7 * H) > RUN_PROVIDER_LIMIT_MICRO_USD);
   assert.ok(reservedMicroUsdForPass(10 * H) > RUN_PROVIDER_LIMIT_MICRO_USD);
 });
 
-test("the cutoff is between 3 and 4 hours and the boundary behaves", () => {
+test("the cutoff is between 6 and 7 hours and the boundary behaves", () => {
   const max = maxFullPassSeconds();
-  assert.ok(max >= 3 * H && max < 4 * H, `cutoff was ${(max / H).toFixed(2)}h`);
+  assert.ok(max >= 6 * H && max < 7 * H, `cutoff was ${(max / H).toFixed(2)}h`);
   assert.ok(reservedMicroUsdForPass(max) <= RUN_PROVIDER_LIMIT_MICRO_USD);
   assert.ok(reservedMicroUsdForPass(max + 120) > RUN_PROVIDER_LIMIT_MICRO_USD);
 });
@@ -49,10 +50,10 @@ test("cross-check: the three real gate reservations for a worst-case transcript 
     const hours = seconds / H;
     const transcriptBytes = 30_000 + Math.ceil(hours * 70_000);
     return quoteTranscription(seconds)
-      + quoteTextMessage("claude-opus-4-8", "x".repeat(transcriptBytes), 16000)
+      + quoteTextMessageFromTokens("claude-opus-4-8", Math.ceil(transcriptBytes / 3), 16000)
       + 2 * quoteVisualMessage("claude-sonnet-4-6", "x".repeat(700), 100, 300_000);
   };
-  for (const h of [0.5, 1, 2, 2.9, 3.0, 3.1, 3.5, 4, 8]) {
+  for (const h of [0.5, 1, 2, 4, 6.2, 6.3, 6.4, 7, 8]) {
     const fits = replay(h * H) <= RUN_PROVIDER_LIMIT_MICRO_USD;
     assert.equal(reviewProcessingBudget([{ start: 0, end: h * H }], 100).exceedsRunLimit, !fits, `${h}h`);
   }
@@ -64,10 +65,10 @@ test("a video the gate cannot price is refused, not waved through", () => {
 });
 
 test("review flags too-long audio with the longest allowed length, and leaves normal runs alone", () => {
-  const long = reviewProcessingBudget([{ start: 0, end: 5 * H }], 100);
+  const long = reviewProcessingBudget([{ start: 0, end: 8 * H }], 100);
   assert.equal(long.requiresReview, true);
   assert.equal(long.exceedsRunLimit, true);
-  assert.ok(long.maxRunHours >= 3 && long.maxRunHours < 4);
+  assert.ok(long.maxRunHours >= 6 && long.maxRunHours < 7);
   const normal = reviewProcessingBudget([{ start: 0, end: 1 * H }], 5);
   assert.equal(normal.requiresReview, false);
   assert.equal(normal.exceedsRunLimit, false);
@@ -88,7 +89,7 @@ test("short windows (e.g. chat-sampled Twitch audio) are checked on the audio ac
 test("KLYP_RUN_BUDGET_PRECHECK=off restores the old behavior (rollback switch)", () => {
   process.env.KLYP_RUN_BUDGET_PRECHECK = "off";
   try {
-    const r = reviewProcessingBudget([{ start: 0, end: 4 * H }], 100);
+    const r = reviewProcessingBudget([{ start: 0, end: 8 * H }], 100);
     assert.equal(r.exceedsRunLimit, true); // still reported...
     assert.equal(r.requiresReview, false); // ...but no longer blocks
   } finally {
@@ -166,9 +167,9 @@ test("a lower measured transcript size lets longer videos through, a higher one 
   try { assert.ok(maxFullPassSeconds() < base, "90KB/h should allow less"); } finally { delete process.env.KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND; }
 });
 
-test("with the default settings the cutoff matches the plan: about 3.8 hours (70KB/h, 1.25x)", () => {
+test("with the default settings the cutoff is about 6.3 hours (70KB/h, 3 bytes/token, 1.25x)", () => {
   const hours = maxFullPassSeconds() / H;
-  assert.ok(hours > 3.7 && hours < 3.9, String(hours));
+  assert.ok(hours > 6.2 && hours < 6.5, String(hours));
 });
 
 test("restoring the old 2x transcription margin restores the old (shorter) limit", () => {

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProviderBudget, quoteTranscription, quoteTextMessage, quoteVisualMessage, MAX_IMAGE_TOKENS,
+  quoteTextMessageFromTokens, quoteSelectMessage, TOKEN_COUNT_MARGIN, UNCOUNTED_REQUEST_TOKENS,
   ASSEMBLYAI_MAX_LIST_MICRO_USD_PER_HOUR, DEFAULT_TRANSCRIPTION_RESERVE_FACTOR, transcriptionReserveFactor } from '../lib/provider-budget-core.ts';
 import { AUDIO_USD_PER_HOUR } from '../lib/provider-cost.ts';
 
@@ -80,4 +81,60 @@ test('the reservation factor can be overridden, and bad values fall back to the 
   }
   process.env.KLYP_AAI_RESERVE_FACTOR = '2';
   try { assert.equal(quoteTranscription(3600), 420_000); } finally { delete process.env.KLYP_AAI_RESERVE_FACTOR; }
+});
+
+/* ── exact input-token reservation for the clip-selection call ── */
+test('a counted request is priced from its real tokens plus a 5% margin and the uncounted schema allowance', () => {
+  assert.equal(TOKEN_COUNT_MARGIN, 1.05);
+  assert.equal(UNCOUNTED_REQUEST_TOKENS, 4_096);
+  // 100,000 counted tokens: ceil(100000*1.05)+4096 = 109,096 input tokens at $5/M, plus the full 16k output cap at $25/M.
+  assert.equal(quoteTextMessageFromTokens('claude-opus-4-8', 100_000, 16_000), 109_096 * 5 + 16_000 * 25);
+});
+
+test('counted input is far cheaper to reserve than the byte-based bound for the same transcript', () => {
+  const bytes = 450_000; // about a 6-hour transcript
+  const byBytes = quoteTextMessage('claude-opus-4-8', 'x'.repeat(bytes), 16_000);
+  const byTokens = quoteTextMessageFromTokens('claude-opus-4-8', Math.ceil(bytes / 4), 16_000);
+  assert.ok(byTokens < byBytes * 0.55, `${byTokens} should be well under ${byBytes}`);
+});
+
+test('token quotes refuse what cannot be bounded', () => {
+  for (const bad of [0, -1, NaN, Infinity, 3_000_000]) assert.throws(() => quoteTextMessageFromTokens('claude-opus-4-8', bad, 16_000), /Input tokens/, String(bad));
+  assert.throws(() => quoteTextMessageFromTokens('unknown-model', 10, 100), /model/);
+  assert.throws(() => quoteTextMessageFromTokens('claude-opus-4-8', 10, 20_000), /Output/);
+});
+
+test('select quote: uses the counted size when the API counts it', async () => {
+  const q = await quoteSelectMessage({ model: 'claude-opus-4-8', requestText: 'x'.repeat(450_000), maxOutputTokens: 16_000,
+    countInputTokens: async () => 100_000 });
+  assert.equal(q.basis, 'counted');
+  assert.equal(q.microUsd, quoteTextMessageFromTokens('claude-opus-4-8', 100_000, 16_000));
+});
+
+test('select quote: never more than the byte-based bound, even if the count comes back larger', async () => {
+  const requestText = 'x'.repeat(1_000);
+  const byBytes = quoteTextMessage('claude-opus-4-8', requestText, 16_000);
+  const q = await quoteSelectMessage({ model: 'claude-opus-4-8', requestText, maxOutputTokens: 16_000, countInputTokens: async () => 900_000 });
+  assert.equal(q.microUsd, byBytes);
+});
+
+test('select quote: falls back to the byte-based bound when counting fails, hangs up, or returns nonsense', async () => {
+  const requestText = 'x'.repeat(50_000);
+  const byBytes = quoteTextMessage('claude-opus-4-8', requestText, 16_000);
+  for (const count of [async () => { throw new Error('429'); }, async () => NaN, async () => 0, async () => -5]) {
+    const q = await quoteSelectMessage({ model: 'claude-opus-4-8', requestText, maxOutputTokens: 16_000, countInputTokens: count });
+    assert.deepEqual(q, { microUsd: byBytes, basis: 'bytes' });
+  }
+  assert.deepEqual(await quoteSelectMessage({ model: 'claude-opus-4-8', requestText, maxOutputTokens: 16_000 }), { microUsd: byBytes, basis: 'bytes' });
+});
+
+test('select quote: it can only ever lower the reservation (property over many sizes)', async () => {
+  for (const bytes of [10, 5_000, 120_000, 450_000, 900_000]) {
+    const requestText = 'x'.repeat(bytes);
+    const byBytes = quoteTextMessage('claude-opus-4-8', requestText, 16_000);
+    for (const tokens of [1, Math.ceil(bytes / 4), bytes, bytes * 3]) {
+      const q = await quoteSelectMessage({ model: 'claude-opus-4-8', requestText, maxOutputTokens: 16_000, countInputTokens: async () => tokens });
+      assert.ok(q.microUsd <= byBytes, `${bytes}B/${tokens}t`);
+    }
+  }
 });
