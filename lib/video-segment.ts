@@ -55,3 +55,7 @@ export function isNoAudioSegmentError(err: unknown): boolean {
 export function videoOnlyFormat(maxHeight: number): string {
   return `bv[height<=${maxHeight}][ext=mp4]/bv[height<=${maxHeight}]/bv*[height<=${maxHeight}]`;
 }
+
+/** A Twitch VOD link (as opposed to YouTube, uploads or a live channel). */
+export const isTwitchVodRef = (ref: string): boolean =>
+  /^https?:\/\/(?:[a-z0-9-]+\.)?twitch\.tv\/(?:videos\/|[^/]+\/v\/)\d+/i.test(ref);

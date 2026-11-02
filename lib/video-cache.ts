@@ -10,7 +10,8 @@ import { tmpdir } from "os";
 import path from "path";
 import { ffmpegLocationArgs, isDiskFullError, resolveBin, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
 import { diagnoseSegment } from "@/lib/segment-diagnose";
-import { ensureVideoSegment, hasVideoStream, isNoAudioSegmentError, videoOnlyFormat } from "@/lib/video-segment";
+import { fetchTwitchSegment } from "@/lib/twitch-segment";
+import { ensureVideoSegment, hasVideoStream, isNoAudioSegmentError, isTwitchVodRef, videoOnlyFormat } from "@/lib/video-segment";
 import { locateUploadedFile, uploadDirectory } from "@/lib/upload-location";
 import { r2Storage } from "@/lib/r2";
 import { r2UploadRepository } from "@/lib/r2-upload-store";
@@ -374,6 +375,16 @@ export async function resolveSourceSegment(
           "-o", segPath,
           ref,
         ], { stallTimeoutMs: Math.min(90_000, maxRunMs), maxRunMs });
+        if (isTwitchVodRef(ref)) {
+          try {
+            await fetchTwitchSegment({ ref, maxHeight, startSeconds: segStart, endSeconds: segEnd, outPath: segPath, maxRunMs });
+            return;
+          } catch (twitchErr) {
+            // Fall through to the yt-dlp section download below.
+            log("direct ffmpeg slice failed — falling back to yt-dlp", key, twitchErr instanceof Error ? twitchErr.message.slice(-200) : String(twitchErr));
+            await unlink(segPath).catch(() => {});
+          }
+        }
         try {
           await fetchSegment(format);
         } catch (err) {
