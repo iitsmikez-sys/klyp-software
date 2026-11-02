@@ -137,15 +137,15 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         {reason === "too_expensive" && (state?.discountEligible ? (
           <div className="space-y-3 rounded-xl border border-accent/40 bg-accent/5 p-4">
             <p className="text-sm font-semibold text-foreground">40% off your next payment</p>
-            <p className="text-xs leading-relaxed text-foreground-muted">
-              Your next payment would be <b className="text-foreground">{usd(DISCOUNTED_CENTS)}</b> instead of {usd(RETENTION.PRICE_CENTS)}, for one
-              billing period only, on <b className="text-foreground">{day(state.periodEnd)}</b>. After that it returns to{" "}
-              <b className="text-foreground">{usd(RETENTION.PRICE_CENTS)}/month</b> automatically. You still get your full {SPARKS_ALLOWANCE.pro} Sparks.
-              This offer is available once every 6 months.
+            <p className="text-sm text-foreground">
+              <b>{usd(DISCOUNTED_CENTS)}</b> once, then <b>{usd(RETENTION.PRICE_CENTS)}/month</b>
+            </p>
+            <p className="text-xs text-foreground-muted">
+              Applies to your payment on {day(state.periodEnd)}. Available once every 6 months.
             </p>
             <button type="button" className={primary} disabled={!!busy}
               onClick={() => void run<Done>("Confirming with Stripe…", "discount", { eventId }, (d) => { setDone(d); setStep("done_discount"); void loadState(); })}>
-              {busy ? busy : `Apply 40% off (${usd(DISCOUNTED_CENTS)})`}
+              {busy ? busy : "Apply 40% off"}
             </button>
           </div>
         ) : (
