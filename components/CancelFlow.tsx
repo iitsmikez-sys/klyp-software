@@ -127,7 +127,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         )}
         <p className="text-xs text-foreground-muted">We&apos;ll email you before it restarts.</p>
         <button type="button" className={primary} disabled={!!busy || !state || state.paused || state.cancelAtPeriodEnd}
-          onClick={() => void run<Done>("Confirming with Stripe…", "pause", { eventId, months }, (d) => { setDone(d); setStep("done_pause"); void loadState(); })}>
+          onClick={() => void run<Done>("Confirming…", "pause", { eventId, months }, (d) => { setDone(d); setStep("done_pause"); void loadState(); })}>
           {busy ? busy : "Pause my subscription"}
         </button>
         {state?.paused && <p className="text-xs text-foreground-muted">Your subscription is already paused.</p>}
@@ -148,7 +148,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
           One payment on {day(state.periodEnd)}. Then back to <b className="text-foreground">{usd(RETENTION.PRICE_CENTS)}/month</b>.
         </p>
         <button type="button" className={primary} disabled={!!busy}
-          onClick={() => void run<Done>("Confirming with Stripe…", "discount", { eventId }, (d) => { setDone(d); setStep("done_discount"); void loadState(); })}>
+          onClick={() => void run<Done>("Confirming…", "discount", { eventId }, (d) => { setDone(d); setStep("done_discount"); void loadState(); })}>
           {busy ? busy : `Pay ${usd(DISCOUNTED_CENTS)} this month`}
         </button>
       </div>
@@ -236,7 +236,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
             <button type="button" className={primary} disabled={!!busy}
-              onClick={() => void run<Done>("Confirming with Stripe…", "cancel", { eventId }, (d) => { setDone(d); setStep("done_cancel"); void loadState(); })}>
+              onClick={() => void run<Done>("Confirming…", "cancel", { eventId }, (d) => { setDone(d); setStep("done_cancel"); void loadState(); })}>
               {busy ?? "Confirm cancellation"}
             </button>
             <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>Keep Pro</button>
@@ -249,7 +249,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
           <>
             <h2 className="font-syne text-lg font-bold text-foreground">Your subscription is paused</h2>
             <p className="text-sm leading-relaxed text-foreground-muted">
-              Stripe confirmed it. You keep Pro until <b className="text-foreground">{day(done.proUntil)}</b>. Billing resumes on{" "}
+              You keep Pro until <b className="text-foreground">{day(done.proUntil)}</b>. Billing resumes on{" "}
               <b className="text-foreground">{day(done.resumesOn)}</b> at <b className="text-foreground">{usd(RETENTION.PRICE_CENTS)}</b>. Your saved clips stay available.
             </p>
             <button type="button" className={primary} onClick={onClose}>Done</button>
@@ -259,7 +259,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
           <>
             <h2 className="font-syne text-lg font-bold text-foreground">{RETENTION.DISCOUNT_PERCENT}% off is applied</h2>
             <p className="text-sm leading-relaxed text-foreground-muted">
-              Stripe confirmed it. Your next payment on <b className="text-foreground">{day(done.nextBillingDate)}</b> is{" "}
+              Your next payment on <b className="text-foreground">{day(done.nextBillingDate)}</b> is{" "}
               <b className="text-foreground">{usd(DISCOUNTED_CENTS)}</b>. After that it returns to <b className="text-foreground">{usd(RETENTION.PRICE_CENTS)}/month</b>.
             </p>
             <button type="button" className={primary} onClick={onClose}>Done</button>
