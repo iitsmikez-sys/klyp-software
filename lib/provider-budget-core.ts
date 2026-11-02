@@ -1,12 +1,21 @@
 import { AUDIO_USD_PER_HOUR } from './provider-cost.ts';
 
+/** The provider budget of one analysis run: $3, unchanged (migration 036). */
+export const STANDARD_RUN_LIMIT_MICRO_USD = 3_000_000;
+/**
+ * The most a run may be given: $4.50, only for a Pro video longer than the standard budget can
+ * cover (up to 8 hours, about $0.55 an hour). Migration 038 enforces the same ceiling in SQL.
+ */
+export const EXTENDED_RUN_LIMIT_MICRO_USD = 4_500_000;
+
 /** Reservations remain spent after failure: a crashed request might still be billed. */
 export class ProviderBudget {
   private reserve: (stage: string, microUsd: number) => Promise<void>;
   constructor(reserve: (stage: string, microUsd: number) => Promise<void>) { this.reserve = reserve; }
   async call<T>(stage: string, microUsd: number, fn: () => Promise<T>): Promise<T> {
-    if (!Number.isSafeInteger(microUsd) || microUsd <= 0 || microUsd > 3_000_000)
-      throw new Error('Paid call cost cannot be bounded within the $3 provider budget');
+    // The run's own limit (standard or extended) is enforced cumulatively by the reserve callback.
+    if (!Number.isSafeInteger(microUsd) || microUsd <= 0 || microUsd > EXTENDED_RUN_LIMIT_MICRO_USD)
+      throw new Error('Paid call cost cannot be bounded within the provider budget');
     await this.reserve(stage, microUsd);
     return fn();
   }

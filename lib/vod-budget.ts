@@ -1,5 +1,8 @@
 import type { AudioWindow } from './twitch-chat';
-import { quoteTextMessageFromTokens, quoteTranscription, quoteVisualMessage } from './provider-budget-core.ts';
+import {
+  EXTENDED_RUN_LIMIT_MICRO_USD, STANDARD_RUN_LIMIT_MICRO_USD,
+  quoteTextMessageFromTokens, quoteTranscription, quoteVisualMessage,
+} from './provider-budget-core.ts';
 
 export type BudgetReview = {
   projectedUsd: number;
@@ -16,7 +19,7 @@ export type BudgetReview = {
  * 036, reserve_analysis_provider_budget). Kept equal to the SQL limit by
  * tests/run-budget-precheck.test.mjs.
  */
-export const RUN_PROVIDER_LIMIT_MICRO_USD = 3_000_000;
+export const RUN_PROVIDER_LIMIT_MICRO_USD = STANDARD_RUN_LIMIT_MICRO_USD;
 
 // A transcript never holds more than ~12,000 words per audio hour (200 wpm of
 // non-stop speech) at ~6.5 bytes a word, plus timestamps — streams are well
@@ -74,16 +77,28 @@ export function reservedMicroUsdForPass(audioSeconds: number): number | null {
 }
 
 /** The longest full-transcript pass (in seconds) that fits the per-run budget. */
-export function maxFullPassSeconds(): number {
+export function maxFullPassSeconds(limitMicroUsd: number = RUN_PROVIDER_LIMIT_MICRO_USD): number {
   let lo = 0;
   let hi = 10 * 3600;
   while (hi - lo > 30) {
     const mid = Math.floor((lo + hi) / 2);
     const reserved = reservedMicroUsdForPass(mid);
-    if (reserved !== null && reserved <= RUN_PROVIDER_LIMIT_MICRO_USD) lo = mid;
+    if (reserved !== null && reserved <= limitMicroUsd) lo = mid;
     else hi = mid;
   }
   return lo;
+}
+
+/**
+ * The provider budget a single full-transcript pass over `audioSeconds` should be given: the
+ * standard $3 when it fits (everything up to about 6 hours), the extended $4.50 for a longer video
+ * that fits that, and null when even the extended budget cannot cover it.
+ */
+export function runLimitForSeconds(audioSeconds: number): number | null {
+  const reserved = reservedMicroUsdForPass(audioSeconds);
+  if (reserved === null) return null;
+  if (reserved <= RUN_PROVIDER_LIMIT_MICRO_USD) return RUN_PROVIDER_LIMIT_MICRO_USD;
+  return reserved <= EXTENDED_RUN_LIMIT_MICRO_USD ? EXTENDED_RUN_LIMIT_MICRO_USD : null;
 }
 
 /**
@@ -97,8 +112,14 @@ export function projectedRunUsd(audioSeconds: number): number {
     16000 * 25 / 1_000_000 + 0.05 + 0.25) * 1000) / 1000;
 }
 
-/** Conservative list-price preflight. It pauses the run; it never drops windows. */
-export function reviewProcessingBudget(windows: AudioWindow[], ceilingUsd: number): BudgetReview {
+/**
+ * Conservative list-price preflight. It pauses the run; it never drops windows.
+ * `extendedBudget` is for ONE full-transcript pass, the only kind that is given the larger
+ * per-run budget; sampled-window runs always keep the standard one.
+ */
+export function reviewProcessingBudget(
+  windows: AudioWindow[], ceilingUsd: number, opts: { extendedBudget?: boolean } = {},
+): BudgetReview {
   const audioSeconds = windows.reduce((sum, window) => sum + Math.max(0, window.end - window.start), 0);
   // Actual provider units are logged separately.
   const projectedUsd = projectedRunUsd(audioSeconds);
@@ -107,7 +128,8 @@ export function reviewProcessingBudget(windows: AudioWindow[], ceilingUsd: numbe
   // transcription (and sometimes the Opus call) has already been spent. Refuse
   // the run now, before anything is downloaded or paid for, when it cannot finish.
   const reserved = reservedMicroUsdForPass(audioSeconds);
-  const exceedsRunLimit = reserved === null || reserved > RUN_PROVIDER_LIMIT_MICRO_USD;
+  const limit = opts.extendedBudget ? EXTENDED_RUN_LIMIT_MICRO_USD : RUN_PROVIDER_LIMIT_MICRO_USD;
+  const exceedsRunLimit = reserved === null || reserved > limit;
 
   return {
     projectedUsd,
@@ -115,6 +137,6 @@ export function reviewProcessingBudget(windows: AudioWindow[], ceilingUsd: numbe
       (exceedsRunLimit && runBudgetPrecheckEnabled()),
     audioSeconds,
     exceedsRunLimit,
-    maxRunHours: exceedsRunLimit ? Math.round((maxFullPassSeconds() / 3600) * 10) / 10 : undefined,
+    maxRunHours: exceedsRunLimit ? Math.round((maxFullPassSeconds(limit) / 3600) * 10) / 10 : undefined,
   };
 }

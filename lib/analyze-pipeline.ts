@@ -41,7 +41,7 @@ import { reviewClipBatch, type FlaggedClip } from "@/lib/clip-boundaries";
 import { formatTranscript } from "@/lib/format-transcript";
 import { discoveryPoolSize } from "@/lib/discovery-pool";
 import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/analysis-result-cache";
-import { reviewProcessingBudget } from "@/lib/vod-budget";
+import { reviewProcessingBudget, runLimitForSeconds } from "@/lib/vod-budget";
 import { budgetForRun } from "@/lib/provider-budget";
 import { quoteSelectMessage, quoteTranscription } from "@/lib/provider-budget-core";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -175,13 +175,21 @@ async function transcribeWindows(paths: string[], windows: AudioWindow[], costRu
 }
 
 /* ── Stage 3: transcribe with AssemblyAI ── */
-export async function transcribe(audioPath: string, costRunId?: string): Promise<{ words: TimedWord[]; durationSeconds: number }> {
+/** Up to this long a full pass always fits the standard $3 run budget, so no lookup is needed. */
+const STANDARD_BUDGET_SAFE_SECONDS = 4 * 3600;
+
+export async function transcribe(
+  audioPath: string, costRunId?: string, fullPass = false,
+): Promise<{ words: TimedWord[]; durationSeconds: number }> {
   const aai = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! });
 
   // Probe the exact submitted file, then reserve before the SDK uploads it.
   const measured = Number((await runCapture(resolveBin('ffprobe'), ['-v', 'error', '-show_entries', 'format=duration',
     '-of', 'default=noprint_wrappers=1:nokey=1', audioPath], { maxRunMs: 20_000 })).trim());
-  const transcript = await budgetForRun(costRunId).call('transcribe', quoteTranscription(measured),
+  // Only ONE full-transcript pass over a long video is given the larger run budget (fixed by this
+  // first reservation); sampled windows and everything up to about 6 hours keep the standard $3.
+  const runLimit = fullPass && measured > STANDARD_BUDGET_SAFE_SECONDS ? runLimitForSeconds(measured) ?? undefined : undefined;
+  const transcript = await budgetForRun(costRunId, runLimit).call('transcribe', quoteTranscription(measured),
     () => aai.transcripts.transcribe({ audio: audioPath, speech_models: ['universal-3-5-pro', 'universal-2'] }));
 
   if (transcript.status === "error") {
@@ -707,7 +715,7 @@ export async function runAnalysisPipeline(opts: {
   } else {
     if (durationHint && durationHint >= SEGMENT_MIN_VOD_S) {
       const ceiling = Number(process.env.KLYP_MAX_VOD_ESTIMATED_USD ?? 5);
-      const budget = reviewProcessingBudget([{ start: 0, end: durationHint }], ceiling);
+      const budget = reviewProcessingBudget([{ start: 0, end: durationHint }], ceiling, { extendedBudget: true });
       if (budget.requiresReview) {
         // Refused before any download or paid call: nothing was spent and nothing is charged.
         if (budget.exceedsRunLimit && budget.maxRunHours) throw new Error(`This video is too long to analyze in one pass (about ${budget.maxRunHours} hours is the most for a full transcript). No Sparks were charged. Trim it or split it into parts and try again.`);
@@ -720,7 +728,7 @@ export async function runAnalysisPipeline(opts: {
     progress("download", "done");
 
     progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
-    const result = await withMem("transcribe", () => transcribe(audioPath, opts.costRunId));
+    const result = await withMem("transcribe", () => transcribe(audioPath, opts.costRunId, true));
     words = result.words;
     durationSeconds = result.durationSeconds;
   }

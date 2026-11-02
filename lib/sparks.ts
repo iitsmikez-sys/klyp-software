@@ -28,13 +28,21 @@ export function clipCharge(requested: ClipCount, returned: number): number {
 /** Flat Sparks cost of a 2× upscaled export (Pro only). */
 export const UPSCALE_COST = 35;
 
-/** Sparks cost of analyzing a VOD, tiered by duration. */
+/** Videos up to this long cost the flat top tier; beyond it each started hour adds LONG_VIDEO_SPARKS_PER_HOUR. */
+export const LONG_VIDEO_FROM_SECONDS = 6 * 3600;
+export const LONG_VIDEO_SPARKS_PER_HOUR = 20;
+
+/**
+ * Sparks cost of analyzing a VOD, tiered by duration. Must match v_vod_cost in
+ * record_analysis_clips (migration 038): 7h = 70, 8h = 90.
+ */
 export function estimateSparks(durationSeconds: number): number {
   const minutes = durationSeconds / 60;
   if (minutes < 30) return 10;
   if (minutes < 60) return 20;
   if (minutes < 120) return 35;
-  return 50;
+  if (durationSeconds <= LONG_VIDEO_FROM_SECONDS) return 50;
+  return 50 + LONG_VIDEO_SPARKS_PER_HOUR * Math.ceil((durationSeconds - LONG_VIDEO_FROM_SECONDS) / 3600);
 }
 
 /**

@@ -94,7 +94,8 @@ test("Spark pricing and allowances are exactly what they were", () => {
   assert.equal(estimateSparks(45 * 60), 20);
   assert.equal(estimateSparks(90 * 60), 35);
   assert.equal(estimateSparks(2 * H), 50);
-  assert.equal(estimateSparks(8 * H), 50);
+  assert.equal(estimateSparks(6 * H), 50);
+  assert.equal(estimateSparks(8 * H), 90);
   assert.equal(UPSCALE_COST, 35);
   assert.deepEqual(SPARKS_ALLOWANCE, { free: 60, pro: 500 });
 });
