@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useSparks } from "@/components/SparksProvider";
 import { type SavedClip, fmtDate, platformName } from "@/lib/clip-ui";
 import ClipThumbnail from "@/components/ClipThumbnail";
 import type { VodMeta, ChannelMeta } from "@/app/api/streams/metadata/route";
@@ -101,6 +102,8 @@ type VodGroup = {
 };
 
 export default function StreamsPage() {
+  const { tier } = useSparks();
+  const isPro = tier === "pro";
   const [channels, setChannels] = useState<Channel[]>([]);
   const [clips, setClips] = useState<SavedClip[]>([]);
   const [autoJobs, setAutoJobs] = useState<AutoVodJob[]>([]);
@@ -240,10 +243,14 @@ export default function StreamsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ streamId: channel.id, enabled }),
       });
-      if (!res.ok) throw new Error("rejected");
-    } catch {
+      if (!res.ok) {
+        // 403 = automatic clipping is a Pro feature; show the server's own explanation.
+        const body = await res.json().catch(() => null);
+        throw new Error(res.status === 403 && typeof body?.error === "string" ? body.error : "rejected");
+      }
+    } catch (err) {
       setChannels((prev) => prev.map((c) => (c.id === channel.id ? { ...c, auto_clip_enabled: !enabled } : c)));
-      setError("Couldn't save that change.");
+      setError(err instanceof Error && err.message !== "rejected" ? err.message : "Couldn't save that change.");
     } finally {
       setBusyId(null);
     }
@@ -274,7 +281,9 @@ export default function StreamsPage() {
    * reported as active.
    */
   const twitchChannels = channels.filter((c) => c.platform === "twitch");
-  const activeAutoClip = twitchChannels.filter((c) => c.auto_clip_enabled && c.twitch_user_id);
+  // Automatic clipping is a Pro feature: for Free it is never shown as on, whatever the stored flag
+  // says (the server switches a stale flag off the first time it meets it).
+  const activeAutoClip = isPro ? twitchChannels.filter((c) => c.auto_clip_enabled && c.twitch_user_id) : [];
   const oauthConnected = twitchChannels.filter((c) => c.twitch_user_id);
 
   return (
@@ -430,7 +439,14 @@ export default function StreamsPage() {
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
             </span>
-            {oauthConnected.length > 0 ? (
+            {!isPro ? (
+              <Link
+                href="/dashboard/upgrade"
+                className="px-2.5 py-1 rounded-full bg-accent-glow border border-accent/40 text-[11px] font-bold text-accent uppercase tracking-wide hover:bg-accent/20 transition-colors"
+              >
+                Pro · Upgrade
+              </Link>
+            ) : oauthConnected.length > 0 ? (
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-semibold text-foreground-muted">
                   {activeAutoClip.length > 0 ? "On" : "Off"}
@@ -464,7 +480,12 @@ export default function StreamsPage() {
 
           <h2 className="font-geist text-xl font-bold text-white mt-3">Auto-clipping</h2>
 
-          {oauthConnected.length > 0 ? (
+          {!isPro ? (
+            <p className="text-[15px] text-foreground-muted mt-1.5">
+              Automatic clipping is part of Pro. Upgrade and Klyp will analyze each VOD as soon as your
+              Twitch stream ends. Until then, paste a VOD on the dashboard to clip it yourself.
+            </p>
+          ) : oauthConnected.length > 0 ? (
             <p className="text-[15px] text-foreground-muted mt-1.5">
               When your Twitch stream ends and the VOD is published, Klyp analyzes it and saves
               the clips. Each run spends Sparks from your balance, and is skipped if you

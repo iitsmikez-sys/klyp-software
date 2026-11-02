@@ -29,6 +29,8 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: "AI clip detection with viral scores" },
   { ok: true, text: "9:16 vertical and Original (no crop) exports" },
   { ok: true, text: "AI captions — BOLD, CLEAN & KLYP styles" },
+  { ok: true, text: "YouTube videos up to about 4 hours, Twitch VODs up to 1 hour" },
+  { ok: false, text: "No direct video uploads or automatic clipping (Pro)" },
   { ok: false, text: "Animated Klyp watermark on free exports" },
 ];
 
@@ -38,6 +40,8 @@ const PRO_FEATURES: string[] = [
   "All export formats: 9:16, Original, 1:1 and 16:9",
   "Raw exports — edit clips yourself in CapCut",
   "Streamer handle overlay on exports",
+  "Longer VODs from Twitch and YouTube, plus direct video uploads",
+  "Automatic clipping when your Twitch stream ends",
   "Twitch chat spike detection",
   "Download all clips as ZIP",
   "Priority support",

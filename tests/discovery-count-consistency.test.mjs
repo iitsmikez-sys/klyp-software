@@ -50,7 +50,7 @@ function harness({ denyProviderSpend = false } = {}) {
       if (denyProviderSpend) throw new Error('provider budget exceeded');
       return fn();
     } }) },
-    '@/lib/provider-budget-core': { quoteTextMessage: () => 500_000, quoteTranscription: () => 100_000 },
+    '@/lib/provider-budget-core': { quoteTextMessage: () => 500_000, quoteSelectMessage: async () => ({ microUsd: 500_000, basis: 'bytes' }), quoteTranscription: () => 100_000 },
     '@/lib/vod-candidates': { clipInsideObservedCoverage: () => true },
     '@/lib/clip-boundaries': { reviewClipBatch: clips => ({ ready: clips, flagged: [] }) },
     '@/lib/format-transcript': { formatTranscript: () => 'Full VOD transcript: quiet joke at 600 seconds.' },

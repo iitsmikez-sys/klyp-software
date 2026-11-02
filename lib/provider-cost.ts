@@ -4,7 +4,7 @@ export type ProviderUsageEvent =
   | { runId: string; stage?: string; provider: "anthropic"; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
 
 /** Public list prices checked 2026-10-28. Raw units are retained if prices change. */
-const AUDIO_USD_PER_HOUR: Record<string, number> = {
+export const AUDIO_USD_PER_HOUR: Record<string, number> = {
   "universal-3-5-pro": 0.21,
   "universal-2": 0.15,
 };

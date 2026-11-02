@@ -5,6 +5,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import { createSafeEventSender } from "../lib/analysis-sse.ts";
+import * as planLimits from "../lib/plan-limits.ts";
 
 const nativeRequire = createRequire(import.meta.url);
 const source = await readFile(new URL("../app/api/analyze/route.ts", import.meta.url), "utf8");
@@ -26,7 +27,8 @@ test("saved AI checkpoint bypasses all providers and commits through accounting 
     "@/lib/clips": { CONTENT_TYPES: ["gaming", "irl"], DEFAULT_CONTENT_TYPE: "gaming" },
     "@/lib/video-cache": { findUploadedVideo: async () => null },
     "@/lib/bin": { resolveBin: () => "ffprobe", runCapture: async () => "3600", runYtDlpCaptureWithIpv6Fallback: async () => "3600" },
-    "@/lib/profile-token": { bearerToken: () => "test-token", getProfileFromToken: async () => ({ id: "user-1", sparks: 200 }) },
+    "@/lib/profile-token": { bearerToken: () => "test-token", getProfileFromToken: async () => ({ id: "user-1", sparks: 200, tier: "pro", stripe_subscription_id: "sub_test" }) },
+    "@/lib/plan-limits": planLimits,
     "@/lib/cors": { withCors: (response) => response, corsPreflight: () => {} },
     "@/lib/sparks": { estimateSparks: () => 35, MIN_ANALYZE_COST: 10, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3 },
     "@/lib/twitch-chat": { detectChatSpikes: async () => null },
@@ -39,6 +41,8 @@ test("saved AI checkpoint bypasses all providers and commits through accounting 
       checkpointAnalysisJob: async () => {}, failAnalysisJob: async () => {}, accountAnalysisJob: async () => { accountingCalls++; return result; } },
     "@/lib/job-queue": { runQueued: async (_label, run) => run() },
     "@/lib/clip-access": { acquireUserProcessingSlot: () => () => {} },
+    "@/lib/analysis-limits": { MAX_ANALYSES_PER_HOUR: 10, startedAnalysesLastHour: async () => 0 },
+    "@/lib/free-capacity": { checkFreeCapacity: async () => ({ ok: true }), recordPlanAtStart: async () => {} },
     "@/lib/analyze-errors": { userFacingAnalysisError: (_stage, _url, message) => message },
     "@/lib/anthropic-credit": { anthropicCreditGate: { blockOn: () => {} } },
     "@/lib/vod-source": { vodSourceKey: () => "twitch:1" },

@@ -57,7 +57,19 @@ export function SparksProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [refresh]);
 
-  const sync = useCallback((next: number) => setBalance(next), []);
+  // Returning from Stripe Checkout (success_url has ?upgraded=1): the webhook may not
+  // have landed yet, so ask the server to read the subscription from Stripe now. It is
+  // idempotent with the webhook (same invoice-keyed rules), so it can never grant twice.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("upgraded") !== "1") return;
+    fetch("/api/stripe/sync", { method: "POST" })
+      .then(() => refresh())
+      .catch(() => {
+        // Best effort: the webhook (and the daily reconcile) still apply the upgrade.
+      });
+  }, [refresh]);
+
+  const sync =useCallback((next: number) => setBalance(next), []);
 
   return (
     <SparksContext.Provider value={{ balance, tier, complimentaryPro, resetAt, sync, refresh }}>

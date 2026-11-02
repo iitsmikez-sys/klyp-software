@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyEventSubSignature } from "@/lib/twitch";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ensureAutoClipEntitled } from "@/lib/auto-clip-entitlement";
 
 export const runtime = "nodejs";
 
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       const admin = createAdminClient();
       const { data: stream, error: streamError } = await admin
         .from("streams")
-        .select("id")
+        .select("id, user_id, twitch_login")
         .eq("twitch_user_id", broadcasterId)
         .eq("auto_clip_enabled", true)
         .maybeSingle();
@@ -55,6 +56,20 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (streamError) {
         console.error("[twitch eventsub] stream lookup failed:", streamError);
         return NextResponse.json({ error: "Could not queue VOD check." }, { status: 500 });
+      }
+
+      // Automatic clipping is Pro-only: a channel whose owner has no Pro access is switched off
+      // (once, with a notice) instead of being queued.
+      if (stream) {
+        try {
+          const entitled = await ensureAutoClipEntitled(admin, stream, async (userId, message) => {
+            await admin.from("notifications").insert({ user_id: userId, message });
+          });
+          if (!entitled) return NextResponse.json({ ok: true });
+        } catch (error) {
+          console.error("[twitch eventsub] plan check failed:", error);
+          return NextResponse.json({ error: "Could not queue VOD check." }, { status: 500 });
+        }
       }
 
       if (stream) {

@@ -14,6 +14,8 @@ import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { runQueued } from "@/lib/job-queue";
 import { parseVodProbe, type VodProbe } from "@/lib/vod-probe";
+import { checkSourceLimit, describeLimits, planOf, sourceKindOf } from "@/lib/plan-limits";
+import { vodSourceKey } from "@/lib/vod-source";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -78,6 +80,14 @@ export async function GET(req: NextRequest) {
     NextResponse.json({
       durationSeconds: probe.durationSeconds,
       sparks: estimateSparks(probe.durationSeconds),
+      // What this account's plan allows for this link, so the page can say so before the user
+      // presses Analyze. /api/analyze enforces the same rule on the server regardless.
+      plan: planOf(profile),
+      limits: describeLimits(planOf(profile)),
+      planLimit: (() => {
+        const kind = sourceKindOf(vodSourceKey(url));
+        return kind ? checkSourceLimit(planOf(profile), kind, probe.durationSeconds) : { ok: false, message: "Unsupported link." };
+      })(),
       title: probe.title,
       thumbnail: probe.thumbnail,
     })

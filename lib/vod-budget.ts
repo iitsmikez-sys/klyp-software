@@ -1,14 +1,142 @@
 import type { AudioWindow } from './twitch-chat';
+import {
+  EXTENDED_RUN_LIMIT_MICRO_USD, STANDARD_RUN_LIMIT_MICRO_USD,
+  quoteTextMessageFromTokens, quoteTranscription, quoteVisualMessage,
+} from './provider-budget-core.ts';
 
-export type BudgetReview = { projectedUsd: number; requiresReview: boolean; audioSeconds: number };
+export type BudgetReview = {
+  projectedUsd: number;
+  requiresReview: boolean;
+  audioSeconds: number;
+  /** True when one full pass over this audio cannot fit the per-run provider budget. */
+  exceedsRunLimit?: boolean;
+  /** Longest single full-transcript pass (hours) that does fit the per-run budget. */
+  maxRunHours?: number;
+};
 
-/** Conservative list-price preflight. It pauses the run; it never drops windows. */
-export function reviewProcessingBudget(windows: AudioWindow[], ceilingUsd: number): BudgetReview {
-  const audioSeconds = windows.reduce((sum, window) => sum + Math.max(0, window.end - window.start), 0);
-  const hours = audioSeconds / 3600;
-  // AAI best-model rate, Opus input allowance, full 16k output cap, two vision checks,
-  // plus an infrastructure allowance. Actual provider units are logged separately.
-  const projectedUsd = Math.round((hours * 0.21 + (8000 + 25000 * hours) * 5 / 1_000_000 +
+/**
+ * Per-run provider budget enforced at the moment of each paid call (migration
+ * 036, reserve_analysis_provider_budget). Kept equal to the SQL limit by
+ * tests/run-budget-precheck.test.mjs.
+ */
+export const RUN_PROVIDER_LIMIT_MICRO_USD = STANDARD_RUN_LIMIT_MICRO_USD;
+
+// A transcript never holds more than ~12,000 words per audio hour (200 wpm of
+// non-stop speech) at ~6.5 bytes a word, plus timestamps — streams are well
+// below that. The prompt overhead covers the system prompt, schema and the
+// prior-clips / preference sections.
+const DEFAULT_TRANSCRIPT_BYTES_PER_HOUR_BOUND = 70_000;
+/**
+ * KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND (20,000 to 150,000) replaces the default once real
+ * data is in: the 99th percentile of transcript_chars per audio hour from analysis_jobs,
+ * plus a margin. Too low and a dense speaker can still fail after transcription was paid for.
+ */
+export function transcriptBytesPerHourBound(env: Record<string, string | undefined> = process.env): number {
+  const raw = Number(env.KLYP_TRANSCRIPT_BYTES_PER_HOUR_BOUND);
+  return Number.isFinite(raw) && raw >= 20_000 && raw <= 150_000 ? Math.round(raw) : DEFAULT_TRANSCRIPT_BYTES_PER_HOUR_BOUND;
+}
+const PROMPT_OVERHEAD_BYTES = 30_000;
+/**
+ * Transcript bytes per token assumed by the EARLY check. English runs near 4; 3 also covers mixed or
+ * non-English speech reasonably. This is an estimate, not a proof: it only decides whether a long
+ * video is worth starting. The real gate later reserves against the transcript's exact, API-counted
+ * token size (quoteSelectMessage), so the budget itself is never under-reserved.
+ */
+const ASSUMED_BYTES_PER_TOKEN = 3;
+const SELECT_MODEL = 'claude-opus-4-8';
+const SELECT_MAX_OUTPUT_TOKENS = 16_000;
+/** planVisualChecks() inspects the two strongest moments. */
+const VISUAL_CHECKS = 2;
+const VISUAL_PROMPT_BYTES = 700;
+const VISUAL_MAX_OUTPUT_TOKENS = 100;
+const VISUAL_MAX_IMAGE_BYTES = 300_000;
+const visionModel = () => process.env.KLYP_VISION_MODEL || 'claude-sonnet-4-6';
+
+/** KLYP_RUN_BUDGET_PRECHECK=off restores the old behavior (no early run-budget check). */
+const runBudgetPrecheckEnabled = () => !/^(0|off|false)$/i.test(process.env.KLYP_RUN_BUDGET_PRECHECK ?? '');
+
+/**
+ * Upper bound, in micro-USD, that the provider-budget gate will reserve across
+ * the three paid stages of ONE full-transcript pass over `audioSeconds`: the
+ * transcription, the Opus clip selection, and the two finalist visual checks.
+ * Built from the same quote functions the gate itself uses, so the two cannot
+ * drift. Null when the audio cannot be priced at all.
+ */
+export function reservedMicroUsdForPass(audioSeconds: number): number | null {
+  if (!Number.isFinite(audioSeconds) || audioSeconds <= 0) return 0;
+  try {
+    const transcript = quoteTranscription(audioSeconds);
+    const transcriptBytes = PROMPT_OVERHEAD_BYTES + Math.ceil((audioSeconds / 3600) * transcriptBytesPerHourBound());
+    const select = quoteTextMessageFromTokens(SELECT_MODEL, Math.ceil(transcriptBytes / ASSUMED_BYTES_PER_TOKEN), SELECT_MAX_OUTPUT_TOKENS);
+    const visual = VISUAL_CHECKS *
+      quoteVisualMessage(visionModel(), 'x'.repeat(VISUAL_PROMPT_BYTES), VISUAL_MAX_OUTPUT_TOKENS, VISUAL_MAX_IMAGE_BYTES);
+    return transcript + select + visual;
+  } catch {
+    return null;
+  }
+}
+
+/** The longest full-transcript pass (in seconds) that fits the per-run budget. */
+export function maxFullPassSeconds(limitMicroUsd: number = RUN_PROVIDER_LIMIT_MICRO_USD): number {
+  let lo = 0;
+  let hi = 10 * 3600;
+  while (hi - lo > 30) {
+    const mid = Math.floor((lo + hi) / 2);
+    const reserved = reservedMicroUsdForPass(mid);
+    if (reserved !== null && reserved <= limitMicroUsd) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * The provider budget a single full-transcript pass over `audioSeconds` should be given: the
+ * standard $3 when it fits (everything up to about 6 hours), the extended $4.50 for a longer video
+ * that fits that, and null when even the extended budget cannot cover it.
+ */
+export function runLimitForSeconds(audioSeconds: number): number | null {
+  const reserved = reservedMicroUsdForPass(audioSeconds);
+  if (reserved === null) return null;
+  if (reserved <= RUN_PROVIDER_LIMIT_MICRO_USD) return RUN_PROVIDER_LIMIT_MICRO_USD;
+  return reserved <= EXTENDED_RUN_LIMIT_MICRO_USD ? EXTENDED_RUN_LIMIT_MICRO_USD : null;
+}
+
+/**
+ * Conservative list-price estimate (USD) of one full pass over `audioSeconds`: AssemblyAI at the best
+ * model's rate, an Opus input allowance, the full 16k output cap, two vision checks, plus an
+ * infrastructure allowance. Used to size spend (e.g. the Free-plan daily capacity), not to bill anyone.
+ */
+export function projectedRunUsd(audioSeconds: number): number {
+  const hours = Math.max(0, audioSeconds) / 3600;
+  return Math.round((hours * 0.21 + (8000 + 25000 * hours) * 5 / 1_000_000 +
     16000 * 25 / 1_000_000 + 0.05 + 0.25) * 1000) / 1000;
-  return { projectedUsd, requiresReview: !Number.isFinite(ceilingUsd) || ceilingUsd <= 0 || projectedUsd > ceilingUsd, audioSeconds };
+}
+
+/**
+ * Conservative list-price preflight. It pauses the run; it never drops windows.
+ * `extendedBudget` is for ONE full-transcript pass, the only kind that is given the larger
+ * per-run budget; sampled-window runs always keep the standard one.
+ */
+export function reviewProcessingBudget(
+  windows: AudioWindow[], ceilingUsd: number, opts: { extendedBudget?: boolean } = {},
+): BudgetReview {
+  const audioSeconds = windows.reduce((sum, window) => sum + Math.max(0, window.end - window.start), 0);
+  // Actual provider units are logged separately.
+  const projectedUsd = projectedRunUsd(audioSeconds);
+
+  // The real gate reserves cumulatively per run and only fails AFTER the paid
+  // transcription (and sometimes the Opus call) has already been spent. Refuse
+  // the run now, before anything is downloaded or paid for, when it cannot finish.
+  const reserved = reservedMicroUsdForPass(audioSeconds);
+  const limit = opts.extendedBudget ? EXTENDED_RUN_LIMIT_MICRO_USD : RUN_PROVIDER_LIMIT_MICRO_USD;
+  const exceedsRunLimit = reserved === null || reserved > limit;
+
+  return {
+    projectedUsd,
+    requiresReview: !Number.isFinite(ceilingUsd) || ceilingUsd <= 0 || projectedUsd > ceilingUsd ||
+      (exceedsRunLimit && runBudgetPrecheckEnabled()),
+    audioSeconds,
+    exceedsRunLimit,
+    maxRunHours: exceedsRunLimit ? Math.round((maxFullPassSeconds(limit) / 3600) * 10) / 10 : undefined,
+  };
 }

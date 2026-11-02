@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { r2ObjectKey } from './r2-config.ts';
+import { PLAN_LIMITS } from './plan-limits.ts';
 import type { R2ListedPart, R2Object, R2Part } from './r2.ts';
 
 export const R2_PART_BYTES = 16 * 1024 * 1024;
@@ -97,8 +98,10 @@ export async function finishR2Upload(userId: string, id: string,
     throw new Error('VOD upload size could not be verified.');
   }
   const durationSeconds = Math.round(await probe(await r2.signedGet(row.key)));
-  if (!Number.isSafeInteger(durationSeconds) || durationSeconds <= 0 || durationSeconds > 10 * 3600) {
-    throw new Error('VOD duration is unavailable or exceeds 10 hours.');
+  // Uploads are a Pro feature, so the Pro upload length is the ceiling for any uploaded file.
+  const maxSeconds = PLAN_LIMITS.pro.upload;
+  if (!Number.isSafeInteger(durationSeconds) || durationSeconds <= 0 || durationSeconds > maxSeconds + 30) {
+    throw new Error(`VOD duration is unavailable or exceeds ${maxSeconds / 3600} hours.`);
   }
   try { await repo.markReady(id, durationSeconds); }
   catch (error) {

@@ -46,6 +46,9 @@ import { createSafeEventSender } from "@/lib/analysis-sse";
 import { createOrLoadAnalysisJob, getAnalysisJob, claimAnalysisJob, checkpointAnalysisJob, failAnalysisJob, accountAnalysisJob, isAnalysisJobStale } from "@/lib/analysis-jobs";
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
+import { MAX_ANALYSES_PER_HOUR, startedAnalysesLastHour } from "@/lib/analysis-limits";
+import { UPLOAD_PRO_MESSAGE, checkSourceLimit, planOf, sourceKindOf, uploadsAllowed } from "@/lib/plan-limits";
+import { checkFreeCapacity, recordPlanAtStart } from "@/lib/free-capacity";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
 import { vodSourceKey } from "@/lib/vod-source";
@@ -150,6 +153,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!profile) {
     return fail("validate", "You must be signed in to analyze a VOD.", 401);
   }
+  // Plan rules are enforced here, on the server, for every import method. Uploads are
+  // Pro-only, refused before a job row exists or anything is probed or processed.
+  const plan = planOf(profile);
+  const sourceKind = sourceKindOf(sourceKey);
+  if (!sourceKind) return fail("validate", "Please provide a valid YouTube video or Twitch VOD URL.", 400);
+  if (sourceKind === "upload" && !uploadsAllowed(plan)) return fail("validate", UPLOAD_PRO_MESSAGE, 403);
   const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null };
   let job;
   try {
@@ -188,8 +197,18 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const releaseSlot = acquireUserProcessingSlot(profile.id);
-  if (!releaseSlot) return fail("validate", "Too many requests are processing. Try again shortly.", 429);
+  const releaseShared = acquireUserProcessingSlot(profile.id);
+  if (!releaseShared) return fail("validate", "Too many requests are processing. Try again shortly.", 429);
+  // One analysis at a time per account. Each one is a paid run and the charge only
+  // lands when it finishes, so several at once could each pass the balance check
+  // above and then all but one fail to charge, leaving Klyp to pay for results
+  // nobody is billed for. (Reconnecting to a running job returns earlier.)
+  const releaseAnalysis = acquireUserProcessingSlot(profile.id, { scope: "analysis", max: 1 });
+  if (!releaseAnalysis) {
+    releaseShared();
+    return fail("validate", "You already have an analysis running. Wait for it to finish, then try again.", 409);
+  }
+  const releaseSlot = () => { releaseAnalysis(); releaseShared(); };
   // The browser's duration is only a display hint. Verify the source length
   // before any paid transcription or AI call, then pass that length to the
   // pipeline so long-VOD window planning cannot rely on a shortened hint.
@@ -207,9 +226,22 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     releaseSlot();
     return fail("validate", err instanceof Error ? `Could not verify VOD duration: ${err.message}` : "Could not verify VOD duration.", 503);
   }
-  if (verifiedDuration > 10 * 60 * 60) {
+  // The plan's length limit for this import method (Free: YouTube 4h, Twitch 1h; Pro: 8h).
+  // Separate from the Sparks balance below and from the per-run provider budget.
+  const lengthCheck = checkSourceLimit(plan, sourceKind, verifiedDuration);
+  if (!lengthCheck.ok) {
     releaseSlot();
-    return fail("validate", "VODs over 10 hours are not supported during the limited launch.", 413);
+    return fail("validate", lengthCheck.message, lengthCheck.status);
+  }
+  // Free-plan daily capacity for long runs (a breaker against many throwaway accounts; Pro and
+  // short Free runs are never affected). Refused before anything is claimed or paid for.
+  const capacity = await checkFreeCapacity({
+    plan, durationSeconds: verifiedDuration,
+    alreadyCounted: (job as { plan_at_start?: string | null }).plan_at_start === "free",
+  });
+  if (!capacity.ok) {
+    releaseSlot();
+    return fail("validate", capacity.message, capacity.status);
   }
   const upfrontCost = estimateSparks(verifiedDuration) + CLIP_COUNT_COST[clipCount];
   if (profile.sparks < upfrontCost) {
@@ -217,6 +249,16 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return fail("validate", `Not enough Sparks — this will cost ${upfrontCost}⚡ but you only have ${profile.sparks}⚡ remaining. Upgrade to Pro.`, 402);
   }
   durationHint = verifiedDuration;
+  // Hourly cap on analyses that actually started (counted from analysis_jobs, so it
+  // survives restarts). A failed count never blocks a customer; it is logged.
+  const startedLastHour = await startedAnalysesLastHour(profile.id).catch((error) => {
+    console.error("[analyze] could not count recent analyses:", error);
+    return null;
+  });
+  if (startedLastHour !== null && startedLastHour >= MAX_ANALYSES_PER_HOUR) {
+    releaseSlot();
+    return fail("validate", "You've started a lot of analyses in the last hour. Please wait a little before starting another.", 429);
+  }
   let runToken: string | null;
   try { runToken = await claimAnalysisJob(job); }
   catch (error) {
@@ -227,6 +269,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     releaseSlot();
     return observeRunningJob(profile.id, jobId);
   }
+  // Remember the plan and expected cost for the Free capacity breaker (best effort, never fatal).
+  await recordPlanAtStart((changes) => checkpointAnalysisJob(jobId, runToken!, changes), plan, verifiedDuration);
   let workDir: string;
   try { workDir = await mkdtemp(path.join(tmpdir(), "klyp-")); }
   catch (err) {

@@ -1,20 +1,51 @@
+import { AUDIO_USD_PER_HOUR } from './provider-cost.ts';
+
+/** The provider budget of one analysis run: $3, unchanged (migration 036). */
+export const STANDARD_RUN_LIMIT_MICRO_USD = 3_000_000;
+/**
+ * The most a run may be given: $4.50, only for a Pro video longer than the standard budget can
+ * cover (up to 8 hours, about $0.55 an hour). Migration 038 enforces the same ceiling in SQL.
+ */
+export const EXTENDED_RUN_LIMIT_MICRO_USD = 4_500_000;
+
 /** Reservations remain spent after failure: a crashed request might still be billed. */
 export class ProviderBudget {
   private reserve: (stage: string, microUsd: number) => Promise<void>;
   constructor(reserve: (stage: string, microUsd: number) => Promise<void>) { this.reserve = reserve; }
   async call<T>(stage: string, microUsd: number, fn: () => Promise<T>): Promise<T> {
-    if (!Number.isSafeInteger(microUsd) || microUsd <= 0 || microUsd > 3_000_000)
-      throw new Error('Paid call cost cannot be bounded within the $3 provider budget');
+    // The run's own limit (standard or extended) is enforced cumulatively by the reserve callback.
+    if (!Number.isSafeInteger(microUsd) || microUsd <= 0 || microUsd > EXTENDED_RUN_LIMIT_MICRO_USD)
+      throw new Error('Paid call cost cannot be bounded within the provider budget');
     await this.reserve(stage, microUsd);
     return fn();
   }
 }
 
-/** Best-quality AssemblyAI async model is $0.21/hour; reserve twice that rate. */
+/** The priciest AssemblyAI model Klyp may be billed at (micro-USD per audio hour), from the rate card. */
+export const ASSEMBLYAI_MAX_LIST_MICRO_USD_PER_HOUR = Math.round(Math.max(...Object.values(AUDIO_USD_PER_HOUR)) * 1_000_000);
+
+/**
+ * How far above the list price a transcription is reserved. AssemblyAI bills pre-recorded
+ * audio at a flat per-hour rate, "pro-rated to the exact second of audio processed" and only
+ * for the file actually submitted; failed requests aren't charged. Klyp sends audio only
+ * (no add-ons, no multichannel — "each channel is transcribed and billed separately" applies
+ * only when multichannel is enabled) and lists a cheaper fallback model, so the list price of
+ * the best model is the ceiling. 25% over it covers a modest price change. This used to be 2x.
+ * Source: assemblyai.com/docs/billing-and-pricing (checked 2026-11-02).
+ * KLYP_AAI_RESERVE_FACTOR (1 to 4) overrides it — set 2 to restore the old margin.
+ */
+export const DEFAULT_TRANSCRIPTION_RESERVE_FACTOR = 1.25;
+
+export function transcriptionReserveFactor(env: Record<string, string | undefined> = process.env): number {
+  const raw = Number(env.KLYP_AAI_RESERVE_FACTOR);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 4 ? raw : DEFAULT_TRANSCRIPTION_RESERVE_FACTOR;
+}
+
+/** Upper bound on what transcribing `seconds` of audio can cost, in micro-USD. */
 export function quoteTranscription(seconds: number): number {
   if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 10 * 3600 + 2)
     throw new Error('Transcription duration cannot be bounded');
-  return Math.ceil(seconds * 420_000 / 3600);
+  return Math.ceil(seconds * ASSEMBLYAI_MAX_LIST_MICRO_USD_PER_HOUR * transcriptionReserveFactor() / 3600);
 }
 
 const RATE: Record<string, { input: number; output: number }> = {
@@ -36,9 +67,69 @@ export function quoteTextMessage(model: string, text: string, maxOutputTokens: n
   return quote(model, text, maxOutputTokens);
 }
 
+/**
+ * Margin on a token count from Anthropic's counting endpoint, which documents the number as "an
+ * estimate" that "might differ by a small amount" from what is billed: 5%.
+ * Source: platform.claude.com/docs/en/build-with-claude/token-counting (checked 2026-11-02).
+ */
+export const TOKEN_COUNT_MARGIN = 1.05;
+/**
+ * Tokens the counting call does not see: the structured-output schema and adaptive-thinking setup
+ * are sent with the real request but not with the count. Generous on purpose.
+ */
+export const UNCOUNTED_REQUEST_TOKENS = 4_096;
+
+/** Price a request whose input size is KNOWN in tokens (counted by the API), not guessed from bytes. */
+export function quoteTextMessageFromTokens(model: string, countedInputTokens: number, maxOutputTokens: number): number {
+  const rate = RATE[model];
+  if (!rate) throw new Error('Provider model has no bounded price');
+  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0 || maxOutputTokens > 16_000)
+    throw new Error('Output tokens cannot be bounded');
+  if (!Number.isFinite(countedInputTokens) || countedInputTokens <= 0 || countedInputTokens > 2_000_000)
+    throw new Error('Input tokens cannot be bounded');
+  const inputBound = Math.ceil(countedInputTokens * TOKEN_COUNT_MARGIN) + UNCOUNTED_REQUEST_TOKENS;
+  return Math.ceil(inputBound * rate.input + maxOutputTokens * rate.output);
+}
+
+/**
+ * What to reserve for the clip-selection call. When the API can count the request's real input
+ * tokens, reserve that (plus the margin above) — but never more than the old byte-based bound,
+ * which cannot under-estimate (a token is at least one byte). If counting fails for any reason,
+ * the byte-based bound is used, so the reservation is always a true upper bound.
+ */
+export async function quoteSelectMessage(opts: {
+  model: string;
+  /** The exact request text (what the byte-based bound is computed from). */
+  requestText: string;
+  maxOutputTokens: number;
+  /** Asks the API for the real input token count of this request. */
+  countInputTokens?: () => Promise<number>;
+}): Promise<{ microUsd: number; basis: 'counted' | 'bytes' }> {
+  const byBytes = quoteTextMessage(opts.model, opts.requestText, opts.maxOutputTokens);
+  if (!opts.countInputTokens) return { microUsd: byBytes, basis: 'bytes' };
+  try {
+    const counted = await opts.countInputTokens();
+    const byTokens = quoteTextMessageFromTokens(opts.model, counted, opts.maxOutputTokens);
+    return { microUsd: Math.min(byBytes, byTokens), basis: 'counted' };
+  } catch {
+    return { microUsd: byBytes, basis: 'bytes' };
+  }
+}
+
 export function quoteVisualMessage(model: string, text: string, maxOutputTokens: number, imageBytes: number): number {
   if (!Number.isSafeInteger(imageBytes) || imageBytes <= 0 || imageBytes > 300_000)
     throw new Error('Image input cannot be bounded');
-  // Anthropic downsizes images; 100k tokens is far above a single accepted frame.
-  return quote(model, text, maxOutputTokens, 100_000);
+  return quote(model, text, maxOutputTokens, MAX_IMAGE_TOKENS);
 }
+
+/**
+ * Hard upper bound on the visual tokens one image can cost. Anthropic downsizes every
+ * image to fit the model's limits, so the cost is capped no matter how large the file
+ * is: 1,568 tokens on models before Claude 4.7 and 4,784 on 4.7 and later (the
+ * "high-resolution" tier). The larger cap is used for every model so a model change
+ * can never make this an under-estimate. Our frames are also scaled to <=640px wide
+ * (lib/vision-validation.ts), so the real cost is around 1,000 tokens.
+ * Source: platform.claude.com/docs/en/build-with-claude/vision, "Resolution and token
+ * cost" (checked 2026-11-02). The reservation used to assume 100,000 tokens per image.
+ */
+export const MAX_IMAGE_TOKENS = 4_784;
