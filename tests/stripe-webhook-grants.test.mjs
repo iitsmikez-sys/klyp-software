@@ -19,6 +19,7 @@ function harness({missingTable = false, failGrantOnce = false, currentSubscripti
   let subscriptionStatus = currentSubscriptionStatus;
   let latestInvoiceId = null;
   let pinLatestInvoice = false;
+  let paused = false;
   class NextResponse extends Response {
     static json(body, init) { return new NextResponse(JSON.stringify(body), init); }
   }
@@ -59,7 +60,8 @@ function harness({missingTable = false, failGrantOnce = false, currentSubscripti
   const modules = {
     'next/server': {NextResponse},
     '@/lib/stripe': {getStripe: () => ({webhooks: {constructEvent: payload => JSON.parse(payload)},
-      subscriptions: {retrieve: async id => ({id, status: subscriptionStatus, latest_invoice: latestInvoiceId})}})},
+      subscriptions: {retrieve: async id => ({id, status: subscriptionStatus, latest_invoice: latestInvoiceId,
+        pause_collection: paused ? {behavior: 'void', resumes_at: 1} : null})}})},
     '@/lib/supabase/admin': {createAdminClient: () => admin},
     '@/lib/tier': {SPARKS_ALLOWANCE: {free: 150, pro: 500}},
   };
@@ -74,6 +76,7 @@ function harness({missingTable = false, failGrantOnce = false, currentSubscripti
     return {status: res.status, body: await res.json()};
   }
   return {send, grants, profile, setSubscriptionStatus(status) {subscriptionStatus = status;},
+    setPaused(value) {paused = value;},
     setLatestInvoice(id) {latestInvoiceId = id; pinLatestInvoice = true;},
     spend(amount) {balance -= amount;}, get balance() {return balance;}};
 }
@@ -241,4 +244,35 @@ test('two Stripe event IDs for the same paid invoice never refill twice', async 
   assert.equal((await h.send(invoice('evt-b', 'subscription_cycle', 'in_same'))).status, 200);
   assert.equal(h.grants.length, 1);
   assert.equal(h.balance, 100);
+});
+
+const voided = (id, billing_reason = 'subscription_cycle', subscription = 'sub') => ({id, type: 'invoice.voided', data: {object: {
+  id: 'in_' + id, billing_reason, customer: 'cus', parent: {subscription_details: {subscription, metadata: {user_id: 'user'}}},
+}}});
+
+test('a paused subscription whose renewal invoice is voided moves to Free, keeps its subscription id, then resumes with a fresh allotment', async () => {
+  const h = harness();
+  await h.send(invoice('evt_first', 'subscription_create'));
+  assert.equal(h.profile.tier, 'pro');
+  h.setPaused(true);
+  const res = await h.send(voided('evt_void'));
+  assert.equal(res.status, 200);
+  assert.equal(h.profile.tier, 'free');
+  assert.equal(h.profile.stripe_subscription_id, 'sub'); // kept so the person can still manage or cancel
+  assert.equal(h.grants.length, 1); // nothing is granted while paused
+  h.setPaused(false); // billing resumes and the next invoice is paid
+  await h.send(invoice('evt_resume', 'subscription_cycle'));
+  assert.equal(h.profile.tier, 'pro');
+  assert.equal(h.grants.length, 2);
+  assert.equal(h.balance, 500);
+});
+
+test('a voided invoice does NOT downgrade a subscription that is not paused, or a non-renewal invoice', async () => {
+  const h = harness();
+  await h.send(invoice('evt_first', 'subscription_create'));
+  await h.send(voided('evt_void_unpaused'));
+  assert.equal(h.profile.tier, 'pro');
+  h.setPaused(true);
+  await h.send(voided('evt_void_other', 'manual'));
+  assert.equal(h.profile.tier, 'pro');
 });

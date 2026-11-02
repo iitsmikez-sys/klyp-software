@@ -33,6 +33,9 @@ export type SubscriptionLike = {
   status: string;
   customer: IdOrObject;
   latest_invoice?: InvoiceLike | string | null;
+  /** Set while the subscriber has paused billing (Klyp's pause offer). */
+  pause_collection?: { behavior: string } | null;
+  items?: { data: Array<{ current_period_end: number }> };
 };
 
 export type StripeSyncClient = {
@@ -53,6 +56,19 @@ export type SyncAdmin = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const idOf = (v: IdOrObject): string | undefined => (!v ? undefined : typeof v === "string" ? v : v.id);
 const isActive = (status: string) => status === "active" || status === "trialing";
+
+/** A paused subscriber whose paid period has ended is on Free until billing resumes; the subscription id is kept. */
+async function downgradePausedIfCurrent(admin: SyncAdmin, userId: string, subscriptionId: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from("profiles")
+    .update({ tier: "free" })
+    .select("id")
+    .eq("stripe_subscription_id", subscriptionId)
+    .eq("id", userId)
+    .eq("tier", "pro");
+  if (error) throw new Error(`Supabase profile update failed: ${error.message}`);
+  return Array.isArray(data) && data.length > 0;
+}
 
 export type SyncOutcome = {
   subscriptionId: string;
@@ -108,6 +124,12 @@ export async function syncUserFromStripe(opts: {
   const outcomes: SyncOutcome[] = [];
   for (const sub of subs) {
     if (isActive(sub.status)) {
+      const end = sub.items?.data[0]?.current_period_end;
+      if (sub.pause_collection && end && end * 1000 < Date.now()) {
+        const down = await downgradePausedIfCurrent(admin, userId, sub.id);
+        outcomes.push({ subscriptionId: sub.id, action: down ? "revoked" : "unchanged" });
+        continue;
+      }
       const invoice = typeof sub.latest_invoice === "object" ? sub.latest_invoice : null;
       const eligible = invoice && invoice.status === "paid" &&
         (invoice.billing_reason === "subscription_create" || invoice.billing_reason === "subscription_cycle");

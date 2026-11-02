@@ -5,6 +5,7 @@ import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import { vodsPhrase } from "@/lib/sparks";
+import CancelFlow from "@/components/CancelFlow";
 
 function Check() {
   return (
@@ -73,6 +74,7 @@ export default function UpgradePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [billingSetupNeeded, setBillingSetupNeeded] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const allowance = SPARKS_ALLOWANCE[tier];
   const used = balance !== null ? Math.min(allowance, Math.max(0, allowance - balance)) : 0;
@@ -224,6 +226,16 @@ export default function UpgradePage() {
             {complimentaryPro ? "Complimentary Pro active" : billingSetupNeeded ? "Set up billing" : isPro ? "Manage billing" : "Upgrade to Pro"}
           </button>
 
+          {isPro && !complimentaryPro && !billingSetupNeeded && (
+            <button
+              type="button"
+              onClick={() => setCancelOpen(true)}
+              className="mt-2 w-full py-1 text-center text-[11px] text-foreground-muted underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Cancel subscription
+            </button>
+          )}
+
           {/* Social proof */}
           <p className="text-center text-[11px] text-foreground-muted mt-3">
             <AvatarStack />
@@ -236,6 +248,8 @@ export default function UpgradePage() {
           )}
         </div>
       </div>
+
+      {cancelOpen && <CancelFlow onClose={() => setCancelOpen(false)} />}
 
       {/* Sparks meter — used vs total this cycle */}
       {balance !== null && (
