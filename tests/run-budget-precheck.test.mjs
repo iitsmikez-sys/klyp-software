@@ -21,7 +21,7 @@ test("the early check's limit equals the database gate's limit (migration 036)",
   assert.equal(RUN_PROVIDER_LIMIT_MICRO_USD, 3_000_000);
 });
 
-test("reservation grows with length, and 1h and 2h videos fit while 3h and 10h do not", () => {
+test("reservation grows with length, and 1h, 2h and 3h videos fit while 4h and 10h do not", () => {
   let prev = 0;
   for (const h of [0.25, 0.5, 1, 1.5, 2, 2.5, 3, 5, 10]) {
     const reserved = reservedMicroUsdForPass(h * H);
@@ -30,13 +30,14 @@ test("reservation grows with length, and 1h and 2h videos fit while 3h and 10h d
   }
   assert.ok(reservedMicroUsdForPass(1 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD);
   assert.ok(reservedMicroUsdForPass(2 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD, "the advertised 2-hour tier must stay supported");
-  assert.ok(reservedMicroUsdForPass(3 * H) > RUN_PROVIDER_LIMIT_MICRO_USD);
+  assert.ok(reservedMicroUsdForPass(3 * H) <= RUN_PROVIDER_LIMIT_MICRO_USD);
+  assert.ok(reservedMicroUsdForPass(4 * H) > RUN_PROVIDER_LIMIT_MICRO_USD);
   assert.ok(reservedMicroUsdForPass(10 * H) > RUN_PROVIDER_LIMIT_MICRO_USD);
 });
 
-test("the cutoff is between 2 and 3 hours and the boundary behaves", () => {
+test("the cutoff is between 3 and 4 hours and the boundary behaves", () => {
   const max = maxFullPassSeconds();
-  assert.ok(max >= 2 * H && max < 3 * H, `cutoff was ${(max / H).toFixed(2)}h`);
+  assert.ok(max >= 3 * H && max < 4 * H, `cutoff was ${(max / H).toFixed(2)}h`);
   assert.ok(reservedMicroUsdForPass(max) <= RUN_PROVIDER_LIMIT_MICRO_USD);
   assert.ok(reservedMicroUsdForPass(max + 120) > RUN_PROVIDER_LIMIT_MICRO_USD);
 });
@@ -50,7 +51,7 @@ test("cross-check: the three real gate reservations for a worst-case transcript 
       + quoteTextMessage("claude-opus-4-8", "x".repeat(transcriptBytes), 16000)
       + 2 * quoteVisualMessage("claude-sonnet-4-6", "x".repeat(700), 100, 300_000);
   };
-  for (const h of [0.5, 1, 2, 2.2, 2.3, 2.6, 4, 8]) {
+  for (const h of [0.5, 1, 2, 2.9, 3.0, 3.1, 3.5, 4, 8]) {
     const fits = replay(h * H) <= RUN_PROVIDER_LIMIT_MICRO_USD;
     assert.equal(reviewProcessingBudget([{ start: 0, end: h * H }], 100).exceedsRunLimit, !fits, `${h}h`);
   }
@@ -65,7 +66,7 @@ test("review flags too-long audio with the longest allowed length, and leaves no
   const long = reviewProcessingBudget([{ start: 0, end: 5 * H }], 100);
   assert.equal(long.requiresReview, true);
   assert.equal(long.exceedsRunLimit, true);
-  assert.ok(long.maxRunHours >= 2 && long.maxRunHours < 3);
+  assert.ok(long.maxRunHours >= 3 && long.maxRunHours < 4);
   const normal = reviewProcessingBudget([{ start: 0, end: 1 * H }], 5);
   assert.equal(normal.requiresReview, false);
   assert.equal(normal.exceedsRunLimit, false);

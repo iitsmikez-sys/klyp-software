@@ -39,6 +39,17 @@ export function quoteTextMessage(model: string, text: string, maxOutputTokens: n
 export function quoteVisualMessage(model: string, text: string, maxOutputTokens: number, imageBytes: number): number {
   if (!Number.isSafeInteger(imageBytes) || imageBytes <= 0 || imageBytes > 300_000)
     throw new Error('Image input cannot be bounded');
-  // Anthropic downsizes images; 100k tokens is far above a single accepted frame.
-  return quote(model, text, maxOutputTokens, 100_000);
+  return quote(model, text, maxOutputTokens, MAX_IMAGE_TOKENS);
 }
+
+/**
+ * Hard upper bound on the visual tokens one image can cost. Anthropic downsizes every
+ * image to fit the model's limits, so the cost is capped no matter how large the file
+ * is: 1,568 tokens on models before Claude 4.7 and 4,784 on 4.7 and later (the
+ * "high-resolution" tier). The larger cap is used for every model so a model change
+ * can never make this an under-estimate. Our frames are also scaled to <=640px wide
+ * (lib/vision-validation.ts), so the real cost is around 1,000 tokens.
+ * Source: platform.claude.com/docs/en/build-with-claude/vision, "Resolution and token
+ * cost" (checked 2026-11-02). The reservation used to assume 100,000 tokens per image.
+ */
+export const MAX_IMAGE_TOKENS = 4_784;
