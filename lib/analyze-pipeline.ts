@@ -696,7 +696,11 @@ export async function runAnalysisPipeline(opts: {
     if (durationHint && durationHint >= SEGMENT_MIN_VOD_S) {
       const ceiling = Number(process.env.KLYP_MAX_VOD_ESTIMATED_USD ?? 5);
       const budget = reviewProcessingBudget([{ start: 0, end: durationHint }], ceiling);
-      if (budget.requiresReview) throw new Error(`This VOD needs an estimated $${budget.projectedUsd.toFixed(2)} processing budget, above the $${ceiling.toFixed(2)} limit. No audio was dropped; review the budget before continuing.`);
+      if (budget.requiresReview) {
+        // Refused before any download or paid call: nothing was spent and nothing is charged.
+        if (budget.exceedsRunLimit && budget.maxRunHours) throw new Error(`This video is too long to analyze in one pass (about ${budget.maxRunHours} hours is the most for a full transcript). No Sparks were charged. Trim it or split it into parts and try again.`);
+        throw new Error(`This VOD needs an estimated $${budget.projectedUsd.toFixed(2)} processing budget, above the $${ceiling.toFixed(2)} limit. No audio was dropped; review the budget before continuing.`);
+      }
     }
     const audioPath = await withMem("download", () =>
       uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir, !!durationHint && durationHint >= SEGMENT_MIN_VOD_S)
