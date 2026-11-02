@@ -210,7 +210,6 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
             )}
             <button type="button" className={primary} disabled={!reason || !!busy} onClick={submitSurvey}>{busy ?? "Continue"}</button>
             <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>Keep my subscription</button>
-            <button type="button" className={quiet} disabled={!!busy} onClick={goCancel}>Skip and continue cancellation</button>
           </>
         )}
         {step === "offer" && renderOffer()}
