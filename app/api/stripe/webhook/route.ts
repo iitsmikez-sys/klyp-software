@@ -5,6 +5,7 @@
  *   invoice.paid                    → grant a full Sparks allotment (first payment or renewal)
  *   customer.subscription.updated   → revoke Pro on unpaid/inactive status; never grant Pro
  *   customer.subscription.deleted   → revoke Pro without refilling Sparks
+ *   invoice.voided                  → a paused subscription's renewal: Free until billing resumes
  *
  * Local dev: stripe listen --forward-to localhost:3000/api/stripe/webhook
  * (copy the printed whsec_… into STRIPE_WEBHOOK_SECRET).
@@ -188,6 +189,26 @@ export async function POST(req: NextRequest) {
             { stripe_subscription_id: null },
             sub.id
           );
+        }
+        break;
+      }
+      case "invoice.voided": {
+        // A paused subscription's renewal invoice is voided instead of charged. The period the person
+        // paid for has ended, so they are on Free until billing resumes (the first paid invoice after
+        // the pause grants Pro and a fresh allowance through the invoice.paid case above).
+        const invoice = event.data.object;
+        const subDetails = invoice.parent?.subscription_details;
+        const subscriptionId = idOf(subDetails?.subscription);
+        if (subscriptionId && invoice.billing_reason === "subscription_cycle") {
+          const current = await getStripe().subscriptions.retrieve(subscriptionId);
+          if (current.pause_collection && (current.status === "active" || current.status === "trialing")) {
+            await syncTierOnly(
+              { userId: subDetails?.metadata?.user_id, customerId: idOf(invoice.customer) },
+              "free",
+              {},
+              subscriptionId
+            );
+          }
         }
         break;
       }
