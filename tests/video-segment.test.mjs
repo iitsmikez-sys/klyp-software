@@ -72,3 +72,11 @@ test("a silent (video-only) segment still counts as a usable segment", async () 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+import { isTwitchVodRef } from "../lib/video-segment.ts";
+test("only Twitch VOD links use the direct ffmpeg slice", () => {
+  for (const ok of ["https://www.twitch.tv/videos/2561660731", "https://twitch.tv/videos/1", "https://www.twitch.tv/somestreamer/v/123"])
+    assert.equal(isTwitchVodRef(ok), true, ok);
+  for (const no of ["https://www.youtube.com/watch?v=abcdefghijk", "upload:abc", "https://www.twitch.tv/somestreamer", "https://example.com/videos/12"])
+    assert.equal(isTwitchVodRef(no), false, no);
+});
