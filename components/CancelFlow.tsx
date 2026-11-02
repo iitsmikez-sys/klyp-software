@@ -134,6 +134,21 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         {state?.cancelAtPeriodEnd && <p className="text-xs text-foreground-muted">Your cancellation is already scheduled. Undo it first to pause.</p>}
       </div>
     );
+    const discountCard = state?.discountEligible ? (
+      <div className="space-y-3 rounded-xl border border-accent/40 bg-accent/5 p-4">
+        <p className="text-sm font-semibold text-foreground">40% off your next payment</p>
+        <p className="text-sm text-foreground">
+          <b>{usd(DISCOUNTED_CENTS)}</b> once, then <b>{usd(RETENTION.PRICE_CENTS)}/month</b>
+        </p>
+        <p className="text-xs text-foreground-muted">
+          Applies to your payment on {day(state.periodEnd)}.
+        </p>
+        <button type="button" className={primary} disabled={!!busy}
+          onClick={() => void run<Done>("Confirming with Stripe…", "discount", { eventId }, (d) => { setDone(d); setStep("done_discount"); void loadState(); })}>
+          {busy ? busy : "Apply 40% off"}
+        </button>
+      </div>
+    ) : null;
     return (
       <div className="space-y-3">
         {reason === "not_good_clips" && (
@@ -153,21 +168,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
             {pauseCard}
           </>
         )}
-        {reason === "too_expensive" && (state?.discountEligible ? (
-          <div className="space-y-3 rounded-xl border border-accent/40 bg-accent/5 p-4">
-            <p className="text-sm font-semibold text-foreground">40% off your next payment</p>
-            <p className="text-sm text-foreground">
-              <b>{usd(DISCOUNTED_CENTS)}</b> once, then <b>{usd(RETENTION.PRICE_CENTS)}/month</b>
-            </p>
-            <p className="text-xs text-foreground-muted">
-              Applies to your payment on {day(state.periodEnd)}.
-            </p>
-            <button type="button" className={primary} disabled={!!busy}
-              onClick={() => void run<Done>("Confirming with Stripe…", "discount", { eventId }, (d) => { setDone(d); setStep("done_discount"); void loadState(); })}>
-              {busy ? busy : "Apply 40% off"}
-            </button>
-          </div>
-        ) : (
+        {reason === "too_expensive" && (discountCard ?? (
           <div className="rounded-xl border border-border bg-surface-2 p-4 text-sm text-foreground-muted">
             {state?.discountAvailableOn
               ? <>You've used this offer recently. It's available again on <b className="text-foreground">{day(state.discountAvailableOn)}</b>.</>
@@ -176,6 +177,12 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         ))}
         {reason === "other" && (
           <p className="rounded-xl border border-border bg-surface-2 p-4 text-sm text-foreground-muted">Thanks for telling us. Your feedback was saved.</p>
+        )}
+        {reason !== "too_expensive" && discountCard && (
+          <>
+            <p className="pt-1 text-center text-xs text-foreground-muted">Or, if you&apos;d like to stay</p>
+            {discountCard}
+          </>
         )}
         <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>{reason === "break" || reason === "not_using" ? "Never mind" : "Keep my subscription"}</button>
         <button type="button" className={quiet} disabled={!!busy} onClick={goCancel}>No thanks, continue cancellation</button>

@@ -68,9 +68,10 @@ for (const reason of ["not_good_clips", "break", "too_expensive", "not_using", "
   });
 }
 
-test("survey: only 'too expensive' is ever offered the discount; only 'break' and 'not using' the pause", () => {
+test("survey: every answer is offered the discount after its own help; only 'break' and 'not using' the pause", () => {
   for (const [reason, offers] of Object.entries(OFFERS_BY_REASON)) {
-    assert.equal(offers.includes("discount"), reason === "too_expensive", reason);
+    assert.equal(offers.includes("discount"), true, reason);
+    assert.equal(offers.at(-1), "discount", reason); // the answer's own help comes first, the discount last
     assert.equal(offers.includes("pause"), reason === "break" || reason === "not_using", reason);
   }
 });
@@ -128,15 +129,26 @@ test("discount: the coupon is created once and reused", async () => {
   assert.equal(s.calls.filter((c) => c[0] === "coupon.create").length, 0);
 });
 
-for (const reason of ["not_good_clips", "break", "not_using", "other"]) {
-  test(`discount: refused for "${reason}" — no one gets it unless they said it is too expensive, and Stripe is never written`, async () => {
+for (const reason of ["not_good_clips", "break", "too_expensive", "not_using", "other"]) {
+  test(`discount: available after the "${reason}" answer, applied once and confirmed from Stripe`, async () => {
     const admin = makeAdmin(); const s = makeStripe();
-    const r = await applyDiscount({ stripe: s.stripe, admin }, ctx, { eventId: await survey(admin, reason) });
-    assert.equal(r.status, 403);
-    assert.equal(writes(s.calls).length, 0);
-    assert.equal(admin.t.retention_offers.length, 0);
+    const r = await applyDiscount({ stripe: s.stripe, admin, now: NOW }, ctx, { eventId: await survey(admin, reason) });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual([r.body.nextAmountCents, r.body.thenAmountCents], [1680, 2800]);
+    assert.equal(s.calls.filter((c) => c[0] === "update").length, 1);
+    assert.equal(admin.t.cancellation_events[0].decision, "accepted_offer");
   });
 }
+
+test("discount: whatever answer they gave, the 6-month limit still applies across answers", async () => {
+  const admin = makeAdmin(); const s = makeStripe();
+  assert.equal((await applyDiscount({ stripe: s.stripe, admin, now: NOW }, ctx, { eventId: await survey(admin, "not_good_clips") })).status, 200);
+  s.sub.discounts = [];
+  const again = await applyDiscount({ stripe: s.stripe, admin, now: NOW }, ctx, { eventId: await survey(admin, "break") });
+  assert.equal(again.status, 409);
+  assert.equal(again.body.code, "discount_not_eligible");
+  assert.equal(s.calls.filter((c) => c[0] === "update").length, 1);
+});
 
 test("discount: refused without a survey, and for someone else's survey", async () => {
   const admin = makeAdmin(); const s = makeStripe();
