@@ -174,7 +174,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       if (existsSync(outPath) && (await stat(outPath)).size > 0) return;
       // Share the preview's 480p segment. The older 360p cache on Railway
       // included audio-only MP4s that cannot produce a still frame.
-      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 480, 10 * 60_000, profile.id);
+      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 720, 10 * 60_000, profile.id);
       await extractFrame(sourcePath, frameTime(start, end) - offsetSeconds, outPath);
     });
     return serve();

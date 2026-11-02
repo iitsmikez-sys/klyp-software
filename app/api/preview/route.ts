@@ -169,9 +169,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       // Fetch only the slice this preview needs, not the whole VOD. The returned
       // offset is where that slice begins in the original timeline, so the cut
       // below must seek relative to it (a segment file starts at 0).
-      // 480p is plenty of source to downscale from — see resolveSourceSegment's
+      // 720p matches the 720p preview output (480p source looked soft when scaled up) — see resolveSourceSegment's
       // maxHeight doc for why fetching full 1080p here just wastes time.
-      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 480, 10 * 60_000, profile.id);
+      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 720, 10 * 60_000, profile.id);
       log("source resolved in", `${((Date.now() - t0) / 1000).toFixed(1)}s`, `offset=${offsetSeconds}s`);
 
       const t1 = Date.now();
