@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
-import { addMonthsUtc, DISCOUNTED_CENTS, RETENTION, type Reason, type SubReason } from "@/lib/retention-core";
+import { addMonthsUtc, DISCOUNT_SAVING_CENTS, DISCOUNTED_CENTS, RETENTION, type Reason, type SubReason } from "@/lib/retention-core";
 
 type State = {
   periodEnd: string | null;
@@ -32,7 +32,7 @@ const SUB_OPTIONS: { id: SubReason; label: string }[] = [
 const resumeIso = (periodEndIso: string, m: number) =>
   new Date(addMonthsUtc(Math.floor(new Date(periodEndIso).getTime() / 1000), m) * 1000).toISOString();
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+const usd = (cents: number) => (cents % 100 === 0 ? `${cents / 100}` : `${(cents / 100).toFixed(2)}`);
 const day = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "the end of your billing period";
 
@@ -136,16 +136,20 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
     );
     const discountCard = state?.discountEligible ? (
       <div className="space-y-3 rounded-xl border border-accent/40 bg-accent/5 p-4">
-        <p className="text-sm font-semibold text-foreground">40% off your next payment</p>
-        <p className="text-sm text-foreground">
-          <b>{usd(DISCOUNTED_CENTS)}</b> once, then <b>{usd(RETENTION.PRICE_CENTS)}/month</b>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">{RETENTION.DISCOUNT_PERCENT}% off</p>
+          <span className="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-background">Save {usd(DISCOUNT_SAVING_CENTS)}</span>
+        </div>
+        <p className="flex items-baseline gap-2.5">
+          <span className="text-3xl font-semibold leading-none text-foreground">{usd(DISCOUNTED_CENTS)}</span>
+          <span className="text-base text-foreground-muted line-through">{usd(RETENTION.PRICE_CENTS)}</span>
         </p>
         <p className="text-xs text-foreground-muted">
-          Applies to your payment on {day(state.periodEnd)}.
+          One payment on {day(state.periodEnd)}. Then back to <b className="text-foreground">{usd(RETENTION.PRICE_CENTS)}/month</b>.
         </p>
         <button type="button" className={primary} disabled={!!busy}
           onClick={() => void run<Done>("Confirming with Stripe…", "discount", { eventId }, (d) => { setDone(d); setStep("done_discount"); void loadState(); })}>
-          {busy ? busy : "Apply 40% off"}
+          {busy ? busy : `Pay ${usd(DISCOUNTED_CENTS)} this month`}
         </button>
       </div>
     ) : null;
@@ -253,7 +257,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
         )}
         {step === "done_discount" && (
           <>
-            <h2 className="font-syne text-lg font-bold text-foreground">40% off is applied</h2>
+            <h2 className="font-syne text-lg font-bold text-foreground">{RETENTION.DISCOUNT_PERCENT}% off is applied</h2>
             <p className="text-sm leading-relaxed text-foreground-muted">
               Stripe confirmed it. Your next payment on <b className="text-foreground">{day(done.nextBillingDate)}</b> is{" "}
               <b className="text-foreground">{usd(DISCOUNTED_CENTS)}</b>. After that it returns to <b className="text-foreground">{usd(RETENTION.PRICE_CENTS)}/month</b>.

@@ -23,6 +23,8 @@ export const RETENTION = {
 } as const;
 
 export const DISCOUNTED_CENTS = Math.round(RETENTION.PRICE_CENTS * (100 - RETENTION.DISCOUNT_PERCENT) / 100);
+/** What the discount takes off one payment ($11.20). */
+export const DISCOUNT_SAVING_CENTS = RETENTION.PRICE_CENTS - DISCOUNTED_CENTS;
 
 export const REASONS = ["not_good_clips", "break", "too_expensive", "not_using", "other"] as const;
 export type Reason = (typeof REASONS)[number];
