@@ -20,6 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getLatestVod, parseTwitchDuration } from "@/lib/twitch";
 import { runAnalysisPipeline } from "@/lib/analyze-pipeline";
 import { estimateSparks, clipCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
+import { exceedsMaxDuration, tooLongMessage } from "@/lib/duration-limits";
 import type { Profile } from "@/lib/tier";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -75,6 +76,12 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
   const channelLabel = stream.twitch_login ?? "your channel";
   const durationSeconds = parseTwitchDuration(video.duration);
   const clipCount = DEFAULT_CLIP_COUNT;
+  // The duration here comes from Twitch's API on the server, not from a client.
+  if (exceedsMaxDuration(durationSeconds)) {
+    await notify(admin, stream.user_id, `${channelLabel}'s new VOD wasn't auto-clipped. ${tooLongMessage(durationSeconds)}`);
+    log("skip+notify (over max duration)", stream.id, video.id, `${durationSeconds}s`);
+    return "found";
+  }
   const upfrontCost = estimateSparks(durationSeconds) + CLIP_COUNT_COST[clipCount];
 
   const { data: profile, error: profileError } = await admin.rpc("admin_get_profile", { target_user: stream.user_id });
@@ -104,7 +111,7 @@ export async function checkStreamForNewVod(admin: Admin, stream: StreamRow): Pro
       workDir,
     });
 
-    const sparksSpent = estimateSparks(result.durationSeconds) + clipCharge(clipCount, result.clips.length);
+    const sparksSpent = estimateSparks(Math.max(result.durationSeconds, durationSeconds)) + clipCharge(clipCount, result.clips.length);
     const { error: chargeError } = await admin.rpc("admin_consume_sparks", {
       target_user: stream.user_id,
       amount: sparksSpent,

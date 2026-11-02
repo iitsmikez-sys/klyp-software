@@ -23,6 +23,7 @@ import { resolveBin, runCapture } from "@/lib/bin";
 import { CACHE_DIR } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { estimateSparks } from "@/lib/sparks";
+import { exceedsMaxDuration, tooLongMessage } from "@/lib/duration-limits";
 import { withCors, corsPreflight } from "@/lib/cors";
 
 export const runtime = "nodejs";
@@ -112,6 +113,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     const durationSeconds = Math.round(Number(probed.trim()));
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
       throw new Error("Could not read the video's duration — is the file a valid video?");
+    }
+
+    // Refuse over-length files now (the catch below deletes the file), so they
+    // can't be analyzed later and don't sit on disk.
+    if (exceedsMaxDuration(durationSeconds)) {
+      rm(outPath, { force: true }).catch(() => {});
+      return NextResponse.json({ error: tooLongMessage(durationSeconds) }, { status: 400 });
     }
 
     return NextResponse.json({

@@ -28,9 +28,10 @@ import { CONTENT_TYPES, DEFAULT_CONTENT_TYPE } from "@/lib/clips";
 import { findUploadedVideo } from "@/lib/video-cache";
 import { bearerToken, getProfileFromToken, consumeSparksFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { exceedsMaxDuration, tooLongMessage } from "@/lib/duration-limits";
+import { DurationError, probeFileDuration, probeUrlDuration } from "@/lib/probe-duration";
 import {
   estimateSparks,
-  MIN_ANALYZE_COST,
   CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
@@ -72,7 +73,6 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // -- Stage 1: validate --
   let url: string;
   let uploadId: string | undefined; // set when analyzing an uploaded file instead of a URL
-  let durationHint: number | undefined; // optional, from the client's cost preview — used for ETAs
   let clipCount: ClipCount = DEFAULT_CLIP_COUNT;
   let contentType: ContentType = DEFAULT_CONTENT_TYPE;
   let keyword: string | undefined; // optional — weights matching transcript moments higher (see lib/analyze-pipeline.ts)
@@ -81,8 +81,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     url = String(body.url ?? "").trim();
     const rawUploadId = String(body.uploadId ?? "").trim();
     if (rawUploadId) uploadId = rawUploadId;
-    const hint = Number(body.durationHint);
-    if (Number.isFinite(hint) && hint > 0) durationHint = hint;
+    // body.durationHint is deliberately ignored: a client-supplied duration must
+    // never price or plan a run. The server measures it below.
     if ((CLIP_COUNT_OPTIONS as readonly number[]).includes(Number(body.clipCount))) {
       clipCount = Number(body.clipCount) as ClipCount;
     }
@@ -126,9 +126,24 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   if (!profile) {
     return fail("validate", "You must be signed in to analyze a VOD.", 401);
   }
-  const upfrontCost = durationHint
-    ? estimateSparks(durationHint) + CLIP_COUNT_COST[clipCount]
-    : MIN_ANALYZE_COST;
+
+  // Measure the video ourselves, before any download or provider spend. Fails
+  // closed: a video whose length can't be read is refused, not priced at the
+  // minimum. Over the cap is refused here too, so no AssemblyAI/Claude money is
+  // spent on something we won't deliver.
+  let verifiedDuration: number;
+  try {
+    verifiedDuration = uploadedPath ? await probeFileDuration(uploadedPath) : await probeUrlDuration(url);
+  } catch (err) {
+    const status = err instanceof DurationError ? err.status : 500;
+    return fail("validate", err instanceof Error ? err.message : "Could not read video duration.", status);
+  }
+  if (exceedsMaxDuration(verifiedDuration)) {
+    return fail("validate", tooLongMessage(verifiedDuration), 400);
+  }
+  const durationHint = verifiedDuration; // server-verified; feeds ETAs, chat sampling and the Twitch segment plan
+
+  const upfrontCost = estimateSparks(verifiedDuration) + CLIP_COUNT_COST[clipCount];
   if (profile.sparks < upfrontCost) {
     return fail(
       "validate",
@@ -148,7 +163,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const reqId = Math.random().toString(36).slice(2, 8);
   const log = (...args: unknown[]) =>
     console.log(`[analyze ${reqId}]`, new Date().toISOString(), ...args);
-  log("start", uploadId ? `upload:${uploadId}` : url, `clips=${clipCount}`, `content=${contentType}`, `keyword=${keyword ?? "-"}`, `hint=${durationHint ?? "-"}s`);
+  log("start", uploadId ? `upload:${uploadId}` : url, `clips=${clipCount}`, `content=${contentType}`, `keyword=${keyword ?? "-"}`, `duration=${verifiedDuration}s`);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -219,7 +234,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
 
         // Deduct Sparks server-side: VOD length cost + clip cost prorated by
         // how many clips actually cleared the quality floor.
-        const sparksSpent = estimateSparks(durationSeconds) + clipCharge(clipCount, clipsWithWords.length);
+        // Billed on the longer of the verified probe and the pipeline's own
+        // measure, so the charge can never come in under what was checked up front.
+        const sparksSpent =
+          estimateSparks(Math.max(durationSeconds, verifiedDuration)) + clipCharge(clipCount, clipsWithWords.length);
         // The charge can legitimately fail now that overdrafts are refused
         // (migration 010) — an estimate that came in under the real cost, say.
         // The analysis is already finished and the clips are the user's, so a

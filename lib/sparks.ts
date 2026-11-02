@@ -28,13 +28,37 @@ export function clipCharge(requested: ClipCount, returned: number): number {
 /** Flat Sparks cost of a 2× upscaled export (Pro only). */
 export const UPSCALE_COST = 35;
 
-/** Sparks cost of analyzing a VOD, tiered by duration. */
+/** From this length up, the flat tiers below stop and per-hour pricing starts. */
+export const LONG_VOD_THRESHOLD_S = 2 * 3600;
+/** Cost of a VOD at exactly the long-VOD threshold. */
+export const LONG_VOD_BASE_SPARKS = 50;
+/** Added for each hour beyond the threshold, prorated by the second. */
+export const EXTRA_HOUR_SPARKS = 15;
+/**
+ * Probe and encoder durations of the same file disagree by a few seconds, so
+ * this much past a boundary is treated as sitting on it — 2h00m20s is not
+ * billed as a second tier. Applied to the 2h threshold only.
+ */
+export const DURATION_TOLERANCE_S = 30;
+
+/**
+ * Sparks cost of analyzing a VOD. Under 2 hours it is tiered by duration;
+ * from 2 hours it is 50 plus 15 per additional hour, prorated by the second and
+ * rounded UP to a whole Spark (so 3h costs 65, 4h costs 80, 8h costs 140).
+ *
+ * Duration must be server-verified — never a client-supplied hint. A value
+ * that is not a positive finite number is billed as the cheapest tier here;
+ * callers refuse such videos before this is reached (see lib/probe-duration.ts).
+ */
 export function estimateSparks(durationSeconds: number): number {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 10;
   const minutes = durationSeconds / 60;
   if (minutes < 30) return 10;
   if (minutes < 60) return 20;
   if (minutes < 120) return 35;
-  return 50;
+  const over = durationSeconds - LONG_VOD_THRESHOLD_S - DURATION_TOLERANCE_S;
+  const extra = over > 0 ? Math.ceil((EXTRA_HOUR_SPARKS * over) / 3600) : 0;
+  return LONG_VOD_BASE_SPARKS + extra;
 }
 
 /**
