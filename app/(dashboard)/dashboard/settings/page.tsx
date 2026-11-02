@@ -8,6 +8,7 @@ import { SPARKS_ALLOWANCE, type Profile } from "@/lib/tier";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import UpgradeButton from "@/components/UpgradeButton";
+import CancelFlow from "@/components/CancelFlow";
 import { fmtDate } from "@/lib/clip-ui";
 import { uiSoundsEnabled, setUiSoundsEnabled } from "@/lib/ui-sound";
 import VerticalLayoutEditor from "@/components/VerticalLayoutEditor";
@@ -40,6 +41,7 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 export default function SettingsPage() {
   const router = useRouter();
   const { tier, balance, complimentaryPro } = useSparks();
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("");
@@ -301,8 +303,21 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          {tier === "pro" && !complimentaryPro && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCancelOpen(true)}
+                className="text-xs text-foreground-muted underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Cancel subscription
+              </button>
+            </div>
+          )}
         </Section>
       </div>
+      {cancelOpen && <CancelFlow onClose={() => setCancelOpen(false)} />}
     </div>
   );
 }
