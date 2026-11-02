@@ -359,7 +359,7 @@ export async function resolveSourceSegment(
       const download = async (format: string) => {
         await ensureCacheSpace(key);
         log("segment download start", key, `${segStart}-${segEnd}s`, `maxHeight=${maxHeight}`);
-        const fetchSegment = (fmt: string) => runYtDlpWithRetry([
+        const fetchSegment = (fmt: string, copyStreams = false) => runYtDlpWithRetry([
           "-f", fmt,
           "--merge-output-format", "mp4",
           "--no-playlist",
@@ -367,7 +367,9 @@ export async function resolveSourceSegment(
           ...ffmpegLocationArgs(),
           ...ytDlpThreadCapArgs(),
           "--download-sections", `*${segStart}-${segEnd}`,
-          "--force-keyframes-at-cuts",
+          // Re-encoding at the cut is exact but needs ffmpeg to decode the slice; copying streams
+          // is keyframe-aligned (up to a couple of seconds early) and needs no encoder at all.
+          ...(copyStreams ? [] : ["--force-keyframes-at-cuts"]),
           "-o", segPath,
           ref,
         ], { stallTimeoutMs: Math.min(90_000, maxRunMs), maxRunMs });
@@ -375,11 +377,24 @@ export async function resolveSourceSegment(
           await fetchSegment(format);
         } catch (err) {
           if (!isNoAudioSegmentError(err)) throw err;
-          // This stretch has no audio to encode (e.g. Twitch muted it): fetch the picture alone
-          // so the clip still plays, backs up and gets a thumbnail, just without sound.
-          log("segment has no audio — retrying video-only", key, `${segStart}-${segEnd}s`);
-          await unlink(segPath).catch(() => {});
-          await fetchSegment(videoOnlyFormat(maxHeight));
+          // ffmpeg could not open an encoder because it decoded nothing from this slice. Try, in
+          // order: the picture alone, then a plain stream copy with sound, then a copy of the
+          // picture alone. A clip that plays beats one that cannot be backed up or previewed.
+          const fallbacks: Array<[string, () => Promise<void>]> = [
+            ["video-only", () => fetchSegment(videoOnlyFormat(maxHeight))],
+            ["stream copy", () => fetchSegment(format, true)],
+            ["video-only stream copy", () => fetchSegment(videoOnlyFormat(maxHeight), true)],
+          ];
+          let last: unknown = err;
+          for (const [label, attempt] of fallbacks) {
+            log(`segment re-encode failed — retrying (${label})`, key, `${segStart}-${segEnd}s`);
+            await unlink(segPath).catch(() => {});
+            try { await attempt(); last = null; break; } catch (fallbackErr) {
+              last = fallbackErr;
+              log(`segment fallback ${label} FAILED`, key, fallbackErr instanceof Error ? fallbackErr.message.slice(-200) : String(fallbackErr));
+            }
+          }
+          if (last) throw last;
         }
       };
       const probe = (filePath: string) => hasVideoStream(filePath, resolveBin("ffprobe"));
