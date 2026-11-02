@@ -26,7 +26,7 @@ import { preferencesForUser } from "@/lib/creator-feedback-data";
 import { processClipArchiveJobs } from "@/lib/clip-archive-worker";
 import { processR2Maintenance } from "@/lib/r2-maintenance";
 import { runQueued } from "@/lib/job-queue";
-import { estimateSparks, clipCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
+import { estimateSparks, analysisCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
 import type { Profile } from "@/lib/tier";
 import { PLAN_LIMITS } from "@/lib/plan-limits";
 import { ensureAutoClipEntitled } from "@/lib/auto-clip-entitlement";
@@ -155,7 +155,7 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
             client: admin, durationHint: job.duration_seconds })
         : runAnalysisPipeline(options));
 
-    const sparksSpent = estimateSparks(result.durationSeconds) + clipCharge(clipCount, result.clips.length);
+    const sparksSpent = analysisCharge(result.durationSeconds, result.clips.length);
     const rows = result.clips.map((clip) => ({
         title: clip.title,
         clip_type: clip.type,

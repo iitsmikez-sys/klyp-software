@@ -2,57 +2,66 @@
 
 /**
  * Cheapest possible analysis — used as the "can you afford anything at all"
- * floor: shortest VOD (10⚡) + one clip (4⚡).
+ * floor: the shortest video's price (20⚡).
  */
-export const MIN_ANALYZE_COST = 14;
-
-/** Selectable clip counts and their Sparks cost (added to the VOD length cost). */
-export const CLIP_COUNT_OPTIONS = [1, 2, 3, 5, 7, 10, 12, 20] as const;
-export type ClipCount = (typeof CLIP_COUNT_OPTIONS)[number];
-export const CLIP_COUNT_COST: Record<ClipCount, number> = { 1: 4, 2: 7, 3: 10, 5: 20, 7: 30, 10: 40, 12: 50, 20: 80 };
-export const DEFAULT_CLIP_COUNT: ClipCount = 5;
-/** The MAX tier — priciest run; the UI requires explicit confirmation before analyzing. */
-export const MAX_CLIP_COUNT: ClipCount = 20;
+export const MIN_ANALYZE_COST = 20;
 
 /**
- * Clip-count portion of the charge, prorated by how many clips actually came
- * back — MIDAS only returns moments above the quality floor, so asking for 10
- * and getting 4 charges 4 × (40/10) = 16⚡.
+ * Every analysis looks for up to this many clips. Clip count no longer changes the price (it barely
+ * changes Klyp's cost): the charge is per video, by length. Only moments that clear the quality
+ * floor are returned and saved, so fewer than 10 come back when the video has fewer good ones.
  */
-export function clipCharge(requested: ClipCount, returned: number): number {
-  const perClip = CLIP_COUNT_COST[requested] / requested;
-  return Math.round(perClip * Math.max(0, Math.min(returned, requested)));
-}
+export const CLIP_COUNT_OPTIONS = [10] as const;
+/** Wider than the options: older jobs and the internal candidate pool (20) still carry other counts. */
+export type ClipCount = 1 | 2 | 3 | 5 | 7 | 10 | 12 | 20;
+/** Kept so older callers keep working: clips are included in the video price. */
+export const CLIP_COUNT_COST: Record<ClipCount, number> = { 1: 0, 2: 0, 3: 0, 5: 0, 7: 0, 10: 0, 12: 0, 20: 0 };
+export const DEFAULT_CLIP_COUNT: ClipCount = 10;
+export const MAX_CLIP_COUNT: ClipCount = 10;
 
+/** Clips are included in the video price, so a returned clip adds no charge. */
+export function clipCharge(_requested: ClipCount, _returned: number): number {
+  return 0;
+}
 
 /** Flat Sparks cost of a 2× upscaled export (Pro only). */
 export const UPSCALE_COST = 35;
 
-/** Videos up to this long cost the flat top tier; beyond it each started hour adds LONG_VIDEO_SPARKS_PER_HOUR. */
+/** Videos up to this long cost the flat top tier (80); beyond it each started hour adds LONG_VIDEO_SPARKS_PER_HOUR. */
 export const LONG_VIDEO_FROM_SECONDS = 6 * 3600;
 export const LONG_VIDEO_SPARKS_PER_HOUR = 20;
 
 /**
- * Sparks cost of analyzing a VOD, tiered by duration. Must match v_vod_cost in
- * record_analysis_clips (migration 038): 7h = 70, 8h = 90.
+ * Sparks cost of analyzing a video, by length, with its clips included. Must match v_vod_cost in
+ * record_analysis_clips (migration 039): 20 / 35 / 50 / 65 (2-4h) / 80 (4-6h), then +20 per started hour over 6.
  */
 export function estimateSparks(durationSeconds: number): number {
   const minutes = durationSeconds / 60;
-  if (minutes < 30) return 10;
-  if (minutes < 60) return 20;
-  if (minutes < 120) return 35;
-  if (durationSeconds <= LONG_VIDEO_FROM_SECONDS) return 50;
-  return 50 + LONG_VIDEO_SPARKS_PER_HOUR * Math.ceil((durationSeconds - LONG_VIDEO_FROM_SECONDS) / 3600);
+  if (minutes < 30) return 20;
+  if (minutes < 60) return 35;
+  if (minutes < 120) return 50;
+  if (durationSeconds <= 4 * 3600) return 65;
+  if (durationSeconds <= LONG_VIDEO_FROM_SECONDS) return 80;
+  return 80 + LONG_VIDEO_SPARKS_PER_HOUR * Math.ceil((durationSeconds - LONG_VIDEO_FROM_SECONDS) / 3600);
 }
 
 /**
- * A representative run: a 45-minute VOD at the default clip count. Used only to
+ * What an analysis charges once its result is known: the full video price when at least one clip
+ * came back, half (rounded up) when the video was analyzed but nothing cleared the quality floor.
+ */
+export function analysisCharge(durationSeconds: number, clipsReturned: number): number {
+  const full = estimateSparks(durationSeconds);
+  return clipsReturned > 0 ? full : Math.ceil(full / 2);
+}
+
+/**
+ * A representative run: a 45-minute VOD. Used only to
  * translate a Sparks balance into something a human can picture ("about 3
  * VODs"). Deliberately derived from the real cost functions rather than a
  * hardcoded guess, so it cannot drift when pricing changes.
  */
 export const TYPICAL_ANALYSIS_COST =
-  estimateSparks(45 * 60) + CLIP_COUNT_COST[DEFAULT_CLIP_COUNT];
+  estimateSparks(45 * 60);
 
 /** Whole VODs a balance can cover at the typical cost. Rounds down — promising
  *  a run the balance can't finish is worse than understating. */

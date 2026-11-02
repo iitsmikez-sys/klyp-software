@@ -54,7 +54,7 @@ test('automatic clipping skips an 11-hour VOD without paid work or a Sparks debi
     '@/lib/r2-maintenance': { processR2Maintenance: async () => {} },
     '@/lib/job-queue': { runQueued: (_label, fn) => fn() },
     '@/lib/plan-limits': planLimits, '@/lib/auto-clip-entitlement': entitlement,
-    '@/lib/sparks': { estimateSparks: () => 50, clipCharge: () => 0,
+    '@/lib/sparks': { estimateSparks: () => 50, clipCharge: () => 0, analysisCharge: () => 50,
       CLIP_COUNT_COST: { 5: 20 }, DEFAULT_CLIP_COUNT: 5 },
   };
   const exports = {};
