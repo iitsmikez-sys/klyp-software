@@ -41,3 +41,17 @@ export async function ensureVideoSegment(
   await unlink(filePath).catch(() => {});
   throw new Error("Downloaded segment contains no video stream.");
 }
+
+/**
+ * The error yt-dlp/ffmpeg report when a slice of a VOD has no audio to encode (Twitch mutes
+ * stretches of old VODs): the audio encoder never receives a packet, so no file is written.
+ */
+export function isNoAudioSegmentError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return /Could not open encoder before EOF|streams received no packets|Nothing was written into output file/i.test(message);
+}
+
+/** A video-only format, for a slice whose audio cannot be fetched: a silent clip beats no clip. */
+export function videoOnlyFormat(maxHeight: number): string {
+  return `bv[height<=${maxHeight}][ext=mp4]/bv[height<=${maxHeight}]/bv*[height<=${maxHeight}]`;
+}

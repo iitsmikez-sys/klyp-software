@@ -9,7 +9,7 @@ import { existsSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { ffmpegLocationArgs, isDiskFullError, resolveBin, runYtDlpWithRetry, ytDlpThreadCapArgs } from "@/lib/bin";
-import { ensureVideoSegment, hasVideoStream } from "@/lib/video-segment";
+import { ensureVideoSegment, hasVideoStream, isNoAudioSegmentError, videoOnlyFormat } from "@/lib/video-segment";
 import { locateUploadedFile, uploadDirectory } from "@/lib/upload-location";
 import { r2Storage } from "@/lib/r2";
 import { r2UploadRepository } from "@/lib/r2-upload-store";
@@ -359,8 +359,8 @@ export async function resolveSourceSegment(
       const download = async (format: string) => {
         await ensureCacheSpace(key);
         log("segment download start", key, `${segStart}-${segEnd}s`, `maxHeight=${maxHeight}`);
-        await runYtDlpWithRetry([
-          "-f", format,
+        const fetchSegment = (fmt: string) => runYtDlpWithRetry([
+          "-f", fmt,
           "--merge-output-format", "mp4",
           "--no-playlist",
           "--socket-timeout", "30",
@@ -371,6 +371,16 @@ export async function resolveSourceSegment(
           "-o", segPath,
           ref,
         ], { stallTimeoutMs: Math.min(90_000, maxRunMs), maxRunMs });
+        try {
+          await fetchSegment(format);
+        } catch (err) {
+          if (!isNoAudioSegmentError(err)) throw err;
+          // This stretch has no audio to encode (e.g. Twitch muted it): fetch the picture alone
+          // so the clip still plays, backs up and gets a thumbnail, just without sound.
+          log("segment has no audio — retrying video-only", key, `${segStart}-${segEnd}s`);
+          await unlink(segPath).catch(() => {});
+          await fetchSegment(videoOnlyFormat(maxHeight));
+        }
       };
       const probe = (filePath: string) => hasVideoStream(filePath, resolveBin("ffprobe"));
       const wasCached = existsSync(segPath) && (await stat(segPath)).size > 0 && await probe(segPath);
