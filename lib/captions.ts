@@ -290,7 +290,7 @@ export function generateAss(
     if (isHighlightStyle(style)) sections.push(...keywordDialogues(cue.startMs, cue.endMs,
       composed ? wrapCaptionText(text, style) : [text], style));
     else sections.push(dialogue(cue.startMs, cue.endMs,
-      captionAssMotion(style, res.w, res.h, options?.position ?? "BOTTOM") + wrapped));
+      captionAssMotion(style, res.w, res.h, options?.position ?? "BOTTOM", bottomInset) + wrapped));
   }
 
   return sections.join("\n");
