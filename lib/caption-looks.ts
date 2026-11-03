@@ -13,22 +13,19 @@ const HIGHLIGHT: Partial<Record<CaptionStyle, { css: string; ass: string }>> = {
   KEYWORD: highlight("#00E5A0"),
   HYPE: highlight("#FF2D2D"),
   FIRE: highlight("#39FF3A"),
-  // Tri-color paints every word in turn green, red or white (see wordLook), so this entry is only a fallback.
+  // Tri-color: the active word alternates bright green and red (see wordLook).
   TRICOLOR: highlight("#1FFF3A"),
 };
 
-/** Tri-color rotation: bright green, bright red, white, repeating word by word. */
-const TRICOLOR_WORDS = [highlight("#1FFF3A"), highlight("#FF1F2A"), highlight("#FFFFFF")];
-/** The active Tri-color word is drawn a little larger than the rest. */
-export const TRICOLOR_ACTIVE_SCALE = 1.18;
-
-/** Color of one word: the phrase is white and the active word lights up, or, for Tri-color, a fixed rotation by position. */
-export function wordLook(style: CaptionStyle, index: number, active: boolean): { css: string; ass: string } {
-  if (style === "TRICOLOR") return TRICOLOR_WORDS[index % TRICOLOR_WORDS.length];
-  return active ? highlightColor(style) : WHITE_WORD;
-}
+/** Tri-color's active word alternates bright green, bright red as the phrase is spoken. */
+const TRICOLOR_ACTIVE = [highlight("#1FFF3A"), highlight("#FF1F2A")];
 const WHITE_WORD = highlight("#FFFFFF");
-export const activeWordScale = (style: CaptionStyle) => (style === "TRICOLOR" ? TRICOLOR_ACTIVE_SCALE : 1);
+
+/** Color of one word: the phrase is white and the word being said lights up (Tri-color alternates green and red). */
+export function wordLook(style: CaptionStyle, index: number, active: boolean): { css: string; ass: string } {
+  if (!active) return WHITE_WORD;
+  return style === "TRICOLOR" ? TRICOLOR_ACTIVE[index % TRICOLOR_ACTIVE.length] : highlightColor(style);
+}
 
 /** Phrase styles where one word at a time takes the highlight color. */
 export const isHighlightStyle = (style: CaptionStyle) => style in HIGHLIGHT;
