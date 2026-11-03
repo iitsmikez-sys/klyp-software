@@ -38,6 +38,7 @@ import {
   fmtDate,
   platformName,
   vodLinkAt,
+  footageGone,
 } from "@/lib/clip-ui";
 import type { ExportState } from "@/lib/clip-export";
 
@@ -57,6 +58,8 @@ interface Props {
   onDownloadClip: () => void;
   rawState?: RawDownloadState;
   onDownloadRaw?: () => void;
+  readyState?: RawDownloadState;
+  onDownloadReady?: () => void;
   /** Opened from an editing action in the card's ⋯ menu, which lives in Details. */
   initialDetailsOpen?: boolean;
   onClipSaved: (draft: ClipEditDraftV1 | null) => void;
@@ -75,6 +78,8 @@ export default function ClipPreviewModal({
   onDownloadClip,
   rawState,
   onDownloadRaw,
+  readyState,
+  onDownloadReady,
   initialDetailsOpen = false,
   onClipSaved,
 }: Props) {
@@ -447,15 +452,21 @@ export default function ClipPreviewModal({
 
         {/* The source preview and raw download always use the detected moment. */}
         <div className="flex flex-wrap gap-2 px-4 pt-4 pb-2 sm:px-6">
-          <Link href={"/dashboard/clips/" + clip.id + "/edit"} className="flex min-h-11 items-center rounded-lg bg-accent px-4 text-sm font-semibold text-background hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Edit Clip</Link>
+          <button type="button" onClick={onDownloadReady} disabled={!onDownloadReady || readyState?.status === "working" || footageGone(clip)}
+            className="min-h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-background hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
+            {readyState?.status === "working" ? (readyState.received !== undefined ? "Downloading " + readyState.received + "%" : "Preparing " + readyState.seconds + "s")
+              : readyState?.status === "ready" ? "Download ready clip again" : "Download ready clip"}
+          </button>
+          <Link href={"/dashboard/clips/" + clip.id + "/edit"} className="flex min-h-9 items-center self-center rounded-lg border border-border px-3 text-xs font-medium text-foreground-muted hover:border-accent/50 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Edit</Link>
           <button type="button" onClick={onDownloadRaw} disabled={!onDownloadRaw || rawState?.status === "working"}
-            className="min-h-11 rounded-lg border border-border px-4 text-sm font-medium text-foreground hover:border-accent/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
+            className="min-h-9 self-center rounded-lg border border-border px-3 text-xs font-medium text-foreground-muted hover:border-accent/50 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
             {rawState?.status === "working" ? (rawState.received !== undefined ? "Downloading " + rawState.received + "%" : "Preparing raw " + rawState.seconds + "s")
               : rawState?.status === "ready" ? "Download Raw Again" : "Download Raw"}
           </button>
           {!isUpload && <a href={vodLinkAt(clip.url, clip.start_seconds)} target="_blank" rel="noopener noreferrer"
             className="self-center px-2 py-2 text-sm text-foreground-muted hover:text-accent">Watch Original ↗</a>}
         </div>
+        {readyState?.status === "error" && <p role="alert" className="mx-6 mt-1 text-sm text-red-400">{readyState.error} <button type="button" onClick={onDownloadReady} className="underline">Retry</button></p>}
         {rawState?.status === "error" && <p role="alert" className="mx-6 mt-1 text-sm text-red-400">{rawState.error} <button type="button" onClick={onDownloadRaw} className="underline">Retry</button></p>}
         {dirty && <p className="mx-6 text-xs text-amber-300">You have unsaved quick export settings. Save them before leaving this preview.</p>}
 

@@ -22,6 +22,7 @@ import ProGateModal from "./ProGateModal";
 import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
 import { UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
@@ -102,6 +103,7 @@ export default function AnalyzePanel() {
   const [clipStatus, setClipStatus] = useState<Record<number, "unsaved" | "kept" | "discarded">>({});
   const [downloading, setDownloading] = useState<number | null>(null);
   const [downloadElapsed, setDownloadElapsed] = useState(0);
+  const [downloadKind, setDownloadKind] = useState<"ready" | "raw">("raw");
   /** Rendered exports, kept so a finished clip offers Download instead of re-rendering. */
   const [exported, setExported] = useState<Record<number, { url: string; filename: string }>>({});
   /** Result drafts exist locally until the user explicitly keeps a clip. */
@@ -109,6 +111,7 @@ export default function AnalyzePanel() {
   const [savedIds, setSavedIds] = useState<Record<number, string>>({});
   const [archiveStatuses, setArchiveStatuses] = useState<Record<number, string>>({});
   const rawCache = useRef<Record<number, Blob>>({});
+  const readyCache = useRef<Record<number, Blob>>({});
   const [saving, setSaving] = useState<number | "all" | null>(null);
   const savingRef = useRef(false);
   const exportLock = useRef(false);
@@ -674,7 +677,7 @@ export default function AnalyzePanel() {
   };
 
   /** Render one clip via /api/clip and return the MP4 blob. */
-  const fetchClipBlob = async (clip: ClipWithWords, style: CaptionStyle, index: number, raw = false): Promise<{ blob: Blob; warning: string | null }> => {
+  const fetchClipBlob = async (clip: ClipWithWords, style: CaptionStyle, index: number, raw = false, ready = false): Promise<{ blob: Blob; warning: string | null }> => {
     // Timeout so a hung export fails loudly instead of spinning forever. The
     // server keeps working after an abort, so a retry usually hits a warm cache.
     const controller = new AbortController();
@@ -685,7 +688,9 @@ export default function AnalyzePanel() {
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify(
-        raw
+        ready
+          ? readyClipRequest(clip, { url: analyzedUrl, clipId: savedIds[index], handle: getStoredHandle(), hook: clipHooks[index] })
+          : raw
           ? {
               // Clean source moment: original framing/audio, no Klyp editing layers.
               url: analyzedUrl,
@@ -776,24 +781,30 @@ export default function AnalyzePanel() {
   const discardClip = (index: number) => setClipStatus((previous) => ({ ...previous, [index]: "discarded" }));
   const keepAll = () => { if (clips) void keepIndices(clips.flatMap((_, index) => clipStatus[index] === "unsaved" ? [index] : [])); };
 
-  const downloadClip = async (clip: ClipWithWords, index: number, styleOverride?: CaptionStyle, raw = false) => {
+  const downloadClip = async (clip: ClipWithWords, index: number, styleOverride?: CaptionStyle, raw = false, ready = false) => {
     if (busy || exportLock.current) return;
     if (raw && rawCache.current[index]) {
       saveBlob(rawCache.current[index], clipFilename(clip, index, true));
       return;
     }
+    if (ready && readyCache.current[index]) {
+      saveBlob(readyCache.current[index], clipFilename(clip, index));
+      return;
+    }
     exportLock.current = true;
     setDownloading(index);
+    setDownloadKind(ready ? "ready" : "raw");
     setDownloadElapsed(0);
     const rawStarted = Date.now();
-    const rawTicker = raw ? window.setInterval(() => setDownloadElapsed(Math.floor((Date.now() - rawStarted) / 1000)), 1000) : null;
+    const rawTicker = raw || ready ? window.setInterval(() => setDownloadElapsed(Math.floor((Date.now() - rawStarted) / 1000)), 1000) : null;
     setDownloadError(null);
     setDownloadWarning(null);
 
     const style = styleOverride ?? clipStyles[index] ?? "BOLD";
     try {
-      const { blob, warning } = await fetchClipBlob(clip, style, index, raw);
+      const { blob, warning } = await fetchClipBlob(clip, style, index, raw, ready);
       if (raw) rawCache.current[index] = blob;
+      if (ready) readyCache.current[index] = blob;
       if (warning) setDownloadWarning(warning);
       saveBlob(blob, clipFilename(clip, index, raw));
     } catch (err) {
@@ -823,7 +834,10 @@ export default function AnalyzePanel() {
       let done = 0;
       for (let i = 0; i < clips.length; i++) {
         if (clipStatus[i] === "discarded") continue;
-        const { blob, warning } = await fetchClipBlob(clips[i], clipStyles[i] ?? "BOLD", i);
+        const { blob, warning } = readyCache.current[i]
+          ? { blob: readyCache.current[i], warning: null }
+          : await fetchClipBlob(clips[i], clipStyles[i] ?? "BOLD", i, false, true);
+        readyCache.current[i] = blob;
         if (warning) setDownloadWarning(warning);
         let name = clipFilename(clips[i], i);
         if (usedNames.has(name)) name = `${i + 1}_${name}`;
@@ -1310,7 +1324,8 @@ export default function AnalyzePanel() {
             {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <FoundClipCard
               key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy}
               saving={saving === i || saving === "all"} exporting={downloading === i}
-              rawSeconds={downloading === i ? downloadElapsed : 0}
+              rawSeconds={downloading === i ? downloadElapsed : 0} exportKind={downloadKind}
+              onReadyExport={() => void downloadClip(clip, i, undefined, false, true)}
               onPreview={() => { if (!busy) setPreviewIndex(i); }} onCustomize={() => void editClip(i)}
               onRawExport={() => void downloadClip(clip, i, undefined, true)}
               onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} />)}
@@ -1336,7 +1351,9 @@ export default function AnalyzePanel() {
           onClose={() => setPreviewIndex(null)}
           onEditClip={() => void editClip(previewIndex)}
           onDownloadRaw={() => void downloadClip(clips[previewIndex], previewIndex, undefined, true)}
-          rawWorking={downloading === previewIndex}
+          rawWorking={downloading === previewIndex && downloadKind === "raw"}
+          readyWorking={downloading === previewIndex && downloadKind === "ready"}
+          onDownloadReady={() => void downloadClip(clips[previewIndex], previewIndex, undefined, false, true)}
           rawSeconds={downloadElapsed}
           exportState={undefined} onCreateClip={() => void downloadClip(clips[previewIndex], previewIndex)}
           onDownloadClip={() => void downloadClip(clips[previewIndex], previewIndex)}

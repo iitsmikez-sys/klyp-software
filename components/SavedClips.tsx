@@ -15,7 +15,7 @@ export default function SavedClips() {
   const [clips, setClips] = useState<SavedClip[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const { rawDownloads, downloadRaw } = useRawClipDownloads();
+  const { rawDownloads, downloadRaw, readyDownloads, downloadReady } = useRawClipDownloads();
   const { exports, createClip, invalidateClip } = useClipExports();
   useEffect(() => {
     let active = true;
@@ -50,11 +50,13 @@ export default function SavedClips() {
       : clips.length === 0 ? <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-foreground-muted">No saved clips yet. Analyze a VOD to find your first moments.</div>
       : <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${clips.length >= 4 ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>{clips.map(clip => <CompactClipCard
         key={clip.id} clip={clip} compact onPreview={() => setPreviewId(clip.id)}
-        rawState={rawDownloads[clip.id]} onDownloadRaw={() => void downloadRaw(clip)} />)}</div>}
+        rawState={rawDownloads[clip.id]} onDownloadRaw={() => void downloadRaw(clip)}
+        readyState={readyDownloads[clip.id]} onDownloadReady={() => void downloadReady(clip)} />)}</div>}
     {previewClip && <ClipPreviewModal key={previewClip.id} clip={previewClip} onClose={() => setPreviewId(null)}
       onClipSaved={draft => { invalidateClip(previewClip.id); setClips(items => items.map(item => item.id === previewClip.id ? { ...item, edit_draft: draft } : item)); }}
       exportState={exports[previewClip.id]} onCreateClip={() => { void createClip(previewClip); }}
       onDownloadClip={() => { const ready = exports[previewClip.id]; if (ready) downloadExport(ready, previewClip.id); }}
-      rawState={rawDownloads[previewClip.id]} onDownloadRaw={() => void downloadRaw(previewClip)} />}
+      rawState={rawDownloads[previewClip.id]} onDownloadRaw={() => void downloadRaw(previewClip)}
+      readyState={readyDownloads[previewClip.id]} onDownloadReady={() => void downloadReady(previewClip)} />}
   </section>;
 }

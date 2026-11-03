@@ -51,6 +51,8 @@ interface Props {
   onCreateClip: () => void;
   onDownloadClip: () => void;
   onEditClip?: () => void;
+  onDownloadReady?: () => void;
+  readyWorking?: boolean;
   onDownloadRaw?: () => void;
   rawWorking?: boolean;
   rawSeconds?: number;
@@ -77,7 +79,7 @@ export default function ResultsClipPreviewModal({
   exportState,
   onCreateClip,
   onDownloadClip,
-  onEditClip, onDownloadRaw, rawWorking, rawSeconds = 0,
+  onEditClip, onDownloadRaw, onDownloadReady, readyWorking = false, rawWorking, rawSeconds = 0,
   initialDetailsOpen = false,
   draftId, initialCaptionStyle, onSettingsChange, onKeepClip, savingClip, saveError, initialSettings, onExportStateChange,
 }: Props) {
@@ -412,12 +414,16 @@ export default function ResultsClipPreviewModal({
         </div>
 
         <div className="flex flex-wrap gap-2 px-6 pt-4 pb-2">
-          <button type="button" onClick={onEditClip} disabled={!onEditClip || savingClip}
+          <button type="button" onClick={onDownloadReady} disabled={!onDownloadReady || readyWorking || rawWorking}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-background hover:bg-accent-dim disabled:opacity-50">
-            {savingClip ? "Saving…" : "Edit Clip"}
+            {readyWorking ? `Preparing ${rawSeconds}s…` : "Download ready clip"}
           </button>
-          <button type="button" onClick={onDownloadRaw} disabled={!onDownloadRaw || rawWorking}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:border-accent/50 disabled:opacity-50">
+          <button type="button" onClick={onEditClip} disabled={!onEditClip || savingClip}
+            className="rounded-lg border border-border px-3 py-1.5 self-center text-xs font-medium text-foreground-muted hover:border-accent/50 hover:text-foreground disabled:opacity-50">
+            {savingClip ? "Saving…" : "Edit"}
+          </button>
+          <button type="button" onClick={onDownloadRaw} disabled={!onDownloadRaw || rawWorking || readyWorking}
+            className="rounded-lg border border-border px-3 py-1.5 self-center text-xs font-medium text-foreground-muted hover:border-accent/50 hover:text-foreground disabled:opacity-50">
             {rawWorking ? `Preparing raw ${rawSeconds}s…` : "Download Raw"}
           </button>
           {!isUpload && <a href={vodLinkAt(clip.url, clip.start_seconds)} target="_blank" rel="noopener noreferrer"
