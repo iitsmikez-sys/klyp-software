@@ -12,8 +12,19 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/profile";
 import { resolveBillingState } from "@/lib/stripe-billing";
 import { validateProPrice } from "@/lib/checkout-price";
+import { ensureFirstMonthCoupon, firstMonthOfferAvailable, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
 
 export const runtime = "nodejs";
+
+/** GET /api/stripe/checkout — does the signed-in person qualify for the $17 first month? */
+export async function GET() {
+  try {
+    const profile = await getProfile();
+    return NextResponse.json({ first_month: firstMonthOfferAvailable(profile) ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null });
+  } catch {
+    return NextResponse.json({ first_month: null });
+  }
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -55,8 +66,13 @@ export async function POST(req: NextRequest) {
         throw new Error(`The Pro checkout price does not match the advertised ${yearly ? "$276 USD/year" : "$28 USD/month"}. Please contact support.`);
       }
     }
+    // New monthly subscribers pay $17 for the first month (lib/first-month-offer.ts). Stripe also
+    // confirms they have never been a customer, so a returning person pays the full price.
+    const firstMonth = !yearly && !billing.checkoutCustomerId && firstMonthOfferAvailable(profile);
+    const couponId = firstMonth ? await ensureFirstMonthCoupon(stripe) : null;
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
       line_items: [
         configuredPrice
           ? { price: configuredPrice, quantity: 1 }

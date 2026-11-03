@@ -82,6 +82,18 @@ export default function UpgradePage() {
   const [packBusy, setPackBusy] = useState(false);
   const [waitedTooLong, setWaitedTooLong] = useState(false);
   useEffect(() => { const t = setTimeout(() => setWaitedTooLong(true), 4000); return () => clearTimeout(t); }, []);
+  // New people can pay $17 for the first month; the server decides who qualifies. Open on the monthly view so they see it.
+  const [firstMonthCents, setFirstMonthCents] = useState<number | null>(null);
+  useEffect(() => {
+    if (isPro) return;
+    let cancelled = false;
+    fetch("/api/stripe/checkout").then((r) => r.json()).then((d) => {
+      if (cancelled || typeof d?.first_month?.price_cents !== "number") return;
+      setFirstMonthCents(d.first_month.price_cents);
+      setYearly(false);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isPro]);
 
   const allowance = SPARKS_ALLOWANCE[tier];
   const used = balance !== null ? Math.min(allowance, Math.max(0, allowance - balance)) : 0;
@@ -250,6 +262,15 @@ export default function UpgradePage() {
               </div>
               <p className="text-xs text-foreground-muted">Billed ${YEARLY_PRICE_USD} a year</p>
             </div>
+          ) : !isPro && firstMonthCents !== null ? (
+            <div className="mb-3">
+              <div className="flex items-end gap-2">
+                <span className="mb-1.5 text-xl text-foreground-muted line-through">${MONTHLY_PRICE_USD}</span>
+                <span className="font-syne text-4xl font-bold text-accent">${firstMonthCents / 100}</span>
+                <span className="mb-1.5 text-sm text-foreground-muted">USD first month</span>
+              </div>
+              <p className="text-xs text-foreground-muted">Then ${MONTHLY_PRICE_USD}/mo. Cancel anytime.</p>
+            </div>
           ) : (
             <div className="flex items-end gap-1.5 mb-3">
               <span className="font-syne text-4xl font-bold text-accent">${MONTHLY_PRICE_USD}</span>
@@ -277,7 +298,7 @@ export default function UpgradePage() {
             {busy && (
               <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
             )}
-            {complimentaryPro ? "Complimentary Pro active" : billingSetupNeeded ? "Set up billing" : isPro ? "Manage billing" : "Upgrade to Pro"}
+            {complimentaryPro ? "Complimentary Pro active" : billingSetupNeeded ? "Set up billing" : isPro ? "Manage billing" : !yearly && firstMonthCents !== null ? `Get Pro for $${firstMonthCents / 100}` : "Upgrade to Pro"}
           </button>
 
           {isPro && !complimentaryPro && !billingSetupNeeded && (
