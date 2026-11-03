@@ -148,7 +148,7 @@ async function cutClip(
       w *= 2;
       h *= 2;
     }
-    vf = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
+    vf = `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`;
   }
   if (assPath) {
     vf += `,subtitles='${toFfmpegPath(assPath)}'${fontsOpt()}`;
@@ -184,8 +184,8 @@ async function cutClip(
           ...(segmentFilter.audioLabel ? ["-map", segmentFilter.audioLabel] : [])]
       : raw ? [] : ["-vf", vf]),
     "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "23",
+    "-preset", "fast",
+    "-crf", "18",
     "-threads", String(FFMPEG_THREADS),
     "-c:a", "aac",
     "-b:a", "128k",

@@ -14,8 +14,8 @@ function composePlan(plan: VerticalLayoutPlan, inputLabel: string, prefix: strin
     const backgroundH = Math.max(2, Math.round(plan.output.h / 8) * 2);
     filters.push(`[${label('bgsrc')}]scale=${backgroundW}:${backgroundH}:force_original_aspect_ratio=increase,crop=${backgroundW}:${backgroundH},boxblur=8:1:3:1,scale=${plan.output.w}:${plan.output.h}[${label('bg')}]`);
     filters.push(plan.transformed
-      ? `[${label('fgsrc')}]scale=${plan.dest.w}:${plan.dest.h}[${label('fg')}]`
-      : `[${label('fgsrc')}]scale=${plan.output.w}:${plan.output.h}:force_original_aspect_ratio=decrease[${label('fg')}]`);
+      ? `[${label('fgsrc')}]scale=${plan.dest.w}:${plan.dest.h}:flags=lanczos[${label('fg')}]`
+      : `[${label('fgsrc')}]scale=${plan.output.w}:${plan.output.h}:force_original_aspect_ratio=decrease:flags=lanczos[${label('fg')}]`);
     filters.push(`[${label('bg')}][${label('fg')}]overlay=${plan.transformed ? `${plan.dest.x}:${plan.dest.y}` : '(W-w)/2:(H-h)/2'}:shortest=1,format=yuv420p[${label('base')}]`);
     current = label('base');
   } else {
