@@ -337,7 +337,9 @@ export async function findClips(
   priorWindows: { start_seconds: number; end_seconds: number }[] = [],
   creatorPreferences = "",
   costRunId?: string,
-  observedWindows?: AudioWindow[]
+  observedWindows?: AudioWindow[],
+  /** Which Claude model picks the moments. Pro keeps Opus 4.8; see analysisModelFor in lib/plan-limits.ts. */
+  model: string = "claude-opus-4-8"
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -372,7 +374,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     : "";
 
   const request = {
-    model: "claude-opus-4-8",
+    model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
@@ -488,7 +490,7 @@ After your main list, fill "also_consider" with up to 3 more moments that scored
   // Reserve against the request's REAL input size when the API can count it (the counting call is
   // free), never more than the old byte-based bound, and fall back to that bound if counting fails.
   const selectQuote = await quoteSelectMessage({
-    model: 'claude-opus-4-8',
+    model,
     requestText: JSON.stringify(request),
     maxOutputTokens: request.max_tokens,
     countInputTokens: async () => (await client.messages.countTokens({
@@ -503,7 +505,7 @@ After your main list, fill "also_consider" with up to 3 more moments that scored
 
   logAnthropicRateLimits(rawResponse.headers, "findClips");
   if (costRunId) recordProviderUsage({
-    runId: costRunId, stage: "select", provider: "anthropic", model: "claude-opus-4-8",
+    runId: costRunId, stage: "select", provider: "anthropic", model,
     inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
     cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
     cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
@@ -678,6 +680,8 @@ export async function runAnalysisPipeline(opts: {
   cachedTranscript?: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" };
   onTranscript?: (transcript: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" }) => Promise<void>;
   onAnalysis?: (result: PipelineResult) => Promise<void>;
+  /** Claude model for the moment-picking step (Free and Pro can differ). Defaults to Pro's model. */
+  model?: string;
 }): Promise<PipelineResult> {
   // Check before downloading or transcribing, both of which can incur costs.
   anthropicCreditGate.assertAvailable();
@@ -779,7 +783,7 @@ export async function runAnalysisPipeline(opts: {
   const poolSize = discoveryPoolSize(clipCount);
   const cacheInput = { sourceKey: opts.sourceKey ?? "", durationSeconds, contentType,
     keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
-    windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const };
+    windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
@@ -787,7 +791,7 @@ export async function runAnalysisPipeline(opts: {
   if (judged === null) {
     const selected = await withMem("find-clips", () =>
       findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId));
+        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model));
     judged = selected.clips;
     skipped = selected.skipped;
     await cache?.save(judged);
@@ -813,7 +817,7 @@ export async function runAnalysisPipeline(opts: {
     if (nextJudged === null) {
       const next = await withMem("find-clips-more", () =>
         findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId));
+          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model));
       nextJudged = next.clips;
       skipped += next.skipped;
       await nextCache.save(nextJudged);

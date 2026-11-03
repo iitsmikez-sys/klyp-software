@@ -10,10 +10,14 @@ export type ResultKeyInput = {
   creatorPreferences: string; windows: AudioWindow[];
   priorWindows?: { start_seconds: number; end_seconds: number }[];
   pipeline?: 'legacy' | 'legacy-visual' | 'v2' | 'v2-visual';
+  /** Left out for Opus 4.8 so existing cached results keep their key. */
+  model?: string;
 };
 export function resultCacheKey(input: ResultKeyInput): string {
-  return createHash('sha256').update(JSON.stringify({ version: 'v3-fixed-pool', model: 'claude-opus-4-8',
-    ...input, windows: [...input.windows].sort((a, b) => a.start - b.start) })).digest('hex');
+  // An unset model means Opus 4.8, so keys for existing cached results do not change.
+  const { model, ...rest } = input;
+  return createHash('sha256').update(JSON.stringify({ version: 'v3-fixed-pool', model: model ?? 'claude-opus-4-8',
+    ...rest, windows: [...input.windows].sort((a, b) => a.start - b.start) })).digest('hex');
 }
 
 /** Return only unsold, fully observed candidates; cached scores never bypass Opus. */

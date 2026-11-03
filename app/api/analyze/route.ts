@@ -47,7 +47,7 @@ import { createOrLoadAnalysisJob, getAnalysisJob, claimAnalysisJob, checkpointAn
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { MAX_ANALYSES_PER_HOUR, startedAnalysesLastHour } from "@/lib/analysis-limits";
-import { UPLOAD_PRO_MESSAGE, checkSourceLimit, planOf, sourceKindOf, uploadsAllowed } from "@/lib/plan-limits";
+import { UPLOAD_PRO_MESSAGE, analysisModelFor, checkSourceLimit, planOf, sourceKindOf, uploadsAllowed } from "@/lib/plan-limits";
 import { checkFreeCapacity, recordPlanAtStart } from "@/lib/free-capacity";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
@@ -343,6 +343,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               keyword,
               priorWindows,
               creatorPreferences,
+              model: analysisModelFor(plan === "pro"),
               workDir,
               chatSpikesPromise: spikesPromise,
               cachedTranscript: cachedTranscript ?? undefined,
