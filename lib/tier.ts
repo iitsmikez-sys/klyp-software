@@ -17,6 +17,8 @@ export type Profile = {
   stripe_subscription_id: string | null;
   /** How a paying Pro subscriber is billed; absent or "month" for everyone else. */
   billing_interval?: "month" | "year";
+  /** The part of the Sparks balance that was bought in packs: spent last, never wiped by a reset. */
+  pack_sparks?: number;
   /** Server-managed Auth metadata; never derived from user_metadata. */
   complimentary_pro?: boolean;
   vertical_layout?: import("./vertical-layout").VerticalLayoutV1 | null;

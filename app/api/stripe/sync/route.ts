@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getProfile } from "@/lib/profile";
 import { rateLimit } from "@/lib/request-rate-limit";
 import { syncUserFromStripe, type StripeSyncClient } from "@/lib/stripe-sync";
+import { syncSparkPacks, type PackSyncStripe } from "@/lib/spark-packs-sync";
 
 export const runtime = "nodejs";
 
@@ -38,8 +39,17 @@ export async function POST() {
       userId: user.id,
       customerId: profile?.stripe_customer_id ?? null,
     });
+    // Also credit any Spark pack paid in the last few days whose webhook has not landed (idempotent).
+    let packsCredited = 0;
+    try {
+      const packs = await syncSparkPacks({ stripe: getStripe() as unknown as PackSyncStripe, admin: createAdminClient() as never, userId: user.id });
+      packsCredited = packs.credited;
+    } catch (err) {
+      console.error("[stripe sync] spark pack repair failed:", err);
+    }
     return NextResponse.json({
       ok: true,
+      packsCredited,
       subscriptions: result.subscriptions,
       changed: result.outcomes.some((o) => o.action === "granted" || o.action === "revoked"),
     });

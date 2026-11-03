@@ -61,7 +61,8 @@ export function SparksProvider({ children }: { children: ReactNode }) {
   // have landed yet, so ask the server to read the subscription from Stripe now. It is
   // idempotent with the webhook (same invoice-keyed rules), so it can never grant twice.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("upgraded") !== "1") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upgraded") !== "1" && params.get("pack") !== "1") return;
     fetch("/api/stripe/sync", { method: "POST" })
       .then(() => refresh())
       .catch(() => {

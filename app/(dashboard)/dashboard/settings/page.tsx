@@ -287,7 +287,7 @@ export default function SettingsPage() {
                 Sparks this cycle
               </span>
               <span className="text-xs text-foreground-muted">
-                <span className="font-syne font-bold text-foreground">{balance ?? "—"}</span> / {allowance} left
+                <span className="font-syne font-bold text-foreground">{balance ?? "—"}</span>{balance !== null && balance > allowance ? " left" : ` / ${allowance} left`}
               </span>
             </div>
             <div className="h-2 rounded-full bg-surface overflow-hidden">
@@ -301,6 +301,12 @@ export default function SettingsPage() {
               {profile && (
                 <p className="text-[11px] text-subtle">Refills {fmtDate(profile.sparks_reset_at)}</p>
               )}
+            </div>
+            {(profile?.pack_sparks ?? 0) > 0 && (
+              <p className="mt-1.5 text-[11px] text-subtle">Includes {profile?.pack_sparks} bought Sparks. They never expire.</p>
+            )}
+            <div className="mt-2 text-right">
+              <a href="/dashboard/upgrade#packs" className="text-[11px] font-semibold text-accent underline-offset-2 hover:underline">Buy more Sparks</a>
             </div>
           </div>
 
