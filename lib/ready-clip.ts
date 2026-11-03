@@ -11,11 +11,11 @@ export const READY_CLIP_STYLE: CaptionStyle = "PULSE";
 export const READY_CLIP_HOOK_STYLE: HookStyle = "WHITE_BOX";
 export const READY_CLIP_ASPECT = "9:16";
 
-/** Full source frame as the gameplay box, zoomed so the sides are cropped and it fills just over half the height. */
+/** Full source frame as the gameplay box, zoomed so the sides are cropped and it fills about two thirds of the height. */
 export const READY_CLIP_LAYOUT = {
   version: 1,
   gameplay: { x: 0, y: 0, w: 1, h: 1 },
-  fit: { zoom: 1.78, x: 0, y: 0 },
+  fit: { zoom: 2.1, x: 0, y: 0 },
 } as const;
 
 type ReadyClipSource = {

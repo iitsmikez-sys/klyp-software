@@ -71,7 +71,7 @@ export function FinishedOverlays({ hook, words, startSeconds, endSeconds, videoR
       )}
       {caption && (
         <div className="pointer-events-none absolute inset-x-0 px-[6%] text-center font-extrabold uppercase leading-tight text-white"
-          style={{ top: "70%", fontSize: "6.4cqw", textShadow: "0 0 3px #000, 0 0 3px #000, 0 2px 4px #000" }}>
+          style={{ top: "72%", fontSize: "6.4cqw", textShadow: "0 0 3px #000, 0 0 3px #000, 0 2px 4px #000" }}>
           {caption}
         </div>
       )}
