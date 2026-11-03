@@ -13,7 +13,7 @@ class NextResponse extends Response {
   static redirect(url) { return new NextResponse(null, {status: 307, headers: {location: url}}); }
 }
 
-function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, offer = false, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
+function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, offer = false, link = true, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
   let created;
   const validated = [];
   const stripe = {
@@ -26,13 +26,15 @@ function checkoutHarness({signedIn = true, subscribed = false, validPrice = true
     '@/lib/supabase/server': {createClient: async () => ({auth: {getUser: async () => ({data: {user: signedIn ? {id: 'user-1', email: 'test@example.com'} : null}})}})},
     '@/lib/profile': {getProfile: async () => ({stripe_customer_id: null, stripe_subscription_id: null})},
     '@/lib/stripe-billing': {resolveBillingState: async () => ({checkoutCustomerId: null, portalCustomerId: subscribed ? 'cus_existing' : null})},
-    '@/lib/first-month-offer': {firstMonthOfferAvailable: () => offer, ensureFirstMonthCoupon: async () => 'coupon_test', FIRST_MONTH_PRICE_CENTS: 1700},
+    '@/lib/offer-cookie': {OFFER_COOKIE: 'klyp_offer', OFFER_VALUE: '17'},
+    '@/lib/first-month-offer': {firstMonthOfferAvailable: (_profile, _env, fromLink) => offer && fromLink === true, ensureFirstMonthCoupon: async () => 'coupon_test', FIRST_MONTH_PRICE_CENTS: 1700},
     '@/lib/checkout-price': {validateProPrice: (...args) => { validated.push(args.slice(1)); return validPrice; }},
   };
   const exports = {};
   vm.runInNewContext(checkoutCode, {exports, require: name => modules[name],
     process: {env}, Response, Date, Error, console});
-  return {post: (body = {}) => exports.POST({nextUrl: {origin: 'http://localhost:3000'}, json: async () => body}), get created() {return created;}, validated};
+  return {post: (body = {}) => exports.POST({nextUrl: {origin: 'http://localhost:3000'}, json: async () => body,
+    cookies: {get: name => (link && name === 'klyp_offer' ? {value: '17'} : undefined)}}), get created() {return created;}, validated};
 }
 
 test('mocked signed-in checkout uses the advertised price and user identity without granting Sparks', async () => {
@@ -54,6 +56,9 @@ test('a new monthly subscriber gets the $17 first-month coupon; yearly and non-q
   const yearly = checkoutHarness({offer: true});
   await yearly.post({interval: 'year'});
   assert.equal(yearly.created.discounts, undefined);
+  const noLink = checkoutHarness({offer: true, link: false});
+  await noLink.post({interval: 'month'});
+  assert.equal(noLink.created.discounts, undefined, 'no ad link, no discount');
   const returning = checkoutHarness({offer: false});
   await returning.post({interval: 'month'});
   assert.equal(returning.created.discounts, undefined);

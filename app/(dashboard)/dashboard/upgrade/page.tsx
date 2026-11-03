@@ -255,11 +255,6 @@ export default function UpgradePage() {
             Pro
           </p>
           {!isPro && (
-            <p className="text-xs text-amber-400 font-semibold mb-2">
-              🔥 Limited early adopter pricing
-            </p>
-          )}
-          {!isPro && (
             <div className="mb-3 flex items-center gap-3 text-xs">
               <span className={yearly ? "text-foreground-muted" : "font-semibold text-foreground"}>Monthly</span>
               <button
