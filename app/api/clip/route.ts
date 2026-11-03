@@ -145,7 +145,7 @@ async function cutClip(
       w *= 2;
       h *= 2;
     }
-    vf = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
+    vf = `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`;
   }
   const framing = vf;
   const overlays = [
@@ -180,8 +180,8 @@ async function cutClip(
     ...(raw ? [] : composed ? ["-filter_complex_threads", String(FFMPEG_THREADS), "-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", overlayAudio.audioLabel?`[${overlayAudio.audioLabel}]`:"0:a?"] : ["-vf", vf]),
     "-t", String(duration),
     "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "23",
+    "-preset", "fast",
+    "-crf", "18",
     "-threads", String(FFMPEG_THREADS),
     "-c:a", "aac",
     "-b:a", "128k",
