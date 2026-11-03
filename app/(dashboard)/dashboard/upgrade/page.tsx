@@ -81,6 +81,15 @@ export default function UpgradePage() {
   const [packId, setPackId] = useState<string>(DEFAULT_PACK_ID);
   const [packBusy, setPackBusy] = useState(false);
   const [waitedTooLong, setWaitedTooLong] = useState(false);
+  // Monthly Pro members can switch to the yearly plan: null = not offered (or still checking).
+  const [yearlyOffer, setYearlyOffer] = useState<"offer" | "confirm" | "working" | "done" | null>(null);
+  const [yearlyNote, setYearlyNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (tier !== "pro" || complimentaryPro) return;
+    let active = true;
+    fetch("/api/stripe/switch-yearly").then((r) => r.json()).then((d) => { if (active && d?.eligible) setYearlyOffer("offer"); }).catch(() => {});
+    return () => { active = false; };
+  }, [tier, complimentaryPro]);
   useEffect(() => { const t = setTimeout(() => setWaitedTooLong(true), 4000); return () => clearTimeout(t); }, []);
 
   const allowance = SPARKS_ALLOWANCE[tier];
@@ -105,6 +114,20 @@ export default function UpgradePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Checkout failed.");
       setBusy(false);
+    }
+  };
+
+  const switchToYearly = async () => {
+    setYearlyOffer("working");
+    setYearlyNote(null);
+    try {
+      const res = await fetch("/api/stripe/switch-yearly", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw new Error(data?.error ?? `Could not switch plans (HTTP ${res.status}).`);
+      setYearlyOffer("done");
+    } catch (err) {
+      setYearlyNote(err instanceof Error ? err.message : "Could not switch plans.");
+      setYearlyOffer("confirm");
     }
   };
 
@@ -279,6 +302,37 @@ export default function UpgradePage() {
             )}
             {complimentaryPro ? "Complimentary Pro active" : billingSetupNeeded ? "Set up billing" : isPro ? "Manage billing" : "Upgrade to Pro"}
           </button>
+
+          {yearlyOffer && (
+            <div className="mt-3 rounded-xl border border-border bg-surface-2 p-3 text-center">
+              {yearlyOffer === "done" ? (
+                <p role="status" className="text-xs text-foreground">You're on the yearly plan now. Thanks!</p>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold text-foreground">Switch to yearly: $276/yr, save 18%</p>
+                  {yearlyOffer === "offer" ? (
+                    <button type="button" onClick={() => setYearlyOffer("confirm")}
+                      className="mt-1.5 text-xs font-semibold text-accent hover:underline">See how it works</button>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-[11px] leading-snug text-foreground-muted">
+                        You're charged $276 today, minus credit for the unused part of this month. Your Sparks stay as they are and you keep getting 500 every month.
+                      </p>
+                      {yearlyNote && <p role="alert" className="mt-1 text-[11px] text-red-400">{yearlyNote}</p>}
+                      <div className="mt-2 flex justify-center gap-3">
+                        <button type="button" onClick={() => void switchToYearly()} disabled={yearlyOffer === "working"}
+                          className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background hover:bg-accent-dim disabled:opacity-60">
+                          {yearlyOffer === "working" ? "Switching…" : "Switch to yearly"}
+                        </button>
+                        <button type="button" onClick={() => { setYearlyOffer("offer"); setYearlyNote(null); }} disabled={yearlyOffer === "working"}
+                          className="text-xs text-foreground-muted hover:text-foreground">Not now</button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {isPro && !complimentaryPro && !billingSetupNeeded && (
             <button

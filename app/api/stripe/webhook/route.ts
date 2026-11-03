@@ -204,6 +204,9 @@ export async function POST(req: NextRequest) {
       }
       case "customer.subscription.updated": {
         const sub = event.data.object;
+        // A plan switch (monthly to yearly) arrives here. Keep the stored interval in step with Stripe;
+        // this changes no tier and grants nothing.
+        if (sub.status === "active") await setBillingInterval(sub.id, intervalOf(sub));
         // A status update is not proof of payment. Only invoice.paid may
         // activate Pro, including after a failed payment is recovered.
         if (sub.status !== "active" && sub.status !== "trialing") {
