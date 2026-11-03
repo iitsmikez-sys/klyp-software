@@ -26,6 +26,6 @@ test("ASS export uses edited words, color and position", () => {
   const ass = generateAss([{ ...original[0], text: "Hey" }, original[1]], 0, 3000,
     "BOLD", { w: 1080, h: 1920 }, { color: "YELLOW", position: "CENTER" });
   assert.match(ass, /Hey world/);
-  assert.match(ass, /&H0000FFFF/);
+  assert.match(ass, /&H004DE1FF/);
   assert.match(ass, /,5,10,10,0,1/);
 });

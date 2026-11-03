@@ -238,8 +238,9 @@
 .caption-font-choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px }
 .clip-editor .caption-font-choices button { display:flex; flex-direction:column; align-items:center; gap:5px; padding:7px 3px; border:1px solid #334651; border-radius:8px; background:#0e1921; font-size:10px; color:#b8c8d1 }
 .caption-font-choices strong { color:#eef7f6; font-size:19px; line-height:1; letter-spacing:-.04em }
-.caption-font-choices [data-font=serif] strong { font-family:Georgia,serif; font-weight:400 }
-.caption-font-choices [data-font=mono] strong { font-family:monospace; font-weight:500 }
+.caption-font-choices [data-font=sans] strong { font-family:"Poppins ExtraBold",Arial,sans-serif; font-weight:400 }
+.caption-font-choices [data-font=serif] strong { font-family:"Anton",Impact,sans-serif; font-weight:400 }
+.caption-font-choices [data-font=mono] strong { font-family:"Archivo Black",Arial,sans-serif; font-weight:400 }
 .clip-editor .caption-font-choices button[aria-pressed=true] { border-color:var(--editor-mint); background:#12352c; color:#d7fff2 }
 @media(prefers-reduced-motion:reduce) { .clip-editor .caption-template-card:hover:not(:disabled) { transform:none } }
 .editor-tools { display:flex; align-items:center; gap:12px; padding:4px 18px; border-top:1px solid var(--editor-border); flex-shrink:0; background:#0e1519 }

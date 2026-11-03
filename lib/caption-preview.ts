@@ -1,5 +1,6 @@
 import type { CaptionStyle } from "./clips";
-import { keywordAtTime, type CaptionCue } from "./captions";
+import { keywordAtTime, defaultCaptionFontFamily, type CaptionCue } from "./captions";
+import { ensureCaptionFonts } from "./caption-fonts";
 import { CAPTION_HEX, type CaptionOptions } from "./editor-captions";
 import { captionMotion } from "./caption-template-motion";
 
@@ -52,11 +53,12 @@ export function drawCaptionPreview(
   ctx.save();
   ctx.globalAlpha = motion.alpha;
   if (style === "GLOW") { ctx.shadowColor = "#FF99FF"; ctx.shadowBlur = 10 * height / 960; }
-  ctx.font = `${style === "COMIC" ? "italic " : ""}${style === "CLEAN" ? "" : "bold "}${size}px Arial, sans-serif`;
+  ensureCaptionFonts();
+  ctx.font = `${style === "COMIC" ? "italic " : ""}${size}px ${defaultCaptionFontFamily(style)}`;
   ctx.textAlign = "center";
   ctx.textBaseline = options.position === "TOP" ? "top" : options.position === "CENTER" ? "middle" : "bottom";
   ctx.lineJoin = "round";
-  ctx.lineWidth = Math.max(2, (style === "CLEAN" ? 4 : style === "COMIC" ? 14 : 8) * scale);
+  ctx.lineWidth = Math.max(2, (style === "CLEAN" ? 5 : style === "COMIC" ? 17 : 10) * scale);
   ctx.strokeStyle = "black";
   ctx.fillStyle = color;
   paintCaptionLine(ctx, text, width / 2, y + motion.yOffset * scale, width - 20, style,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ensureCaptionFonts } from "@/lib/caption-fonts";
 import { planClipComposition, previewDimensions, visibleFrameRect, type VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, keywordAtTime, type HookStyle } from "@/lib/captions";
 import { paintCaptionLine } from "@/lib/caption-preview";
@@ -27,6 +28,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
     const focusSpans=editor?.draft.version===3 && editor.draft.focus_events?.length && layout?.facecam && format==='9:16'
       ? resolveFocusSpans(editor.draft.focus_events,editor.draft.segments,editor.draft.inserts) : null;
     let frame = 0;
+    ensureCaptionFonts();
     setRenderError(null);
     const draw = () => {
       try {
@@ -45,7 +47,11 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
             }
             frame=insertedFrame;
           }
-          const dimensions = previewDimensions(source, format);
+          // Draw at the size it is shown (screen pixels), not a fixed 540px, so text stays sharp.
+          const base = previewDimensions(source, format);
+          const scaleK = Math.min(2, Math.max(1, Math.ceil(((canvas.clientWidth || 540) * (window.devicePixelRatio || 1)) / 540 * 2) / 2));
+          const dimensions = { w: Math.round(base.w * scaleK / 2) * 2, h: Math.round(base.h * scaleK / 2) * 2 };
+          if (canvas.width !== dimensions.w) canvas.width = dimensions.w;
           if (canvas.height !== dimensions.h) canvas.height = dimensions.h;
           const activeLayout=focusSpans ? layoutForFocus(layout,focusAtOutputTime(focusSpans,editor!.outputTime())) : layout;
           const plan = planClipComposition(source, format, activeLayout, dimensions);
@@ -57,7 +63,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
             const backgroundW = video.videoWidth * cover, backgroundH = video.videoHeight * cover;
             ctx.save();
             // Match the export's blur, which is applied before its background is enlarged.
-            ctx.filter = "blur(16px)";
+            ctx.filter = `blur(${16 * scaleK}px)`;
             ctx.drawImage(frame, (canvas.width - backgroundW) / 2, (canvas.height - backgroundH) / 2, backgroundW, backgroundH);
             ctx.restore();
             ctx.drawImage(frame, 0, 0, video.videoWidth, video.videoHeight, d.x, d.y, d.w, d.h);
@@ -125,19 +131,19 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               const active = cues.find((cue) => clipTime * 1000 >= cue.startMs && clipTime * 1000 < cue.endMs);
               if (active) {
                 const safeBottom = plan.textSafe.y + plan.textSafe.h;
-                ctx.font = `${text.captionStyle === "COMIC" ? "italic " : ""}${text.captionStyle === "CLEAN" ? "normal 29" : "bold 41"}px Arial`;
+                ctx.font = `${text.captionStyle === "COMIC" ? "italic " : ""}${text.captionStyle === "CLEAN" ? "normal 29" : "bold 41"}px Arial`.replace(/(d+)px/, (_, n) => `${Number(n) * scaleK}px`);
                 ctx.textAlign = "center";
-                ctx.lineWidth = 5;
+                ctx.lineWidth = 5 * scaleK;
                 ctx.strokeStyle = "black";
                 ctx.fillStyle = text.captionStyle === "COMIC" ? "#FFDF00" : text.captionStyle === "KLYP" ? "#00e5a0" : "white";
-                const y = safeBottom - 40;
+                const y = safeBottom - 40 * scaleK;
                 const caption = text.captionStyle === "KLYP" ? active.text.toUpperCase() : active.text;
                 const lines = wrapCaptionText(caption, text.captionStyle);
                 const keyword = keywordAtTime(clipTime * 1000 - active.startMs, active.endMs - active.startMs,
                   caption.trim().split(/\s+/).length);
                 let wordOffset = 0;
                 lines.forEach((line, index) => {
-                  const lineY = y - (lines.length - index - 1) * 48;
+                  const lineY = y - (lines.length - index - 1) * 48 * scaleK;
                   paintCaptionLine(ctx, line, canvas.width / 2, lineY, canvas.width - 20, text.captionStyle, keyword, wordOffset);
                   wordOffset += line.split(/\s+/).filter(Boolean).length;
                 });

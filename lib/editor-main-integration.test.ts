@@ -7,7 +7,7 @@ import {generateAss} from './captions.ts';
 import * as preview from './editor-preview.ts';
 test('legacy caption color and position remain available',()=>{
  const ass=generateAss([{text:'Hello',start:0,end:1000}],0,1000,'BOLD',{w:1080,h:1920},{color:'YELLOW',position:'CENTER'} as any);
- assert.match(ass,/&H0000FFFF/);assert.match(ass,/,5,10,10,0,1/);
+ assert.match(ass,/&H004DE1FF/);assert.match(ass,/,5,10,10,0,1/);
 });
 test('processing CORS exposes source and layout warning and allows clip ownership header',()=>{
  const code=ts.transpileModule(readFileSync(new URL('./cors.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;

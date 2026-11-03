@@ -64,7 +64,7 @@ export type CaptionPosition = (typeof CAPTION_POSITIONS)[number];
 export type CaptionOptions = { color: CaptionColor; position: CaptionPosition };
 
 export const CAPTION_HEX: Record<Exclude<CaptionColor, "DEFAULT">, string> = {
-  WHITE: "#FFFFFF", YELLOW: "#FFFF00", GREEN: "#00E5A0", PINK: "#FF5DAA",
+  WHITE: "#FFFFFF", YELLOW: "#FFE14D", GREEN: "#4ADE80", PINK: "#FF7AB8",
 };
 
 export function parseCaptionOptions(value: Record<string, unknown>): CaptionOptions {

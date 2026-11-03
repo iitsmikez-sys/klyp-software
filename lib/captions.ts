@@ -136,7 +136,7 @@ const STYLE_PARAMS: Record<
   CLEAN: { fontSize: 58, color: "&H00FFFFFF", bold: 0, outline: 2, shadow: 1 },
   // Single word per cue, green (#00E5A0), heavy outline — Klyp branded.
   KLYP: { fontSize: 82, color: "&H00A0E500", bold: 1, outline: 4, shadow: 0 },
-  PULSE: { fontSize: 78, color: "&H0000FFFF", bold: 1, outline: 5, shadow: 0 },
+  PULSE: { fontSize: 78, color: "&H004DE1FF", bold: 1, outline: 5, shadow: 0 },
   SLIDE: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 3, shadow: 1 },
   SPARK: { fontSize: 88, color: "&H00A0E500", bold: 1, outline: 5, shadow: 0 },
   BOUNCE: { fontSize: 82, color: "&H00FFFFFF", bold: 1, outline: 6, shadow: 0 },
@@ -145,28 +145,39 @@ const STYLE_PARAMS: Record<
   KEYWORD: { fontSize: 66, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 1 },
 };
 
+/**
+ * Bundled caption fonts (public/fonts, SIL Open Font License). The keys are the stored draft values, so
+ * they stay as they are; the editor labels them Modern, Impact and Heavy. Each file is already a bold
+ * face, so ASS bold is off and the canvas preview never asks for bold (that would fake it a second time).
+ */
+/** Slightly thicker outlines read better over busy footage. */
+const OUTLINE_BOOST = 1.25;
+
 const FONT_NAMES: Record<CaptionFont, { ass: string; css: string }> = {
-  sans: { ass: "DejaVu Sans", css: '"DejaVu Sans", Arial, sans-serif' },
-  serif: { ass: "DejaVu Serif", css: '"DejaVu Serif", Georgia, serif' },
-  mono: { ass: "DejaVu Sans Mono", css: '"DejaVu Sans Mono", monospace' },
+  sans: { ass: "Poppins ExtraBold", css: '"Poppins ExtraBold", Arial, sans-serif' },
+  serif: { ass: "Anton", css: '"Anton", Impact, sans-serif' },
+  mono: { ass: "Archivo Black", css: '"Archivo Black", Arial, sans-serif' },
 };
+/** Lighter face for the CLEAN template when no font is chosen. */
+const CLEAN_FONT = { ass: "Poppins SemiBold", css: '"Poppins SemiBold", Arial, sans-serif' };
+export const defaultCaptionFontFamily = (style: CaptionStyle) => (style === "CLEAN" ? CLEAN_FONT : FONT_NAMES.sans).css;
 export const captionFontFamily = (font: CaptionFont = "sans") => FONT_NAMES[font].css;
 
 function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?: CaptionOptions, font?: CaptionFont, textScale = 1): string {
   const p = STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
   const size = Math.round(p.fontSize * scale * textScale);
-  const outline = Math.max(1, Math.round(p.outline * scale * textScale));
+  const outline = Math.max(2, Math.round(p.outline * scale * textScale * OUTLINE_BOOST));
   const position = options?.position ?? 'BOTTOM';
   const marginV = position === 'CENTER' ? 0 : Math.round((position === 'TOP' ? 400 : 80) * scale + (position === 'BOTTOM' ? bottomInset : 0));
   const alignment = position === 'TOP' ? 8 : position === 'CENTER' ? 5 : 2;
-  const colors = { WHITE: '#FFFFFF', YELLOW: '#FFFF00', GREEN: '#00E5A0', PINK: '#FF5DAA' };
+  const colors = { WHITE: '#FFFFFF', YELLOW: '#FFE14D', GREEN: '#4ADE80', PINK: '#FF7AB8' };
   const hex = style !== 'COMIC' && style !== 'KEYWORD' && options?.color && options.color !== 'DEFAULT' ? colors[options.color] : null;
   const color = hex ? '&H00' + hex.slice(5,7) + hex.slice(3,5) + hex.slice(1,3) : p.color;
   return [
     "[V4+ Styles]",
     STYLES_FORMAT,
-    `Style: Default,${font ? FONT_NAMES[font].ass : "Arial"},${size},${color},&H00FFFFFF,&H00000000,&H00000000,${p.bold},${p.italic ?? 0},0,0,100,100,0,0,1,${outline},${p.shadow},${alignment},10,10,${marginV},1`,
+    `Style: Default,${(font ? FONT_NAMES[font] : style === "CLEAN" ? CLEAN_FONT : FONT_NAMES.sans).ass},${size},${color},&H00FFFFFF,&H00000000,&H00000000,0,${p.italic ?? 0},0,0,100,100,0,0,1,${outline},${p.shadow},${alignment},10,10,${marginV},1`,
   ].join("\n");
 }
 
@@ -408,7 +419,7 @@ export function toFfmpegPath(p: string): string {
 export type CaptionAppearance = { color: string; assColor: string; anchorY: number; alignment: 8 | 5 | 2; transform?: TextPlacement };
 /** Shared normalized anchors use the caption-safe rectangle supplied by the layout. */
 export function captionAppearance(draft: { caption_color: "white" | "yellow" | "green" | "pink"; caption_position: "top" | "center" | "bottom"; caption_placement?: TextPlacement }): CaptionAppearance {
- const color = { white: "#FFFFFF", yellow: "#FFFF00", green: "#00E5A0", pink: "#FF69B4" }[draft.caption_color];
+ const color = { white: "#FFFFFF", yellow: "#FFE14D", green: "#4ADE80", pink: "#FF7AB8" }[draft.caption_color];
  return { color, assColor: `&H00${color.slice(5,7)}${color.slice(3,5)}${color.slice(1,3)}`,
  anchorY: draft.caption_position === "top" ? 80/1920 : draft.caption_position === "center" ? 0.5 : 1-80/1920,
  alignment: draft.caption_position === "top" ? 8 : draft.caption_position === "center" ? 5 : 2,
@@ -466,7 +477,7 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const lineHeight = Math.round(fontSize * 1.2);
  const normalized = sanitizeAssText(style === "KLYP" ? text.toUpperCase() : text);
  const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : 20)/appearance.transform.scale)) : undefined);
- const outline = Math.max(1, Math.round(p.outline * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1)));
+ const outline = Math.max(2, Math.round(p.outline * res.h / DEFAULT_RES.h * OUTLINE_BOOST * (appearance.transform?.scale ?? 1)));
  const edgeMargin = Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));
  const halfBlock = (lines.length-1)*lineHeight/2+fontSize/2+outline;
  const customY=appearance.transform ? Math.max(halfBlock+edgeMargin,Math.min(res.h-halfBlock-edgeMargin,appearance.transform.y*res.h)) : 0;
@@ -475,6 +486,6 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
    : appearance.alignment === 8 ? anchor + fontSize/2 : appearance.alignment === 5 ? anchor - (lines.length-1)*lineHeight/2 : anchor - fontSize/2 - (lines.length-1)*lineHeight;
  const estimatedWidth=Math.min(res.w-2*edgeMargin,Math.max(...lines.map(line=>line.length*fontSize*.52)));
  const customX=appearance.transform ? Math.max(estimatedWidth/2+edgeMargin,Math.min(res.w-estimatedWidth/2-edgeMargin,appearance.transform.x*res.w)) : 0;
- return { fontSize, lineHeight, fontFamily: captionFontFamily(font), bold: p.bold === 1, italic: p.italic === 1, outline, shadow: p.shadow,
+ return { fontSize, lineHeight, fontFamily: captionFontFamily(font), bold: false, italic: p.italic === 1, outline, shadow: p.shadow,
  lines: lines.map((line,index) => ({ text: line, x: appearance.transform ? customX : safeArea.x + safeArea.w/2, y: firstY + index*lineHeight })) };
 }
