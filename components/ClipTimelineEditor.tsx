@@ -91,7 +91,7 @@ export default function ClipTimelineEditor({ clip, compatibilityNotice }: {
     },[clip.id,pro,assetAttempt]);
     const importFile=async(file:File,kind:'photo'|'video')=>{
         if(upload)return;setAssetError(null);
-        try{const asset=await uploadEditorFile(clip.id,file,kind,setUpload,{request:fetch,finalize:processingFetch,upload:async(path,token,file,mime)=>{const {error}=await createClient().storage.from('editor-media').uploadToSignedUrl(path,token,file,{contentType:mime});if(error)throw error;}});setAssets(previous=>[...previous.filter(a=>a.id!==asset.id),asset]);setLeftTab('media');setActiveTool('media');setLeftCollapsed(false);}
+        try{const asset=await uploadEditorFile(clip.id,file,kind,setUpload,{request:(path,init)=>fetch(path,init),finalize:processingFetch,upload:async(path,token,file,mime)=>{const {error}=await createClient().storage.from('editor-media').uploadToSignedUrl(path,token,file,{contentType:mime});if(error)throw error;}});setAssets(previous=>[...previous.filter(a=>a.id!==asset.id),asset]);setLeftTab('media');setActiveTool('media');setLeftCollapsed(false);}
         catch(e){setAssetError((e as Error).message);}finally{setUpload(null);}
     };
     const insertAsset=(asset:EditorAsset,at=time)=>attempt(()=>{const cutaway=createOverlayAtPlayhead(draft,asset,at,crypto.randomUUID());commit({...draft,cutaways:[...draft.cutaways,cutaway]});setSelection({type:'cutaway',id:cutaway.id});});
