@@ -273,7 +273,7 @@ export default function SettingsPage() {
                 {tier === "pro" ? "⚡ PRO" : "FREE"}
               </span>
               <span className="text-sm text-foreground-muted">
-                {tier === "pro" ? complimentaryPro ? "Complimentary Pro · no charge · 500 ⚡/mo" : "$28/mo · no watermark · 500 ⚡/mo" : "60 ⚡/mo · watermarked exports"}
+                {tier === "pro" ? complimentaryPro ? "Complimentary Pro · no charge · 500 ⚡/mo" : profile?.billing_interval === "year" ? "$276/year · no watermark · 500 ⚡/mo" : "$28/mo · no watermark · 500 ⚡/mo" : "60 ⚡/mo · watermarked exports"}
               </span>
             </div>
             <UpgradeButton />

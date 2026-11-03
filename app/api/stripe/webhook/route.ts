@@ -97,6 +97,18 @@ async function grantTier(
   if (error) throw new Error(`Supabase Sparks grant failed: ${error.message}`);
 }
 
+/** "year" for a yearly subscription, otherwise "month" (also when the price is not visible on the object). */
+function intervalOf(sub: { items?: { data?: Array<{ price?: { recurring?: { interval?: string } | null } }> } }): "month" | "year" {
+  return sub.items?.data?.[0]?.price?.recurring?.interval === "year" ? "year" : "month";
+}
+
+/** Record how this subscription is billed; a yearly subscriber gets its Sparks refilled monthly by a daily job. */
+async function setBillingInterval(subscriptionId: string, interval: "month" | "year") {
+  const { error } = await createAdminClient().from("profiles")
+    .update({ billing_interval: interval }).eq("stripe_subscription_id", subscriptionId);
+  if (error) throw new Error(`Supabase billing interval update failed: ${error.message}`);
+}
+
 /** Sync tier/subscription state only — does not touch the Sparks balance. */
 async function syncTierOnly(
   match: { userId?: string; customerId?: string },
@@ -171,6 +183,7 @@ export async function POST(req: NextRequest) {
             "invoice_grant",
             { stripe_customer_id: idOf(invoice.customer), stripe_subscription_id: subscriptionId }
           );
+          await setBillingInterval(subscriptionId, intervalOf(current));
         }
         break;
       }

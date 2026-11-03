@@ -13,24 +13,25 @@ class NextResponse extends Response {
   static redirect(url) { return new NextResponse(null, {status: 307, headers: {location: url}}); }
 }
 
-function checkoutHarness({signedIn = true, subscribed = false, validPrice = true} = {}) {
+function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
   let created;
+  const validated = [];
   const stripe = {
     prices: {retrieve: async () => ({id: 'price_test'})},
     checkout: {sessions: {create: async args => {created = args; return {url: 'https://checkout.stripe.com/test-session'};}}},
   };
   const modules = {
     'next/server': {NextResponse},
-    '@/lib/stripe': {getStripe: () => stripe, PRO_PRICE_CENTS: 2800},
+    '@/lib/stripe': {getStripe: () => stripe, PRO_PRICE_CENTS: 2800, PRO_YEARLY_PRICE_CENTS: 27600},
     '@/lib/supabase/server': {createClient: async () => ({auth: {getUser: async () => ({data: {user: signedIn ? {id: 'user-1', email: 'test@example.com'} : null}})}})},
     '@/lib/profile': {getProfile: async () => ({stripe_customer_id: null, stripe_subscription_id: null})},
     '@/lib/stripe-billing': {resolveBillingState: async () => ({checkoutCustomerId: null, portalCustomerId: subscribed ? 'cus_existing' : null})},
-    '@/lib/checkout-price': {validateProPrice: () => validPrice},
+    '@/lib/checkout-price': {validateProPrice: (...args) => { validated.push(args.slice(1)); return validPrice; }},
   };
   const exports = {};
   vm.runInNewContext(checkoutCode, {exports, require: name => modules[name],
-    process: {env: {STRIPE_PRICE_PRO: 'price_test'}}, Response, Date, Error, console});
-  return {post: () => exports.POST({nextUrl: {origin: 'http://localhost:3000'}}), get created() {return created;}};
+    process: {env}, Response, Date, Error, console});
+  return {post: (body = {}) => exports.POST({nextUrl: {origin: 'http://localhost:3000'}, json: async () => body}), get created() {return created;}, validated};
 }
 
 test('mocked signed-in checkout uses the advertised price and user identity without granting Sparks', async () => {
@@ -82,4 +83,44 @@ test('mocked failed confirmation callback returns to login', async () => {
   const h = callbackHarness({exchangeError: true});
   const response = await h.get('http://localhost:3000/auth/callback?code=bad-code');
   assert.equal(response.headers.get('location'), 'http://localhost:3000/login?error=auth_callback_failed');
+});
+
+test('yearly checkout charges $276 once a year, with no configured price needed', async () => {
+  const h = checkoutHarness({env: {}});
+  const response = await h.post({interval: 'year'});
+  assert.equal(response.status, 200);
+  const item = h.created.line_items[0].price_data;
+  assert.deepEqual([item.unit_amount, item.recurring.interval], [27600, 'year']);
+  assert.equal(h.created.metadata.billing_interval, 'year');
+  assert.equal(h.created.subscription_data.metadata.billing_interval, 'year');
+  assert.equal(h.created.mode, 'subscription');
+});
+
+test('monthly is the default: no body, an unknown interval, or "month" all charge $28 a month', async () => {
+  for (const body of [{}, {interval: 'weekly'}, {interval: 'month'}, {interval: 12}]) {
+    const h = checkoutHarness({env: {}});
+    await h.post(body);
+    const item = h.created.line_items[0].price_data;
+    assert.deepEqual([item.unit_amount, item.recurring.interval], [2800, 'month'], JSON.stringify(body));
+    assert.equal(h.created.metadata.billing_interval, 'month');
+  }
+});
+
+test('a configured yearly Stripe price is used and validated against $276 a year (never the monthly one)', async () => {
+  const h = checkoutHarness({env: {STRIPE_PRICE_PRO: 'price_monthly', STRIPE_PRICE_PRO_YEARLY: 'price_yearly'}});
+  await h.post({interval: 'year'});
+  assert.equal(h.created.line_items[0].price, 'price_yearly');
+  assert.deepEqual(h.validated, [[27600, 'year']]);
+  const m = checkoutHarness({env: {STRIPE_PRICE_PRO: 'price_monthly', STRIPE_PRICE_PRO_YEARLY: 'price_yearly'}});
+  await m.post({interval: 'month'});
+  assert.equal(m.created.line_items[0].price, 'price_monthly');
+  assert.deepEqual(m.validated, [[2800, 'month']]);
+});
+
+test('a yearly price that does not match $276 a year refuses to open checkout', async () => {
+  const h = checkoutHarness({env: {STRIPE_PRICE_PRO_YEARLY: 'price_yearly'}, validPrice: false});
+  const response = await h.post({interval: 'year'});
+  assert.equal(response.status, 500);
+  assert.match((await response.json()).error, /\$276 USD\/year/);
+  assert.equal(h.created, undefined);
 });

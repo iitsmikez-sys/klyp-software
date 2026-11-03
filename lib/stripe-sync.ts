@@ -35,7 +35,7 @@ export type SubscriptionLike = {
   latest_invoice?: InvoiceLike | string | null;
   /** Set while the subscriber has paused billing (Klyp's pause offer). */
   pause_collection?: { behavior: string } | null;
-  items?: { data: Array<{ current_period_end: number }> };
+  items?: { data: Array<{ current_period_end: number; price?: { recurring?: { interval?: string } | null } }> };
 };
 
 export type StripeSyncClient = {
@@ -138,6 +138,10 @@ export async function syncUserFromStripe(opts: {
         continue;
       }
       const action = await grantFirstOrCycleInvoice(admin, userId, idOf(sub.customer), sub.id, invoice.id);
+      // Keep the billing interval right too (a yearly subscriber is refilled monthly by a daily job).
+      const interval = sub.items?.data[0]?.price?.recurring?.interval === "year" ? "year" : "month";
+      const { error: intervalError } = await admin.from("profiles").update({ billing_interval: interval }).eq("stripe_subscription_id", sub.id);
+      if (intervalError) throw new Error(`Supabase billing interval update failed: ${intervalError.message}`);
       outcomes.push({ subscriptionId: sub.id, action });
     } else {
       // Not active any more: only revoke if it is the subscription this profile is on.

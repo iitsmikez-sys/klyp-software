@@ -23,7 +23,8 @@ async function database() {
       id uuid primary key, tier text not null default 'free',
       sparks integer not null default 60,
       sparks_reset_at timestamptz not null default now() + interval '30 days',
-      stripe_customer_id text, stripe_subscription_id text
+      stripe_customer_id text, stripe_subscription_id text,
+      billing_interval text not null default 'month'
     );
     create function public.tier_allowance(t text) returns integer language sql immutable
       as $$ select case t when 'pro' then 500 else 60 end $$;
@@ -299,6 +300,7 @@ function reconcileRoute({ secret = "s3cret", summary } = {}) {
     "next/server": { NextResponse: response },
     "@/lib/stripe": { getStripe: () => ({}) },
     "@/lib/supabase/admin": { createAdminClient: () => ({}) },
+    "@/lib/yearly-refill": { refillYearlySparks: async () => ({ checked: 0, granted: 0, skipped: 0, failed: 0, errors: [] }) },
     "@/lib/stripe-sync": { reconcileStuckPro: async () => { calls.reconcile++; return summary ?? { checked: 0, changed: 0, failed: 0, errors: [] }; } },
   };
   const exports = {};
@@ -323,7 +325,7 @@ test("reconcile route: runs with the right secret and returns the summary", asyn
   const h = reconcileRoute({ summary: { checked: 3, changed: 1, failed: 0, errors: [] } });
   const res = await h.GET("Bearer s3cret");
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, checked: 3, changed: 1, failed: 0, errors: [] });
+  assert.deepEqual(await res.json(), { ok: true, checked: 3, changed: 1, failed: 0, errors: [], yearlyRefill: { checked: 0, granted: 0, skipped: 0, failed: 0, errors: [] } });
   assert.equal(h.calls.reconcile, 1);
 });
 
