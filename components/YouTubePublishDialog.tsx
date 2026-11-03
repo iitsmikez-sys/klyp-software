@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { processingFetch } from '@/lib/processing-api';
+import { shortsStatus, withShortsTag } from '@/lib/youtube-shorts';
 
 type PreviousPost = { id: string; clip_id: string; status: string; youtube_video_id: string | null;
   title: string; publish_at: string | null; canRetry: boolean };
@@ -30,6 +31,9 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
     ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(scheduledDate)
     : null;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // YouTube makes a Short out of a vertical or square video up to 3 minutes; tell the person which they will get.
+  let shorts = shortsStatus(null);
+  try { shorts = shortsStatus(makePayload()); } catch { /* invalid edits are reported on submit */ }
 
   useEffect(() => {
     let active = true;
@@ -68,7 +72,7 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
       }
       const response = await processingFetch('/api/youtube/publish', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestKey, clipPayload, title, description, publishAt, privacyStatus: 'public' }),
+        body: JSON.stringify({ requestKey, clipPayload, title, description: shortsStatus(clipPayload).isShort ? withShortsTag(description) : description, publishAt, privacyStatus: 'public' }),
       });
       const data = await response.json();
       if (data.status === 'failed') localStorage.removeItem(keyName);
@@ -155,6 +159,11 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
           <a href={`/api/youtube/connect?clip_id=${encodeURIComponent(clipId)}`}>Switch channel</a></div>
         <label>Video title<input maxLength={100} value={title} onChange={event => setTitle(event.target.value)} /></label>
         <label>Description<textarea maxLength={5000} rows={3} value={description} onChange={event => setDescription(event.target.value)} /></label>
+        <p className="youtube-dialog-timezone" role="status">{shorts.isShort
+          ? 'This will upload as a YouTube Short. Klyp adds #Shorts to the description.'
+          : shorts.reason === 'too_long'
+            ? 'This clip is over 3 minutes, so YouTube will post it as a regular video. Trim it to 3 minutes or less for a Short.'
+            : 'This clip is not vertical, so YouTube will post it as a regular video. Set the clip to 9:16 in the editor for a Short.'}</p>
         <div className="youtube-dialog-review"><strong>Visibility</strong><span>Private until your scheduled publication time</span></div>
         <label>Publication date and time<input type="datetime-local" value={scheduledLocal}
           onChange={event => setScheduledLocal(event.target.value)} required /></label>

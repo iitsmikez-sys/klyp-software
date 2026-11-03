@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { shortsStatus, withShortsTag } from '../lib/youtube-shorts.ts';
 
 const source = readFileSync(new URL('../app/api/youtube/publish/route.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: {
@@ -62,6 +63,7 @@ function setup({ pro = true, ownsClip = true, saveFails = false, scheduleExpires
         return { title: input.title, description: input.description,
           publishAt: new Date(input.publishAt).toISOString() };
       } },
+    '@/lib/youtube-shorts': { shortsStatus, withShortsTag },
     '@/lib/youtube-worker-token': { requestWorkerAccessToken: async id => {
       assert.equal(id, 'post-1');
       assert.equal(renders, 1, 'the token is requested after rendering');
