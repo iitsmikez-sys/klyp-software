@@ -6,7 +6,7 @@ import { shortsStatus, withShortsTag } from '@/lib/youtube-shorts';
 
 type PreviousPost = { id: string; clip_id: string; status: string; youtube_video_id: string | null;
   title: string; publish_at: string | null; canRetry: boolean };
-type Status = { connected: boolean; proRequired?: boolean; posts?: PreviousPost[]; error?: string };
+type Status = { connected: boolean; proRequired?: boolean; comingSoon?: boolean; posts?: PreviousPost[]; error?: string };
 
 export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePayload, onClose }: {
   clipId: string;
@@ -127,6 +127,8 @@ export default function YouTubePublishDialog({ clipId, clipTitle, pro, makePaylo
         <button type="button" aria-label="Close YouTube publishing" disabled={busy} onClick={onClose}>×</button></header>
       {!pro || connection?.proRequired ? <div className="youtube-dialog-body"><p>YouTube publishing is included with an active Pro subscription.</p>
         <a className="youtube-dialog-primary" href="/dashboard/upgrade">View Pro</a></div>
+      : connection?.comingSoon ? <div className="youtube-dialog-body"><p>YouTube scheduling is coming soon. We&apos;ll let you know when it&apos;s ready.</p>
+        <button type="button" onClick={onClose}>Back to the editor</button></div>
       : !connection ? <div className="youtube-dialog-body"><p>{error ? 'Could not check your YouTube connection.' : 'Checking your YouTube connection…'}</p>
         {error && <button type="button" onClick={() => { setError(null); setReload(value => value + 1); }}>Try again</button>}
         </div>
