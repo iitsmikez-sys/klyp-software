@@ -24,6 +24,7 @@ import VerticalLayoutEditor from "./VerticalLayoutEditor";
 import type { VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { effectiveVerticalLayout, layoutEditorState } from "@/lib/vertical-layout-auth";
 import { readLayoutExportWarning } from "@/lib/layout-export-warning";
+import { ProStyleNote, StyleDiamond } from "./ProDiamond";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -491,13 +492,14 @@ export default function SavedClipEditor({
                 key={s}
                 onClick={() => changeDraft({ caption_style: s })}
                 disabled={exporting || saving}
-                className={`min-w-0 px-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
+                className={`relative min-w-0 px-1 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   captionStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
                     : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
                 }`}
               >
                 {s === "KLYP" ? "⚡ KLYP" : s}
+                <StyleDiamond style={s} size={16} className="-right-1.5 -top-1.5" />
               </button>
             ))}
           </div>
@@ -506,6 +508,7 @@ export default function SavedClipEditor({
             No word timestamps saved for this clip — captions aren&apos;t available. New analyses save them automatically.
           </p>
         )}
+        {hasWords && <ProStyleNote style={captionStyle} />}
       </div>
       {draft.words?.length ? (
         <CaptionWordEditor words={draft.words} originalStart={clip.start_seconds}

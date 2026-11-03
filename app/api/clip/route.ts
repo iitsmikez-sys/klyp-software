@@ -33,6 +33,7 @@ import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
 import { generateAss, generateTimedCueAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
+  resolveCaptionStyle,
   EXPORT_FORMATS,
   FORMAT_DIMENSIONS,
   resolveExportFormat,
@@ -386,6 +387,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
 
   // Raw footage is already paid for by analysis. It has no Klyp effects or
   // additional Sparks charge; ownership and exact-window checks apply above.
+  // Pro-only caption styles are enforced here too: a Free account that asks for one gets Bold.
+  if (style) style = resolveCaptionStyle(style, isPro);
+
   if (raw) {
     style = undefined;
     words = undefined;

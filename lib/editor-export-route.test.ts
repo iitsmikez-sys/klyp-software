@@ -14,7 +14,7 @@ import { validateEditorExportRequest } from './editor-render.ts';
 import { resolveEditorCues, captionAppearance, parseCaptionOptions } from './editor-captions.ts';
 import { clipSeekRange, archivedClipTiming } from './clip-trim.ts';
 import { planClipComposition, validateVerticalLayout } from './vertical-layout.ts';
-import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_DIMENSIONS, resolveExportFormat } from './clips.ts';
+import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_DIMENSIONS, resolveExportFormat, resolveCaptionStyle } from './clips.ts';
 import { ClipEditDraftError, freshTimelineDraft } from './clip-edit-draft.ts';
 import { EditorAssetError } from './editor-assets.ts';
 import { resolveCutawaySpans } from './editor-timeline.ts';
@@ -44,7 +44,7 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/clip-edit-draft':{ClipEditDraftError},'@/lib/editor-captions':{resolveEditorCues,captionAppearance,parseCaptionOptions},
  '@/lib/bin':{resolveBin:(s:string)=>s,FFMPEG_THREADS:2,runCapture:async(_bin:string,args:string[])=>args.includes('a:0')?'{"streams":[{"codec_type":"audio"}]}':'1920,1080',run:async(...args:any[])=>record('encode',...args)},
  '@/lib/captions':{generateAss:(...args:any[])=>{record('legacyCaptions',...args);return 'legacy';},generateTimedCueAss:(...args:any[])=>{record('cues',...args);return 'ass';},generateHookAss:()=> 'hook',toFfmpegPath:(s:string)=>s,HOOK_STYLES:['IMPACT']},
- '@/lib/clips':{CAPTION_STYLES,EXPORT_FORMATS,FORMAT_DIMENSIONS,resolveExportFormat},
+ '@/lib/clips':{CAPTION_STYLES,EXPORT_FORMATS,FORMAT_DIMENSIONS,resolveExportFormat,resolveCaptionStyle},
  '@/lib/video-cache':{CACHE_DIR:'/cache',isUploadRef:()=>false,resolveSourceSegment:async(...args:any[])=>{record('download',...args);return {path:'/source.mp4',offsetSeconds:100};}},
  '@/lib/job-queue':{runQueued:async(_key:string,fn:()=>Promise<unknown>)=>fn()},'@/lib/watermark':{generateWatermarkAss:()=> 'watermark-ass',watermarkFilter:()=> 'watermark'},
  '@/lib/profile-token':{bearerToken:()=> 'token',getProfileFromToken:async()=>({id:options.userId??'user',tier:options.pro===false?'free':'pro',stripe_subscription_id:options.pro===false?null:'sub',sparks:100,vertical_layout:options.profileLayout??null}),consumeSparksFromToken:async(...args:any[])=>record('charge',...args)},

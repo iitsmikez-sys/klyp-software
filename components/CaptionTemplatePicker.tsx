@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CAPTION_STYLES, type CaptionStyle } from '@/lib/clips';
+import { ProStyleNote, StyleDiamond } from './ProDiamond';
 
 const featuredStyles: readonly CaptionStyle[] = ['BOLD', 'CLEAN', 'KLYP', 'PULSE', 'HYPE', 'POP', 'FIRE', 'TRICOLOR', 'FOCUS'];
 
@@ -35,11 +36,13 @@ export default function CaptionTemplatePicker({ value, onChange }: {
       {visibleStyles.map(style => {
         const info = templateInfo[style];
         return <button key={style} type="button" className="caption-template-card" data-style={style.toLowerCase()} aria-label={`${info.name} caption template`} aria-pressed={value === style} onClick={() => onChange(style)}>
+          <StyleDiamond style={style} size={24} className="right-1.5 top-1.5 z-10" />
           <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : style === 'HYPE' ? <>BROWN <em>FOX</em></> : style === 'FIRE' ? <>THE QUICK <em>BROWN</em> 🔥</> : style === 'FOCUS' ? <>HAVE BEEN<br/><em>POSSIBLE</em> UNLESS</> : style === 'TRICOLOR' ? <><i>THE</i> <i className="tri-r">QUICK</i> <i>BROWN</i></> : info.sample}</b></span>
           <span className="caption-template-meta"><strong>{info.name}</strong><small>{info.detail}</small></span>
         </button>;
       })}
     </div>
+    <ProStyleNote style={value} />
     <button type="button" className="caption-template-more" aria-expanded={expanded} onClick={() => setExpanded(open => !open)}>{expanded ? 'Show fewer styles' : `See all ${CAPTION_STYLES.length} styles`}</button>
   </section>;
 }

@@ -22,6 +22,7 @@ import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
 import { generateAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
+  resolveCaptionStyle,
   EXPORT_FORMATS,
   FORMAT_DIMENSIONS,
   resolveExportFormat,
@@ -346,6 +347,9 @@ export async function handleLegacyClipExport(req: NextRequest, parsedBody?: Reco
 
   // Raw export (clean cut, nothing burned in) is Pro-only — enforced here, not
   // in the UI, so free users can't get a watermark-free clip by crafting a request.
+  // Pro-only caption styles are enforced here too: a Free account that asks for one gets Bold.
+  if (style) style = resolveCaptionStyle(style, isPro);
+
   if (raw) {
     if (media.length > 0) {
       return NextResponse.json({ error: "Raw export cannot include imported media." }, { status: 400 });

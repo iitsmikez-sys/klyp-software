@@ -188,3 +188,11 @@ export type AnalyzeEvent =
       sparksBalance: number;
     }
   | { type: "error"; stage: AnalyzeStage | "validate"; error: string };
+
+/** Caption styles every account can export. The rest are Pro only: Free can preview them, but exports use Bold. */
+export const FREE_CAPTION_STYLES = ["BOLD", "KLYP", "SPARK", "PULSE"] as const;
+export const FREE_FALLBACK_CAPTION_STYLE: CaptionStyle = "BOLD";
+export const isProCaptionStyle = (style: CaptionStyle) => !(FREE_CAPTION_STYLES as readonly string[]).includes(style);
+export function resolveCaptionStyle(style: CaptionStyle, isPro: boolean): CaptionStyle {
+  return isPro || !isProCaptionStyle(style) ? style : FREE_FALLBACK_CAPTION_STYLE;
+}
