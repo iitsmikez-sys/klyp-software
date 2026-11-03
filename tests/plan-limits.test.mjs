@@ -12,7 +12,7 @@ const freeTier = { tier: "free", stripe_subscription_id: null, complimentary_pro
 const proFlagOnly = { tier: "pro", stripe_subscription_id: null, complimentary_pro: false }; // drifted flag, no subscription
 
 test("the limits are exactly the agreed plan structure", () => {
-  assert.deepEqual(PLAN_LIMITS.free, { youtube: 4 * H, twitch: 1 * H, upload: 0, autoClip: false });
+  assert.deepEqual(PLAN_LIMITS.free, { youtube: 2 * H, twitch: 2 * H, upload: 0, autoClip: false });
   assert.deepEqual(PLAN_LIMITS.pro, { youtube: 8 * H, twitch: 8 * H, upload: 8 * H, autoClip: true });
 });
 
@@ -30,22 +30,22 @@ test("source kind comes from the source key", () => {
   for (const bad of ["", null, undefined, "vimeo:1", "youtube", "youtube:", ":abc", "UPLOAD:x"]) assert.equal(sourceKindOf(bad), null, String(bad));
 });
 
-test("Free YouTube: up to 4 hours passes, beyond is rejected with an upgrade hint", () => {
-  assert.equal(checkSourceLimit("free", "youtube", 4 * H).ok, true);
-  assert.equal(checkSourceLimit("free", "youtube", 4 * H + 30).ok, true); // slack
-  const over = checkSourceLimit("free", "youtube", 4 * H + 31);
+test("Free YouTube: up to 2 hours passes, beyond is rejected with an upgrade hint", () => {
+  assert.equal(checkSourceLimit("free", "youtube", 2 * H).ok, true);
+  assert.equal(checkSourceLimit("free", "youtube", 2 * H + 30).ok, true); // slack
+  const over = checkSourceLimit("free", "youtube", 2 * H + 31);
   assert.equal(over.ok, false);
   assert.equal(over.status, 413);
-  assert.match(over.message, /Free plan supports YouTube videos up to 4 hours/);
+  assert.match(over.message, /Free plan supports YouTube videos up to 2 hours/);
   assert.match(over.message, /Pro supports YouTube videos up to 8 hours/);
 });
 
-test("Free Twitch: up to 1 hour passes, beyond is rejected", () => {
-  assert.equal(checkSourceLimit("free", "twitch", 1 * H).ok, true);
-  const over = checkSourceLimit("free", "twitch", 1 * H + 120);
+test("Free Twitch: up to 2 hours passes, beyond is rejected", () => {
+  assert.equal(checkSourceLimit("free", "twitch", 2 * H).ok, true);
+  const over = checkSourceLimit("free", "twitch", 2 * H + 120);
   assert.equal(over.ok, false);
   assert.equal(over.status, 413);
-  assert.match(over.message, /Free plan supports Twitch VODs up to 1 hour;/);
+  assert.match(over.message, /Free plan supports Twitch VODs up to 2 hours;/);
 });
 
 test("Free uploads are rejected outright, whatever the length", () => {
@@ -79,7 +79,7 @@ test("auto-clipping is Pro-only", () => {
 });
 
 test("limits are summarized for the dashboard", () => {
-  assert.deepEqual(describeLimits("free"), { plan: "free", youtubeMaxSeconds: 4 * H, twitchMaxSeconds: 1 * H, uploadMaxSeconds: 0, uploadsAllowed: false, autoClipAllowed: false });
+  assert.deepEqual(describeLimits("free"), { plan: "free", youtubeMaxSeconds: 2 * H, twitchMaxSeconds: 2 * H, uploadMaxSeconds: 0, uploadsAllowed: false, autoClipAllowed: false });
   assert.equal(describeLimits("pro").uploadsAllowed, true);
   assert.equal(maxSecondsFor("pro", "twitch"), 8 * H);
 });

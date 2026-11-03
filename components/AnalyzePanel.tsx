@@ -125,6 +125,8 @@ export default function AnalyzePanel() {
   const [previewMeta, setPreviewMeta] = useState<{ title: string | null; thumbnail: string | null } | null>(null);
   const [previewImageFailed, setPreviewImageFailed] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  /** The plan's length limit was hit for this link (shown as an upgrade card, not an error). */
+  const [planBlock, setPlanBlock] = useState<string | null>(null);
   const [probeRevision, setProbeRevision] = useState(0);
   const [keyword, setKeyword] = useState("");
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
@@ -154,7 +156,7 @@ export default function AnalyzePanel() {
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
-  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !busy && !loading && !outOfSparks && !cantAfford;
+  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !planBlock && !busy && !loading && !outOfSparks && !cantAfford;
 
   const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
     id: savedIds[index] ?? "", url: analyzedUrl, title: clip.title, clip_type: clip.type,
@@ -214,6 +216,7 @@ export default function AnalyzePanel() {
     setPreviewMeta(null);
     setPreviewImageFailed(false);
     setEstimateError(null);
+    setPlanBlock(null);
     if (!VOD_URL_PATTERN.test(url)) {
       setEstimating(false);
       return;
@@ -235,7 +238,7 @@ export default function AnalyzePanel() {
           setPreviewMeta({ title: typeof data.title === "string" ? data.title : null, thumbnail: typeof data.thumbnail === "string" ? data.thumbnail : null });
           // The plan's length limit for this link (the server enforces it again on Analyze).
           if (data.planLimit && data.planLimit.ok === false && typeof data.planLimit.message === "string") {
-            setEstimateError(data.planLimit.message);
+            setPlanBlock(data.planLimit.message);
           }
         }
       } catch {
@@ -260,6 +263,7 @@ export default function AnalyzePanel() {
       setEstimatedSparks(uploadedFile?.sparks ?? null);
       setPreviewDuration(uploadedFile?.durationSeconds ?? null);
       setEstimateError(null);
+      setPlanBlock(null);
     }
   };
 
@@ -956,6 +960,7 @@ export default function AnalyzePanel() {
                 disabled={loading || outOfSparks}
                 className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
               />
+              {!isPro && <p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch and YouTube videos up to 2 hours.</p>}
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
                 <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
               </div>}
@@ -974,6 +979,18 @@ export default function AnalyzePanel() {
                 <span>{estimateError}</span>
                 <button type="button" onClick={() => setProbeRevision((value) => value + 1)} className="font-semibold underline underline-offset-2">Retry</button>
               </div>}
+              {planBlock && previewDuration !== null && !estimating && (
+                <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                  <p className="text-sm font-semibold text-foreground">This video is {fmtTime(previewDuration)}</p>
+                  <p className="text-xs leading-relaxed text-amber-100/80">{planBlock}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {!isPro && (
+                      <a href="/dashboard/upgrade" className="flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
+                    )}
+                    <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
+                  </div>
+                </div>
+              )}
               {url && !VOD_URL_PATTERN.test(url) && <p className="mt-2 text-xs text-foreground-muted">Use a Twitch or YouTube VOD link to get started.</p>}
             </div>
           ) : (
@@ -1159,7 +1176,17 @@ export default function AnalyzePanel() {
               </div>
             </div>
             <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Priced by video length, with up to {clipCount} clips included. If no moment clears the quality bar you pay half.</p>
-            {cantAfford && <p role="alert" className="mt-2 text-xs text-red-400">Not enough Sparks: this costs {totalEstimate}, and you have {balance}. <a href="/dashboard/upgrade" className="font-semibold underline">Upgrade to Pro</a></p>}
+            {cantAfford && (
+              <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="text-sm font-semibold text-foreground">This video needs {totalEstimate} Sparks</p>
+                <p className="text-xs leading-relaxed text-amber-100/80">
+                  You have {balance} Sparks left{isPro ? "." : " this month. Pro gives you 500 every month."}
+                </p>
+                {!isPro && (
+                  <a href="/dashboard/upgrade" className="flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
+                )}
+              </div>
+            )}
           </div>
         )}
         <div className="mt-3 flex justify-end">

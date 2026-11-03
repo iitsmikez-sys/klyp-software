@@ -30,7 +30,7 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: "AI clip detection with viral scores" },
   { ok: true, text: "9:16 vertical and Original (no crop) exports" },
   { ok: true, text: "AI captions — BOLD, CLEAN & KLYP styles" },
-  { ok: true, text: "YouTube videos up to about 4 hours, Twitch VODs up to 1 hour" },
+  { ok: true, text: "YouTube and Twitch videos up to 2 hours" },
   { ok: false, text: "No direct video uploads or automatic clipping (Pro)" },
   { ok: false, text: "Animated Klyp watermark on free exports" },
 ];
