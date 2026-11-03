@@ -76,7 +76,7 @@ const plans: Plan[] = [
       { kind: "check", text: "9:16 vertical and Original (no crop) exports" },
       { kind: "check", text: "AI-suggested clips and timed captions" },
       { kind: "check", text: "Save clips to your library" },
-      { kind: "check", text: "YouTube videos up to about 4 hours, Twitch VODs up to 1 hour" },
+      { kind: "check", text: "YouTube and Twitch videos up to 2 hours" },
       { kind: "warn",  text: "No direct uploads or automatic clipping" },
       { kind: "warn",  text: "Watermark on all clips" },
     ],

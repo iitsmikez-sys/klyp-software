@@ -14,7 +14,9 @@ export type SourceKind = "youtube" | "twitch" | "upload";
 const HOUR = 3600;
 
 export const PLAN_LIMITS = {
-  free: { youtube: 4 * HOUR, twitch: 1 * HOUR, upload: 0, autoClip: false },
+  // Free has 60 Sparks and anything from 2 hours up costs 65, so 2 hours is the longest video a Free
+  // account can actually run, for either source.
+  free: { youtube: 2 * HOUR, twitch: 2 * HOUR, upload: 0, autoClip: false },
   pro: { youtube: 8 * HOUR, twitch: 8 * HOUR, upload: 8 * HOUR, autoClip: true },
 } as const satisfies Record<PlanName, { youtube: number; twitch: number; upload: number; autoClip: boolean }>;
 

@@ -90,13 +90,13 @@ async function rejected(opts, status, pattern) {
 }
 
 /* ── Free ── */
-test("Free: a YouTube video up to 4 hours is accepted", async () => { await accepted({ plan: "free", url: YT, seconds: 4 * H }); });
-test("Free: a YouTube video over 4 hours is rejected before any paid work", async () => {
-  await rejected({ plan: "free", url: YT, seconds: 4 * H + 120 }, 413, /Free plan supports YouTube videos up to 4 hours/);
+test("Free: a YouTube video up to 2 hours is accepted", async () => { await accepted({ plan: "free", url: YT, seconds: 2 * H }); });
+test("Free: a YouTube video over 2 hours is rejected before any paid work", async () => {
+  await rejected({ plan: "free", url: YT, seconds: 2 * H + 120 }, 413, /Free plan supports YouTube videos up to 2 hours/);
 });
-test("Free: a Twitch VOD up to 1 hour is accepted", async () => { await accepted({ plan: "free", url: TW, seconds: 1 * H }); });
-test("Free: a Twitch VOD over 1 hour is rejected before any paid work", async () => {
-  await rejected({ plan: "free", url: TW, seconds: 1 * H + 120 }, 413, /Free plan supports Twitch VODs up to 1 hour/);
+test("Free: a Twitch VOD up to 2 hours is accepted", async () => { await accepted({ plan: "free", url: TW, seconds: 2 * H }); });
+test("Free: a Twitch VOD over 2 hours is rejected before any paid work", async () => {
+  await rejected({ plan: "free", url: TW, seconds: 2 * H + 120 }, 413, /Free plan supports Twitch VODs up to 2 hours/);
 });
 test("Free: direct uploads are rejected outright, before a job exists or anything is probed", async () => {
   const h = await rejected({ plan: "free", uploadId: "upload-abc", seconds: 600 }, 403, /Pro feature/);
@@ -127,7 +127,7 @@ test("a 'pro' flag with no subscription behind it is treated as Free", async () 
 
 /* ── Sparks stay a separate rule ── */
 test("a video inside its plan limit still needs enough Sparks, checked before any paid processing", async () => {
-  const h = harness({ plan: "free", url: YT, seconds: 3 * H, sparks: 20 });
+  const h = harness({ plan: "free", url: YT, seconds: 1.5 * H, sparks: 20 });
   const res = await h.post();
   assert.equal(res.status, 402);
   assert.equal(h.state.paidPipelineCalls, 0);
@@ -153,7 +153,7 @@ test("a request with an unrecognizable source is rejected", async () => {
 
 /* ── Free daily capacity breaker, as wired into the route ── */
 test("breaker: a Free long run is refused (429) when today's Free capacity is full, before anything is claimed", async () => {
-  const h = harness({ plan: "free", url: YT, seconds: 3 * H, capacity: { ok: false, status: 429, message: "Free capacity for long videos is full today." } });
+  const h = harness({ plan: "free", url: YT, seconds: 1.5 * H, capacity: { ok: false, status: 429, message: "Free capacity for long videos is full today." } });
   const res = await h.post();
   assert.equal(res.status, 429);
   assert.match((await res.json()).error, /capacity/);
@@ -173,7 +173,7 @@ test("breaker: a Pro run is passed to the breaker as Pro (which never limits it)
   assert.deepEqual(h.state.recorded, [["pro", 3 * H]]);
 });
 test("breaker: a refusal frees the account's analysis slot (it can try again straight after)", async () => {
-  const h = harness({ plan: "free", url: YT, seconds: 3 * H, capacity: { ok: false, status: 429, message: "full" } });
+  const h = harness({ plan: "free", url: YT, seconds: 1.5 * H, capacity: { ok: false, status: 429, message: "full" } });
   assert.equal((await h.post()).status, 429);
   assert.equal((await h.post()).status, 429);
 });
