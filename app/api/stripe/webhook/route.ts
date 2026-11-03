@@ -1,7 +1,7 @@
 /**
  * POST /api/stripe/webhook — keeps Supabase profiles in sync with Stripe.
  *
- *   checkout.session.completed      → acknowledged; waits for paid invoice
+ *   checkout.session.completed      → a paid Spark pack adds its Sparks once; subscriptions wait for the paid invoice
  *   invoice.paid                    → grant a full Sparks allotment (first payment or renewal)
  *   customer.subscription.updated   → revoke Pro on unpaid/inactive status; never grant Pro
  *   customer.subscription.deleted   → revoke Pro without refilling Sparks
@@ -15,6 +15,7 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SPARKS_ALLOWANCE, type Tier } from "@/lib/tier";
+import { isPackSession, packForSession } from "@/lib/spark-packs";
 
 export const runtime = "nodejs";
 
@@ -161,6 +162,20 @@ export async function POST(req: NextRequest) {
     claimed = true;
 
     switch (event.type) {
+      case "checkout.session.completed": {
+        // A Spark pack is a one-time payment. Subscriptions are granted by invoice.paid below, not here.
+        const session = event.data.object;
+        if (isPackSession(session) && session.payment_status === "paid") {
+          const pack = packForSession(session);
+          const userId = session.metadata?.user_id;
+          if (!pack || !userId || session.client_reference_id !== userId) {
+            throw new Error(`Spark pack session ${session.id} does not match a pack or its buyer; nothing was granted.`);
+          }
+          const { error } = await createAdminClient().rpc("add_pack_sparks", { p_user_id: userId, p_sparks: pack.sparks, p_reference: session.id });
+          if (error && error.code !== "23505") throw new Error(`Supabase Spark pack grant failed: ${error.message}`);
+        }
+        break;
+      }
       case "invoice.paid": {
         // The first paid invoice and each paid renewal are the single sources
         // of Sparks grants. Checkout may complete before delayed payment clears.

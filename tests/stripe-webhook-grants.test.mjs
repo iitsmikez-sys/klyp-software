@@ -3,6 +3,7 @@ import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as sparkPacks from '../lib/spark-packs.ts';
 
 const source = readFileSync(new URL('../app/api/stripe/webhook/route.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, {compilerOptions: {
@@ -12,6 +13,8 @@ const code = ts.transpileModule(source, {compilerOptions: {
 function harness({missingTable = false, failGrantOnce = false, currentSubscriptionStatus = 'active', interval = undefined} = {}) {
   const claimed = new Set();
   const grants = [];
+  const packs = [];
+  const packReferences = new Set();
   const profile = {id: 'user', tier: 'free', stripe_customer_id: 'cus', stripe_subscription_id: null};
   const grantReferences = new Set();
   let balance = 150;
@@ -46,6 +49,13 @@ function harness({missingTable = false, failGrantOnce = false, currentSubscripti
       };
     },
     async rpc(name, args) {
+      if (name === 'add_pack_sparks') {
+        if (packReferences.has(args.p_reference)) return {error: {code: '23505', message: 'duplicate pack reference'}};
+        packReferences.add(args.p_reference);
+        packs.push(args);
+        balance += args.p_sparks;
+        return {error: null};
+      }
       assert.equal(name, 'grant_tier_sparks');
       if (grantFailures-- > 0) return {error: {message: 'temporary database failure'}};
       if (grantReferences.has(args.p_event_id)) return {error: {code: '23505', message: 'duplicate grant reference'}};
@@ -65,6 +75,7 @@ function harness({missingTable = false, failGrantOnce = false, currentSubscripti
         ...(interval ? {items: {data: [{price: {recurring: {interval}}}]}} : {})})}})},
     '@/lib/supabase/admin': {createAdminClient: () => admin},
     '@/lib/tier': {SPARKS_ALLOWANCE: {free: 150, pro: 500}},
+    '@/lib/spark-packs': sparkPacks,
   };
   const exports = {};
   vm.runInNewContext(code, {exports, require: name => modules[name],
@@ -76,7 +87,7 @@ function harness({missingTable = false, failGrantOnce = false, currentSubscripti
       headers: {get: () => 'local-fixture-signature'}});
     return {status: res.status, body: await res.json()};
   }
-  return {send, grants, profile, setSubscriptionStatus(status) {subscriptionStatus = status;},
+  return {send, grants, packs, profile, setSubscriptionStatus(status) {subscriptionStatus = status;},
     setPaused(value) {paused = value;},
     setLatestInvoice(id) {latestInvoiceId = id; pinLatestInvoice = true;},
     spend(amount) {balance -= amount;}, get balance() {return balance;}};
@@ -301,4 +312,58 @@ test('the yearly renewal a year later grants a fresh allotment once, like any pa
   assert.equal(h.grants.length, 2);
   await h.send(invoice('evt_y2_again', 'subscription_cycle', 'evt_y2')); // same invoice, new event id
   assert.equal(h.grants.length, 2);
+});
+
+/* ---------- Spark packs (one-time payments) ---------- */
+const packSession = (id, over = {}) => ({id: 'evt_' + id, type: 'checkout.session.completed', data: {object: {
+  id: 'cs_' + id, mode: 'payment', payment_status: 'paid', amount_total: 1800, currency: 'usd', client_reference_id: 'user',
+  metadata: {kind: 'spark_pack', user_id: 'user', pack: 'p250'}, ...over,
+}}});
+
+test('a paid Spark pack adds exactly the Sparks that were paid for, once, keyed by the checkout session', async () => {
+  const h = harness();
+  const res = await h.send(packSession('a'));
+  assert.equal(res.status, 200);
+  assert.deepEqual(h.packs.map((p) => [p.p_user_id, p.p_sparks, p.p_reference]), [['user', 250, 'cs_a']]);
+  assert.equal(h.balance, 150 + 250);
+  assert.equal(h.grants.length, 0); // a pack never touches the subscription grant
+});
+
+test('the same pack delivered again (a new event id for the same session) is not credited twice', async () => {
+  const h = harness();
+  await h.send(packSession('a'));
+  const again = await h.send({...packSession('a'), id: 'evt_a_resend'});
+  assert.equal(again.status, 200);
+  assert.equal(h.packs.length, 1);
+  assert.equal(h.balance, 150 + 250);
+});
+
+test('each of the three packs credits its own amount, and only when the amount charged matches', async () => {
+  for (const [pack, cents, sparks] of [['p100', 800, 100], ['p250', 1800, 250], ['p500', 3300, 500]]) {
+    const h = harness();
+    await h.send(packSession(pack, {amount_total: cents, metadata: {kind: 'spark_pack', user_id: 'user', pack}}));
+    assert.deepEqual(h.packs.map((p) => p.p_sparks), [sparks], pack);
+  }
+  const cheat = harness(); // paid for the 100 pack, but the metadata claims the 500 pack
+  const res = await cheat.send(packSession('cheat', {amount_total: 800, metadata: {kind: 'spark_pack', user_id: 'user', pack: 'p500'}}));
+  assert.equal(res.status, 500); // refused loudly (Stripe will retry, and it is visible), never credited
+  assert.equal(cheat.packs.length, 0);
+});
+
+test('nothing is credited for an unpaid pack, a subscription checkout, another kind of payment, or a buyer mismatch', async () => {
+  const cases = [
+    packSession('unpaid', {payment_status: 'unpaid'}),
+    packSession('sub', {mode: 'subscription'}),
+    packSession('other', {metadata: {kind: 'something_else', user_id: 'user', pack: 'p250'}}),
+  ];
+  for (const event of cases) {
+    const h = harness();
+    const res = await h.send(event);
+    assert.equal(res.status, 200);
+    assert.equal(h.packs.length, 0);
+  }
+  const mismatch = harness();
+  const res = await mismatch.send(packSession('who', {client_reference_id: 'someone-else'}));
+  assert.equal(res.status, 500);
+  assert.equal(mismatch.packs.length, 0);
 });

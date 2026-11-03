@@ -6,6 +6,7 @@ import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import { vodsPhrase } from "@/lib/sparks";
 import CancelFlow from "@/components/CancelFlow";
+import { DEFAULT_PACK_ID, SPARK_PACKS, packById } from "@/lib/spark-packs";
 import { MONTHLY_PRICE_USD, YEARLY_PER_MONTH_USD, YEARLY_PRICE_USD, YEARLY_SAVE_PERCENT } from "@/lib/pricing";
 
 function Check() {
@@ -77,6 +78,8 @@ export default function UpgradePage() {
   const [billingSetupNeeded, setBillingSetupNeeded] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [yearly, setYearly] = useState(true);
+  const [packId, setPackId] = useState<string>(DEFAULT_PACK_ID);
+  const [packBusy, setPackBusy] = useState(false);
 
   const allowance = SPARKS_ALLOWANCE[tier];
   const used = balance !== null ? Math.min(allowance, Math.max(0, allowance - balance)) : 0;
@@ -100,6 +103,25 @@ export default function UpgradePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Checkout failed.");
       setBusy(false);
+    }
+  };
+
+  const buyPack = async () => {
+    if (packBusy) return;
+    setPackBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/stripe/packs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pack: packId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.url) throw new Error(data?.error ?? `Checkout failed (HTTP ${res.status}).`);
+      window.location.href = data.url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Checkout failed.");
+      setPackBusy(false);
     }
   };
 
@@ -282,6 +304,37 @@ export default function UpgradePage() {
           )}
         </div>
       </div>
+
+      {/* Spark packs: one-time top-ups for any plan */}
+      <section id="packs" className="relative mx-auto mt-8 max-w-4xl rounded-2xl border border-border bg-surface p-5">
+        <h2 className="font-syne text-base font-bold text-foreground">Need more Sparks?</h2>
+        <p className="mt-0.5 text-xs text-foreground-muted">Add a pack to any plan. Bought Sparks never expire.</p>
+        <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Spark pack">
+          {SPARK_PACKS.map((pack) => (
+            <button
+              key={pack.id}
+              type="button"
+              role="radio"
+              aria-checked={packId === pack.id}
+              onClick={() => setPackId(pack.id)}
+              className={`rounded-xl border px-2 py-3 text-center transition-colors ${
+                packId === pack.id ? "border-accent/60 bg-accent/10" : "border-border bg-surface-2 hover:border-subtle"}`}
+            >
+              <span className="block text-xs text-foreground-muted">{pack.sparks} Sparks</span>
+              <span className="mt-0.5 block font-syne text-xl font-bold text-foreground">${pack.cents / 100}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => void buyPack()}
+          disabled={packBusy}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-bold font-syne text-background transition-colors hover:bg-accent-dim disabled:opacity-60"
+        >
+          {packBusy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background border-t-transparent" />}
+          Buy {packById(packId)?.sparks} Sparks for ${(packById(packId)?.cents ?? 0) / 100}
+        </button>
+      </section>
 
       {cancelOpen && <CancelFlow onClose={() => setCancelOpen(false)} />}
 
