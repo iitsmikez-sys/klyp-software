@@ -6,6 +6,7 @@ import { withCors, corsPreflight } from '@/lib/cors';
 import { uploadToYouTube, YouTubeUploadError } from '@/lib/youtube-api';
 import { isConfirmedPro, validateYouTubePost } from '@/lib/youtube-publishing';
 import { requestWorkerAccessToken } from '@/lib/youtube-worker-token';
+import { shortsStatus, withShortsTag } from '@/lib/youtube-shorts';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -43,6 +44,8 @@ async function publish(req: NextRequest): Promise<Response> {
     if (!UUID.test(clipId) || !UUID.test(requestKey)) throw new Error('Choose a saved clip to publish.');
     details = validateYouTubePost({ title: body.title, description: body.description,
       publishAt: body.publishAt, privacyStatus: body.privacyStatus });
+    // A vertical clip up to 3 minutes becomes a Short on YouTube; #Shorts in the description is the hint it uses.
+    if (shortsStatus(clipPayload).isShort) details = { ...details, description: withShortsTag(details.description) };
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid YouTube post.' }, { status: 400 });
   }
