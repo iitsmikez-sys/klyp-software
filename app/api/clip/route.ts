@@ -61,7 +61,8 @@ const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
 /**
- * Static streamer-handle overlay, top-right corner. The handle is validated
+ * Static streamer-handle overlay (Pro only): plain, slightly see-through text centered near the bottom,
+ * which on a vertical clip sits in the blurred band under the video. The handle is validated
  * to [A-Za-z0-9_] before it reaches this filter, so no drawtext escaping issues.
  */
 function handleFilter(handle: string): string {
@@ -75,14 +76,13 @@ function handleFilter(handle: string): string {
     // safe on dev machines that lack DejaVu.
     `font='DejaVu Sans'`,
     `fontsize=44`,
-    `fontcolor=white@0.95`,
-    // Semi-transparent pill behind the text so it stays legible over bright
-    // or busy footage, where the old drop shadow alone washed out.
-    `box=1`,
-    `boxcolor=black@0.45`,
-    `boxborderw=14`,
-    `x=main_w-tw-28`,
-    `y=96`,
+    `fontcolor=white@0.85`,
+    // No box: a soft shadow keeps it readable without crowding the hook or captions.
+    `shadowcolor=black@0.7`,
+    `shadowx=2`,
+    `shadowy=2`,
+    `x=(main_w-text_w)/2`,
+    `y=main_h*0.9-text_h/2`,
   ].join(":");
 }
 
@@ -147,7 +147,7 @@ async function cutClip(
   const overlays = [
     ...(assPath ? [`subtitles='${toFfmpegPath(assPath)}'`] : []),
     ...(hookAssPath ? [`subtitles='${toFfmpegPath(hookAssPath)}'`] : []),
-    ...(handle ? [handleFilter(handle)] : []),
+    ...(isPro && handle ? [handleFilter(handle)] : []),
     ...(!isPro && watermarkAssPath ? [watermarkFilter(watermarkAssPath)] : []),
   ];
   if (overlays.length) vf += `,${overlays.join(',')}`;

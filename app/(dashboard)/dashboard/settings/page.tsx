@@ -10,6 +10,7 @@ import { SparkIcon } from "@/components/SparksBalance";
 import UpgradeButton from "@/components/UpgradeButton";
 import CancelFlow from "@/components/CancelFlow";
 import { fmtDate } from "@/lib/clip-ui";
+import { isHandleVisible, setHandleVisible } from "@/lib/streamer-handle";
 import { uiSoundsEnabled, setUiSoundsEnabled } from "@/lib/ui-sound";
 import VerticalLayoutEditor from "@/components/VerticalLayoutEditor";
 import type { VerticalLayoutV1 } from "@/lib/vertical-layout";
@@ -46,6 +47,7 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("");
   const [handle, setHandle] = useState("");
+  const [handleVisible, setHandleVisibleState] = useState(true);
   const [defaultStyle, setDefaultStyle] = useState<CaptionStyle>("BOLD");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -74,6 +76,7 @@ export default function SettingsPage() {
       if (data.warning) setLayoutMessage(data.warning);
     }).catch(() => setLayoutMessage("Could not load your vertical layout."));
     setHandle(localStorage.getItem("klyp-handle") ?? "");
+    setHandleVisibleState(isHandleVisible());
     const storedStyle = localStorage.getItem("klyp-default-style");
     if (storedStyle && (CAPTION_STYLES as readonly string[]).includes(storedStyle)) {
       setDefaultStyle(storedStyle as CaptionStyle);
@@ -83,6 +86,12 @@ export default function SettingsPage() {
   const flashSaved = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  };
+
+  const toggleHandle = (visible: boolean) => {
+    setHandleVisibleState(visible);
+    setHandleVisible(visible);
+    flashSaved();
   };
 
   const updateHandle = (value: string) => {
@@ -199,11 +208,23 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-              <p className="text-xs text-subtle mt-1.5">
-                {handle
-                  ? `@${handle} gets burned into the top-right corner of every export.`
-                  : "Optional — burned into the corner of your exported clips."}
-              </p>
+              {tier === "pro" ? <>
+                <label className="mt-2 flex items-center gap-2 text-xs text-foreground-muted">
+                  <input type="checkbox" checked={handleVisible} onChange={(e) => toggleHandle(e.target.checked)} />
+                  Show my handle on clips
+                </label>
+                <p className="text-xs text-subtle mt-1.5">
+                  {!handleVisible
+                    ? "Your handle is hidden on clips. Switch it back on any time."
+                    : handle
+                      ? `@${handle} shows under the video on your finished clips.`
+                      : "Optional — shows under the video on your finished clips."}
+                </p>
+              </> : (
+                <p className="text-xs text-subtle mt-1.5">
+                  Your handle on clips is a Pro feature. Free clips carry the Klyp watermark instead.
+                </p>
+              )}
             </div>
 
             <div>
