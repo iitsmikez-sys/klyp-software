@@ -252,13 +252,6 @@ export default function UpgradePage() {
             </div>
           )}
 
-          {/* Savings badge */}
-          <div className="mb-5 px-3 py-2 rounded-lg bg-accent-glow border border-accent/30">
-            <p className="text-[11px] text-accent font-semibold leading-snug">
-              💸 Most streamers make this back in 1 viral clip
-            </p>
-          </div>
-
           <div className="h-px bg-border mb-5" />
           <ul className="flex flex-col gap-2 flex-1 mb-7">
             {PRO_FEATURES.map((text) => (

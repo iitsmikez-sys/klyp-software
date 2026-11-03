@@ -30,3 +30,9 @@ test("coming back from a pack checkout refreshes the balance (and repairs a miss
   const sync = await read("app/api/stripe/sync/route.ts");
   assert.match(sync, /syncSparkPacks/);
 });
+
+test("the unproven 'make this back in 1 viral clip' claim is gone from the Upgrade page", async () => {
+  const page = await read("app/(dashboard)/dashboard/upgrade/page.tsx");
+  assert.doesNotMatch(page, /make this back/i);
+  assert.doesNotMatch(page, /viral clip/i);
+});
