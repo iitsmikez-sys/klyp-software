@@ -30,6 +30,7 @@ import type { RawDownloadState } from "./useRawClipDownloads";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
+import { isTopPick } from "@/lib/clip-extras";
 import {
   type SavedClip,
   TYPE_STYLES,
@@ -488,6 +489,15 @@ export default function ClipPreviewModal({
           </button>
           {detailsOpen && (
             <div className="pt-3 text-sm text-foreground-muted">
+              {/* Top picks only: a near-miss extra (below the 65 bar) shows no number. */}
+              {Number.isFinite(clip.viral_score) && isTopPick(clip) && (
+                <p className="mb-3 flex items-center gap-2.5" title="Klyp's own estimate of this moment's viral potential, not a measured result. Only moments scoring 65 or more are top picks.">
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-accent px-2.5 py-0.5 text-[13px] font-semibold tabular-nums text-background">
+                    <span aria-hidden="true">★</span>{Math.round(clip.viral_score)}
+                  </span>
+                  <span className="text-xs">AI score</span>
+                </p>
+              )}
               {clip.reason && <p className="mb-2"><span className="font-medium text-foreground">Why this moment:</span> {clip.reason}</p>}
               {clip.caption && <p className="mb-2">{clip.caption}</p>}
               <p>Original VOD: {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}</p>
