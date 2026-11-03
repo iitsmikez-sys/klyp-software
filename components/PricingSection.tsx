@@ -102,6 +102,7 @@ const plans: Plan[] = [
       { kind: "check",   text: "Download clips for TikTok, Reels & Shorts" },
       { kind: "check",   text: "All formats: 9:16, Original, 1:1, 16:9" },
       { kind: "check",   text: "Full editor" },
+      { kind: "check",   text: "Post scheduling to YouTube (coming soon)" },
     ],
     cta: { label: "Get Klyp Pro", subtext: "Cancel anytime", href: "/login" },
     highlighted: true,

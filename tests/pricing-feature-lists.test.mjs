@@ -27,3 +27,10 @@ test("Free lists the four free caption styles and Pro lists more styles with the
   assert.ok(!upgrade.includes("add photos and video, move text"));
   assert.ok(landing.includes('text: "Full editor"') && landing.includes('text: "More caption styles"'));
 });
+
+test("the Pro card lists YouTube post scheduling as coming soon", () => {
+  assert.ok(upgrade.includes('{ text: "Post scheduling to YouTube", soon: true }'));
+  assert.ok(upgrade.includes("Coming soon"));
+  assert.ok(upgrade.includes("<Soon />"));
+  assert.ok(landing.includes("Post scheduling to YouTube (coming soon)"));
+});

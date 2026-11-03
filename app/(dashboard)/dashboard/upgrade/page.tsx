@@ -17,6 +17,15 @@ function Check() {
   );
 }
 
+function Soon() {
+  return (
+    <svg className="flex-shrink-0 mt-0.5" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7a7a92" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
+    </svg>
+  );
+}
+
 function Warn() {
   return (
     <svg className="flex-shrink-0 mt-0.5" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5a5a72" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -38,8 +47,8 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: false, text: "Animated Klyp watermark on free exports" },
 ];
 
-/** `pro` marks a line that gets the Pro diamond instead of a check. */
-const PRO_FEATURES: { text: string; pro?: boolean }[] = [
+/** `pro` marks a line that gets the Pro diamond instead of a check; `soon` marks a feature that is not live yet. */
+const PRO_FEATURES: { text: string; pro?: boolean; soon?: boolean }[] = [
   { text: `${SPARKS_ALLOWANCE.pro} Sparks every 30 days` },
   { text: "AI clipping with Virality Score" },
   { text: "No watermark. Clean clips, your brand only" },
@@ -52,6 +61,7 @@ const PRO_FEATURES: { text: string; pro?: boolean }[] = [
   { text: "Automatic clipping when your Twitch stream ends" },
   { text: "Twitch chat spike detection" },
   { text: "Download all clips as ZIP" },
+  { text: "Post scheduling to YouTube", soon: true },
   { text: "Priority support" },
 ];
 
@@ -308,10 +318,13 @@ export default function UpgradePage() {
 
           <div className="h-px bg-border mb-5" />
           <ul className="flex flex-col gap-2 flex-1 mb-7">
-            {PRO_FEATURES.map(({ text, pro }) => (
+            {PRO_FEATURES.map(({ text, pro, soon }) => (
               <li key={text} className={FEATURE_ROW}>
-                {pro ? <ProDiamond size={15} className="mt-0.5 flex-shrink-0" /> : <Check />}
-                <span className="text-sm leading-snug text-foreground-muted">{text}</span>
+                {soon ? <Soon /> : pro ? <ProDiamond size={15} className="mt-0.5 flex-shrink-0" /> : <Check />}
+                <span className="text-sm leading-snug text-foreground-muted">
+                  {text}
+                  {soon && <span className="ml-2 inline-block rounded-full border border-accent/40 bg-accent-glow px-2 py-px align-middle text-[10px] font-semibold text-accent">Coming soon</span>}
+                </span>
               </li>
             ))}
           </ul>
