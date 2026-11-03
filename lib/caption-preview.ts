@@ -3,7 +3,7 @@ import { keywordAtTime, defaultCaptionFontFamily, type CaptionCue } from "./capt
 import { ensureCaptionFonts } from "./caption-fonts";
 import { CAPTION_HEX, type CaptionOptions } from "./editor-captions";
 import { captionMotion } from "./caption-template-motion";
-import { EMOJI_FONT, emojiForText, isHighlightStyle, isUppercaseStyle, wordLook } from "./caption-looks";
+import { EMOJI_FONT, activeWordScale, emojiForText, isHighlightStyle, isUppercaseStyle, wordLook } from "./caption-looks";
 
 /** Paint a whole phrase while one word changes to green at the shared cue step. */
 export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x: number, y: number,
@@ -16,7 +16,9 @@ export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x:
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return;
   const space = ctx.measureText(" ").width;
-  const widths = words.map(word => ctx.measureText(word).width);
+  // Focus draws the active word larger, so its width and position grow with it.
+  const grow = (index: number) => (wordOffset + index === activeWord ? activeWordScale(style) : 1);
+  const widths = words.map((word, index) => ctx.measureText(word).width * grow(index));
   // Fire's emoji is a flat icon from the bundled emoji font after the last word, as in the export.
   const emojiFont = `${ctx.font.split(" ").find(part => part.endsWith("px")) ?? "40px"} "${EMOJI_FONT}"`;
   const original = ctx.font;
@@ -30,9 +32,13 @@ export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x:
   ctx.textAlign = "left";
   let cursor = -total / 2;
   words.forEach((word, index) => {
-    ctx.strokeText(word, cursor, 0);
+    ctx.save();
+    ctx.translate(cursor, 0);
+    ctx.scale(grow(index), grow(index));
+    ctx.strokeText(word, 0, 0);
     ctx.fillStyle = wordLook(style, activeWord, wordOffset + index === activeWord).css;
-    ctx.fillText(word, cursor, 0);
+    ctx.fillText(word, 0, 0);
+    ctx.restore();
     cursor += widths[index] + space;
   });
   if (emoji) {
@@ -56,7 +62,7 @@ export function drawCaptionPreview(
   const motion = captionMotion(style, tSeconds * 1000 - cue.startMs);
   const baseSize = style === "CLEAN" ? 58 : style === "SLIDE" ? 68
     : style === "PULSE" ? 78 : style === "SPARK" ? 88
-      : style === "COMIC" ? 76 : style === "KEYWORD" ? 66 : style === "HYPE" ? 82 : style === "POP" ? 120 : style === "FIRE" ? 68 : style === "TRICOLOR" ? 60 : 82;
+      : style === "COMIC" ? 76 : style === "KEYWORD" ? 66 : style === "HYPE" ? 82 : style === "POP" ? 120 : style === "FIRE" ? 68 : style === "TRICOLOR" ? 60 : style === "FOCUS" ? 62 : 82;
   const size = Math.max(12, Math.round(baseSize * scale * motion.scale));
   const y = options.position === "TOP" ? 400 * scale
     : options.position === "CENTER" ? height / 2 : height - 80 * scale;

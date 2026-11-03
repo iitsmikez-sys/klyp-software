@@ -14,7 +14,7 @@ import type { CaptionOptions } from "./editor-captions";
 import type { CaptionFont } from "./clip-edit-draft.ts";
 import type { TextPlacement } from "./text-placement.ts";
 import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
-import { isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, wordLook, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
+import { isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, wordLook, activeWordScale, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
@@ -152,6 +152,8 @@ const STYLE_PARAMS: Record<
   FIRE: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
   // Same layout as Fire, no emoji: words rotate bright green, red and white.
   TRICOLOR: { fontSize: 60, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
+  // Two short lines, neon green active word drawn larger, solid outline and a soft shadow.
+  FOCUS: { fontSize: 62, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
 };
 
 /**
@@ -199,7 +201,7 @@ function sanitizeAssText(text: string): string {
 }
 
 /** Fixed line breaks keep the browser preview and ASS export in the same safe area. */
-export function wrapCaptionText(text: string, style: CaptionStyle, characterLimit = style === "CLEAN" ? 28 : style === "TRICOLOR" ? 26 : 20): string[] {
+export function wrapCaptionText(text: string, style: CaptionStyle, characterLimit = style === "CLEAN" ? 28 : style === "TRICOLOR" ? 26 : style === "FOCUS" ? 16 : 20): string[] {
   const limit = characterLimit;
   const lines: string[] = [];
   let line = "";
@@ -234,8 +236,11 @@ function keywordAssText(lines: string[], activeIndex: number, style: CaptionStyl
   let offset = 0;
   return lines.map((line, lineIndex) => {
     const words = line.split(/\s+/).filter(Boolean);
+    const grow = Math.round(activeWordScale(style) * 100);
     const colored = words.map((word, index) => offset + index === activeIndex
-      ? `{\\c${wordLook(style, activeIndex, true).ass}}${word}{\\c&H00FFFFFF&}` : word).join(" ");
+      ? grow === 100 ? `{\\c${wordLook(style, activeIndex, true).ass}}${word}{\\c&H00FFFFFF&}`
+        : `{\\c${wordLook(style, activeIndex, true).ass}\\fscx${grow}\\fscy${grow}}${word}{\\c&H00FFFFFF&\\fscx100\\fscy100}`
+      : word).join(" ");
     offset += words.length;
     return colored + (lineIndex === lines.length - 1 ? emojiAssText(emoji) : "");
   }).join("\\N");
@@ -491,8 +496,8 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const p = STYLE_PARAMS[style];
  const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1));
  const lineHeight = Math.round(fontSize * 1.2);
- const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" ? text.toUpperCase() : text);
- const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : style === "TRICOLOR" ? 26 : 20)/appearance.transform.scale)) : undefined);
+ const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "FOCUS" ? text.toUpperCase() : text);
+ const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : style === "TRICOLOR" ? 26 : style === "FOCUS" ? 16 : 20)/appearance.transform.scale)) : undefined);
  const outline = Math.max(2, Math.round(p.outline * res.h / DEFAULT_RES.h * OUTLINE_BOOST * (appearance.transform?.scale ?? 1)));
  const edgeMargin = Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));
  const halfBlock = (lines.length-1)*lineHeight/2+fontSize/2+outline;

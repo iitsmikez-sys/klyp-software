@@ -30,6 +30,7 @@ const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   POP: "One huge word at a time in yellow, light blue or white",
   FIRE: "Neon green word plus an emoji that matches",
   TRICOLOR: "Active word flashes bright green and red, no emoji",
+  FOCUS: "Clean two-line phrase, the active word turns neon green and grows",
 };
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
