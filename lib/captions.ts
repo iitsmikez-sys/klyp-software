@@ -14,7 +14,7 @@ import type { CaptionOptions } from "./editor-captions";
 import type { CaptionFont } from "./clip-edit-draft.ts";
 import type { TextPlacement } from "./text-placement.ts";
 import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
-import { isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
+import { isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, wordLook, TRICOLOR_ACTIVE_SCALE, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
@@ -150,6 +150,8 @@ const STYLE_PARAMS: Record<
   POP: { fontSize: 120, color: "&H004AE9FF", bold: 1, outline: 8, shadow: 4 },
   // White phrase, neon green word, and an emoji that matches what is said.
   FIRE: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
+  // Same layout as Fire, no emoji: words rotate bright green, red and white.
+  TRICOLOR: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
 };
 
 /**
@@ -233,8 +235,15 @@ function keywordAssText(lines: string[], activeIndex: number, style: CaptionStyl
   const active = highlightColor(style).ass;
   return lines.map((line, lineIndex) => {
     const words = line.split(/\s+/).filter(Boolean);
-    const colored = words.map((word, index) => offset + index === activeIndex
-      ? `{\\c${active}}${word}{\\c&H00FFFFFF&}` : word).join(" ");
+    const colored = words.map((word, index) => {
+      if (style === "TRICOLOR") {
+        // Every word keeps its own color; the active one is a little larger.
+        const isActive = offset + index === activeIndex;
+        const scale = isActive ? Math.round(TRICOLOR_ACTIVE_SCALE * 100) : 100;
+        return `{\\c${wordLook(style, offset + index, isActive).ass}\\fscx${scale}\\fscy${scale}}${word}`;
+      }
+      return offset + index === activeIndex ? `{\\c${active}}${word}{\\c&H00FFFFFF&}` : word;
+    }).join(" ");
     offset += words.length;
     return colored + (lineIndex === lines.length - 1 ? emojiAssText(emoji) : "");
   }).join("\\N");
@@ -490,7 +499,7 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const p = STYLE_PARAMS[style];
  const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1));
  const lineHeight = Math.round(fontSize * 1.2);
- const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" ? text.toUpperCase() : text);
+ const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" ? text.toUpperCase() : text);
  const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : 20)/appearance.transform.scale)) : undefined);
  const outline = Math.max(2, Math.round(p.outline * res.h / DEFAULT_RES.h * OUTLINE_BOOST * (appearance.transform?.scale ?? 1)));
  const edgeMargin = Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));

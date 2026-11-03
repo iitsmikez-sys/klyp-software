@@ -214,6 +214,7 @@ export default function ClipPreview({
     HYPE: "The word being said turns red, thick outline",
     POP: "One huge word at a time in yellow, light blue or white",
     FIRE: "Neon green word plus an emoji that matches",
+    TRICOLOR: "Words in bright green, red and white, no emoji",
   };
 
   return (
