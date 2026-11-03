@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { shortsStatus, withShortsTag } from '../lib/youtube-shorts.ts';
+import { youtubePublishingOpen } from '../lib/youtube-publishing.ts';
 
 const source = readFileSync(new URL('../app/api/youtube/publish/route.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: {
@@ -13,7 +14,7 @@ const user = '11111111-1111-4111-8111-111111111111';
 const clip = '22222222-2222-4222-8222-222222222222';
 const requestKey = '33333333-3333-4333-8333-333333333333';
 
-function setup({ pro = true, ownsClip = true, saveFails = false, scheduleExpiresBeforeUpload = false } = {}) {
+function setup({ pro = true, complimentary = true, ownsClip = true, saveFails = false, scheduleExpiresBeforeUpload = false } = {}) {
   let renders = 0;
   let uploads = 0;
   let savedPost;
@@ -46,7 +47,7 @@ function setup({ pro = true, ownsClip = true, saveFails = false, scheduleExpires
     } },
     '@/lib/supabase/admin': { createAdminClient: () => admin },
     '@/lib/profile-token': { bearerToken: () => 'token', getProfileFromToken: async () =>
-      ({ id: user, tier: pro ? 'pro' : 'free', stripe_subscription_id: pro ? 'sub_123' : null }) },
+      ({ id: user, tier: pro ? 'pro' : 'free', stripe_subscription_id: pro ? 'sub_123' : null, complimentary_pro: complimentary }) },
     '@/lib/cors': { withCors: response => response, corsPreflight: () => new Response(null, { status: 204 }) },
     '@/lib/youtube-config': { youtubeConfig: () => ({}), youtubeTokenKey: () => 'key' },
     '@/lib/youtube-api': { refreshYouTubeAccessToken: async () => 'access', uploadToYouTube: async input => {
@@ -55,7 +56,7 @@ function setup({ pro = true, ownsClip = true, saveFails = false, scheduleExpires
       assert.equal(input.bytes.toString(), 'fake-mp4');
       return 'youtube-video';
     }, YouTubeUploadError: class extends Error {} },
-    '@/lib/youtube-publishing': { decryptRefreshToken: () => 'refresh',
+    '@/lib/youtube-publishing': { decryptRefreshToken: () => 'refresh', youtubePublishingOpen,
       isConfirmedPro: profile => profile?.tier === 'pro' && !!profile.stripe_subscription_id,
       validateYouTubePost: input => {
         validations++;
@@ -89,6 +90,18 @@ test('Free accounts cannot publish or trigger rendering', async () => {
   const testCase = setup({ pro: false });
   assert.equal((await testCase.post()).status, 403);
   assert.deepEqual(testCase.calls(), { renders: 0, uploads: 0, savedPost: undefined });
+});
+
+test('until Google verifies the app, only complimentary-Pro accounts can publish', async () => {
+  const customer = setup({ complimentary: false });
+  const response = await customer.post();
+  assert.equal(response.status, 403);
+  assert.match((await response.json()).error, /coming soon/);
+  assert.deepEqual(customer.calls(), { renders: 0, uploads: 0, savedPost: undefined });
+  assert.equal(youtubePublishingOpen({ complimentary_pro: false }, {}), false);
+  assert.equal(youtubePublishingOpen({ complimentary_pro: true }, {}), true);
+  assert.equal(youtubePublishingOpen({ complimentary_pro: false }, { YOUTUBE_PUBLISHING: 'public' }), true);
+  assert.equal(youtubePublishingOpen(null, {}), false);
 });
 
 test('a Pro account cannot publish another user’s clip', async () => {

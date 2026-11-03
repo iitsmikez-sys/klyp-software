@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { bearerToken, getProfileFromToken } from '@/lib/profile-token';
 import { withCors, corsPreflight } from '@/lib/cors';
 import { uploadToYouTube, YouTubeUploadError } from '@/lib/youtube-api';
-import { isConfirmedPro, validateYouTubePost } from '@/lib/youtube-publishing';
+import { isConfirmedPro, validateYouTubePost, youtubePublishingOpen } from '@/lib/youtube-publishing';
 import { requestWorkerAccessToken } from '@/lib/youtube-worker-token';
 import { shortsStatus, withShortsTag } from '@/lib/youtube-shorts';
 
@@ -28,6 +28,9 @@ async function publish(req: NextRequest): Promise<Response> {
   if (!profile) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
   if (!isConfirmedPro(profile)) {
     return NextResponse.json({ error: 'Posting to YouTube requires an active Pro subscription.' }, { status: 403 });
+  }
+  if (!youtubePublishingOpen(profile)) {
+    return NextResponse.json({ error: 'YouTube scheduling is coming soon.' }, { status: 403 });
   }
   let body: Record<string, unknown>;
   let details;

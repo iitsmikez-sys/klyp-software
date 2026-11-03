@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getProfile } from '@/lib/profile';
-import { isConfirmedPro } from '@/lib/youtube-publishing';
+import { isConfirmedPro, youtubePublishingOpen } from '@/lib/youtube-publishing';
 import { youtubeConsentUrl } from '@/lib/youtube-api';
 import { youtubeConfig } from '@/lib/youtube-config';
 
@@ -11,6 +11,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const profile = await getProfile();
   if (!profile) return NextResponse.redirect(new URL('/login', req.url));
   if (!isConfirmedPro(profile)) return NextResponse.redirect(new URL('/dashboard/upgrade', req.url));
+  if (!youtubePublishingOpen(profile)) return NextResponse.redirect(new URL('/dashboard', req.url));
   const clipId = new URL(req.url).searchParams.get('clip_id') ?? '';
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clipId)) {
     return NextResponse.json({ error: 'Choose a saved clip before connecting YouTube.' }, { status: 400 });

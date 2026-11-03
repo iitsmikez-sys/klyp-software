@@ -4,6 +4,17 @@ import { hasProAccess, type Profile } from './tier.ts';
 
 type Subscription = Pick<Profile, 'tier' | 'stripe_subscription_id' | 'complimentary_pro'>;
 
+/**
+ * YouTube publishing is limited to complimentary-Pro accounts (the owner's) until Google verifies the app,
+ * so customers do not hit Google's "unverified app" screen. YOUTUBE_PUBLISHING=public opens it to every Pro member.
+ */
+export function youtubePublishingOpen(
+  profile: { complimentary_pro?: boolean } | null | undefined,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.YOUTUBE_PUBLISHING === 'public' || profile?.complimentary_pro === true;
+}
+
 export function isConfirmedPro(profile: Subscription | null | undefined): boolean {
   return !!profile && hasProAccess(profile);
 }

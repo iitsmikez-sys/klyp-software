@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProfile } from '@/lib/profile';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { canRetryUncertainPost, isConfirmedPro } from '@/lib/youtube-publishing';
+import { canRetryUncertainPost, isConfirmedPro, youtubePublishingOpen } from '@/lib/youtube-publishing';
 
 export const runtime = 'nodejs';
 
@@ -9,6 +9,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const profile = await getProfile();
   if (!profile) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
   if (!isConfirmedPro(profile)) return NextResponse.json({ proRequired: true, connected: false });
+  if (!youtubePublishingOpen(profile)) return NextResponse.json({ comingSoon: true, connected: false });
   const admin = createAdminClient();
   const { data: connection, error } = await admin.from('youtube_connections')
     .select('connected_at').eq('user_id', profile.id).maybeSingle();
