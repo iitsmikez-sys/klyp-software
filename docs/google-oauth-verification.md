@@ -17,7 +17,7 @@ before submitting.
 1. Google Cloud Console, then **APIs and services**, then **OAuth consent screen**.
 2. If the status is **Testing**, Google expires the connection every 7 days. Click **Publish app** to move it to
    **In production**. It stays unverified (about 100 people can connect, with the warning), but your connection no longer expires.
-3. In Klyp, click Schedule to YouTube. On Google's screen choose **Advanced**, then **Go to klyp (unsafe)**, then **Continue**.
+3. In Klyp, click Schedule post. On Google's screen choose **Advanced**, then **Go to klyp (unsafe)**, then **Continue**.
 
 ## What to fill in on the consent screen
 
@@ -43,7 +43,7 @@ before submitting.
 ## Demo video Google asks for (2 to 3 minutes, screen recording, unlisted on YouTube)
 
 1. Show klyp.world and sign in with a Pro account.
-2. Open a saved clip and click **Schedule to YouTube**.
+2. Open a saved clip and click **Schedule post**.
 3. Click **Connect YouTube**. Keep the Google consent screen on screen long enough to read the permission, with the
    address bar showing the real OAuth client.
 4. Back in Klyp, set a title, description and a publish time, then click Schedule.
