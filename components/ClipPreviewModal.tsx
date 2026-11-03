@@ -30,6 +30,8 @@ import type { RawDownloadState } from "./useRawClipDownloads";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
+import ScoreBadge from "./ScoreBadge";
+import ScoreBreakdown from "./ScoreBreakdown";
 import {
   type SavedClip,
   TYPE_STYLES,
@@ -347,6 +349,7 @@ export default function ClipPreviewModal({
               {clip.title}
             </h2>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-sm text-foreground-muted">
+              {typeof clip.viral_score === "number" && <ScoreBadge score={clip.viral_score} />}
               <span className={`px-2 py-0.5 rounded border text-[11px] font-bold tracking-wide ${TYPE_STYLES[clip.clip_type] ?? TYPE_STYLES.HIGHLIGHT}`}>
                 {clip.clip_type}
               </span>
@@ -488,6 +491,13 @@ export default function ClipPreviewModal({
           </button>
           {detailsOpen && (
             <div className="pt-3 text-sm text-foreground-muted">
+              {typeof clip.viral_score === "number" && (
+                <div className="mb-3 rounded-lg border border-border bg-surface-2 p-3">
+                  <p className="mb-2 font-medium text-foreground">AI score: {Math.round(clip.viral_score)} / 100</p>
+                  <ScoreBreakdown clip={clip} />
+                  <p className="mt-2 text-[11px] text-subtle">Only moments scoring 65 or more are returned, and 90+ could go viral.</p>
+                </div>
+              )}
               {clip.reason && <p className="mb-2"><span className="font-medium text-foreground">Why this moment:</span> {clip.reason}</p>}
               {clip.caption && <p className="mb-2">{clip.caption}</p>}
               <p>Original VOD: {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}</p>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import ClipThumbnail from "./ClipThumbnail";
+import ScoreBadge from "./ScoreBadge";
 import type { RawDownloadState } from "./useRawClipDownloads";
 import { type SavedClip, fmtTime, platformName, footageGone, vodLinkAt } from "@/lib/clip-ui";
 import { backupState } from "@/lib/clip-backup-state";
@@ -22,7 +23,10 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
     ? rawState.received !== undefined ? `Downloading ${rawState.received}%` : `Preparing raw ${rawState.seconds}s`
     : rawState?.status === "ready" ? "Download Raw Again" : "Download Raw";
   return <article className={`group flex min-w-0 flex-col rounded-xl border border-border bg-surface transition-colors hover:border-subtle ${compact ? "p-2.5" : "p-3"}`}>
-    <ClipThumbnail clip={clip} onPlay={onPreview} />
+    <div className="relative">
+      <ClipThumbnail clip={clip} onPlay={onPreview} />
+      {typeof clip.viral_score === "number" && <ScoreBadge score={clip.viral_score} className="pointer-events-none absolute left-2 top-2" />}
+    </div>
     <div className={`${compact ? "mt-2" : "mt-3"} flex items-start justify-between gap-2`}>
       <h3 className={`min-w-0 line-clamp-2 font-semibold text-foreground ${compact ? "text-sm leading-snug" : "text-base"}`}>{clip.title}</h3>
       {more ?? <div className="relative shrink-0">
