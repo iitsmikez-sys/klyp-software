@@ -25,6 +25,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { discoveryPoolSize, fullVodCoverage } from './discovery-pool';
 
 export type DiscoveryOptions = {
+  /** Claude model for the moment-picking step; see analysisModelFor in lib/plan-limits.ts. */
+  model?: string;
   uploadedPath: string | null;
   url: string;
   sourceKey: string;
@@ -139,7 +141,7 @@ async function runDiscoveryPipelineUnlocked(opts: DiscoveryOptions): Promise<Pip
   progress('analyze', 'running');
   const selectionDone = meter.start('select');
   const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
-  const cacheKey = resultCacheKey({ sourceKey: opts.sourceKey, durationSeconds: vodSeconds,
+  const cacheKey = resultCacheKey({ model: opts.model, sourceKey: opts.sourceKey, durationSeconds: vodSeconds,
     contentType, keyword: opts.keyword ?? '', creatorPreferences: opts.creatorPreferences ?? '', windows });
   const resultCache = createResultCache(opts.client, opts.userId, opts.sourceKey, vodSeconds, cacheKey);
   let judged = await resultCache.load();
@@ -148,7 +150,7 @@ async function runDiscoveryPipelineUnlocked(opts: DiscoveryOptions): Promise<Pip
   if (judged === null) {
     const selectionCount = discoveryPoolSize(opts.clipCount);
     const selected = await findClips(transcriptText, vodSeconds, spikes, selectionCount,
-      contentType, opts.keyword, keywordMatches, [], opts.creatorPreferences ?? '', runId, windows);
+      contentType, opts.keyword, keywordMatches, [], opts.creatorPreferences ?? '', runId, windows, opts.model);
     judged = selected.clips;
     skipped = selected.skipped;
     await resultCache.save(judged);
@@ -159,7 +161,7 @@ async function runDiscoveryPipelineUnlocked(opts: DiscoveryOptions): Promise<Pip
   selectionDone({ windows: windows.length, cacheHit: resultHit });
   const visualDone = meter.start('visual-check');
   const visualCache = createResultCache(opts.client, opts.userId, opts.sourceKey, vodSeconds,
-    resultCacheKey({ sourceKey: opts.sourceKey, durationSeconds: vodSeconds, contentType,
+    resultCacheKey({ model: opts.model, sourceKey: opts.sourceKey, durationSeconds: vodSeconds, contentType,
       keyword: opts.keyword ?? '', creatorPreferences: opts.creatorPreferences ?? '',
       windows, pipeline: 'v2-visual' }));
   let readyPool = await visualCache.load();
@@ -175,7 +177,7 @@ async function runDiscoveryPipelineUnlocked(opts: DiscoveryOptions): Promise<Pip
   // A repeat can consume the remainder of the first judged batch for free. Once
   // exhausted, ask Opus for a distinct batch from the already transcribed footage.
   if (!clips.length && readyPool.length > 0 && (opts.priorWindows?.length ?? 0) > 0) {
-    const nextKey = resultCacheKey({ sourceKey: opts.sourceKey, durationSeconds: vodSeconds,
+    const nextKey = resultCacheKey({ model: opts.model, sourceKey: opts.sourceKey, durationSeconds: vodSeconds,
       contentType, keyword: opts.keyword ?? '', creatorPreferences: opts.creatorPreferences ?? '',
       windows, priorWindows: opts.priorWindows });
     const nextCache = createResultCache(opts.client, opts.userId, opts.sourceKey, vodSeconds, nextKey);
@@ -183,7 +185,7 @@ async function runDiscoveryPipelineUnlocked(opts: DiscoveryOptions): Promise<Pip
     if (nextJudged === null) {
       const next = await findClips(transcriptText, vodSeconds, spikes, discoveryPoolSize(opts.clipCount),
         contentType, opts.keyword, keywordMatches, opts.priorWindows,
-        opts.creatorPreferences ?? '', runId, windows);
+        opts.creatorPreferences ?? '', runId, windows, opts.model);
       nextJudged = next.clips;
       skipped += next.skipped;
       await nextCache.save(nextJudged);
@@ -191,7 +193,7 @@ async function runDiscoveryPipelineUnlocked(opts: DiscoveryOptions): Promise<Pip
     const nextValidated = nextJudged.map(item => schema.safeParse(item));
     if (nextValidated.some(item => !item.success)) throw new Error('Cached repeat candidates failed validation');
     const nextVisualCache = createResultCache(opts.client, opts.userId, opts.sourceKey, vodSeconds,
-      resultCacheKey({ sourceKey: opts.sourceKey, durationSeconds: vodSeconds, contentType,
+      resultCacheKey({ model: opts.model, sourceKey: opts.sourceKey, durationSeconds: vodSeconds, contentType,
         keyword: opts.keyword ?? '', creatorPreferences: opts.creatorPreferences ?? '',
         windows, priorWindows: opts.priorWindows, pipeline: 'v2-visual' }));
     let nextReady = await nextVisualCache.load();

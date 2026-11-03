@@ -87,3 +87,19 @@ export function describeLimits(plan: PlanName) {
     autoClipAllowed: autoClipAllowed(plan),
   };
 }
+
+/**
+ * Which Claude model picks the clip-worthy moments in a VOD. Free and Pro both use Sonnet 5.5, which found the
+ * same big moments as Opus 4.8 in side-by-side tests at roughly 40% of the cost. Change either plan without a
+ * code change: set FREE_ANALYSIS_MODEL or PRO_ANALYSIS_MODEL to one of the models below (for example
+ * PRO_ANALYSIS_MODEL=claude-opus-4-8 puts Pro back on Opus).
+ */
+export const PRO_ANALYSIS_MODEL = "claude-sonnet-5-5";
+export const FREE_ANALYSIS_MODEL = "claude-sonnet-5-5";
+export const ANALYSIS_MODELS = ["claude-opus-4-8", "claude-opus-5-5", "claude-sonnet-5-5"] as const;
+
+export function analysisModelFor(isPro: boolean, env: Record<string, string | undefined> = process.env): string {
+  const override = (isPro ? env.PRO_ANALYSIS_MODEL : env.FREE_ANALYSIS_MODEL)?.trim();
+  if (override && (ANALYSIS_MODELS as readonly string[]).includes(override)) return override;
+  return isPro ? PRO_ANALYSIS_MODEL : FREE_ANALYSIS_MODEL;
+}
