@@ -622,3 +622,15 @@
 .editor-insert-length { display:grid; gap:4px; margin:10px 0 }
 .editor-insert-length input { width:100%; padding:6px 8px; border:1px solid #334651; border-radius:6px; background:#0e1921; color:inherit }
 .editor-insert-length small { color:#9fb1bb; font-size:11px }
+
+/* Zoom controls, a clearer split point and the snap guide */
+.editor-zoom-controls { display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:2px 0 6px; font-size:11px; color:#9fb1bb }
+.editor-zoom-controls button { min-width:30px; min-height:26px; padding:2px 9px; border:1px solid #334651; border-radius:7px; background:#0e1921; color:#cfe0e8; font-size:12px }
+.editor-zoom-controls button:disabled { opacity:.4 }
+.editor-zoom-controls input[type=range] { width:120px; accent-color:var(--editor-mint) }
+.editor-zoom-controls span { min-width:28px; text-align:right; font-variant-numeric:tabular-nums }
+.editor-insert-target { width:34px; border:0; background:transparent; font-size:0; color:transparent; cursor:pointer }
+.editor-insert-target::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--editor-mint); opacity:.55 }
+.editor-insert-target::after { content:'+'; position:absolute; left:50%; top:50%; width:28px; height:28px; margin:-14px 0 0 -14px; border-radius:50%; background:var(--editor-mint); color:#0a2018; font-size:20px; line-height:28px; font-weight:600; text-align:center; box-shadow:0 0 0 3px #0f171b }
+.editor-insert-target:hover::after, .editor-insert-target:focus-visible::after { transform:scale(1.12) }
+.editor-snap-line { position:absolute; top:0; bottom:0; width:0; border-left:1px dashed var(--editor-mint); pointer-events:none; z-index:6 }
