@@ -12,6 +12,7 @@ import {
   reviewProcessingBudget,
 } from "../lib/vod-budget.ts";
 import { quoteTextMessageFromTokens, quoteTranscription, quoteVisualMessage } from "../lib/provider-budget-core.ts";
+import * as clipExtras from "../lib/clip-extras.ts";
 
 const H = 3600;
 
@@ -109,6 +110,7 @@ const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKi
 function pipelineHarness(review) {
   const calls = { download: 0, transcription: 0, ai: 0, probe: 0 };
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     "@anthropic-ai/sdk": class { constructor() { calls.ai++; } },
     "@anthropic-ai/sdk/helpers/zod": { zodOutputFormat: () => ({}) },
     "@/lib/anthropic-rate-limits": { logAnthropicRateLimits: () => {} },

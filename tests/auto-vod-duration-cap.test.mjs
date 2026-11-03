@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import * as planLimits from '../lib/plan-limits.ts';
 import * as entitlement from '../lib/auto-clip-entitlement.ts';
+import * as clipExtras from "../lib/clip-extras.ts";
 
 const source = readFileSync(new URL('../lib/vod-poll.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS,
@@ -37,6 +38,7 @@ test('automatic clipping skips an 11-hour VOD without paid work or a Sparks debi
     },
   };
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     'fs/promises': { mkdtemp: async () => 'fixture-dir', rm: async () => {} },
     os: { tmpdir: () => 'fixture-tmp' }, path: { join: (...parts) => parts.join('/') },
     '@/lib/supabase/admin': { createAdminClient: () => admin },

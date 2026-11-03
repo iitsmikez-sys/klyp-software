@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { discoveryPoolSize, fullVodCoverage } from '../lib/discovery-pool.ts';
 import { analysisCharge, clipCharge, estimateSparks } from '../lib/sparks.ts';
+import * as clipExtras from "../lib/clip-extras.ts";
 
 const require = createRequire(import.meta.url);
 const source = await readFile(new URL('../lib/analyze-pipeline.ts', import.meta.url), 'utf8');
@@ -30,6 +31,7 @@ function harness({ denyProviderSpend = false } = {}) {
     } }) };
   }
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     '@anthropic-ai/sdk': AnthropicMock,
     '@anthropic-ai/sdk/helpers/zod': { zodOutputFormat: () => ({}) },
     '@/lib/anthropic-rate-limits': { logAnthropicRateLimits: () => {} },

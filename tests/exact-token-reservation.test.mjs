@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as core from "../lib/provider-budget-core.ts";
 import { ProviderBudget } from "../lib/provider-budget-core.ts";
+import * as clipExtras from "../lib/clip-extras.ts";
 
 const nativeRequire = createRequire(import.meta.url);
 const source = await readFile(new URL("../lib/analyze-pipeline.ts", import.meta.url), "utf8");
@@ -26,6 +27,7 @@ function harness({ countTokens } = {}) {
     }
   }
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     "@anthropic-ai/sdk": FakeAnthropic,
     "@anthropic-ai/sdk/helpers/zod": { zodOutputFormat: () => ({ type: "json_schema" }) },
     "@/lib/anthropic-rate-limits": { logAnthropicRateLimits: () => {} },

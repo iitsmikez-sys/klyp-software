@@ -124,6 +124,10 @@ export const ClipAnalysisSchema = z.object({
     .array(ClipSchema)
     .max(20)
     .describe("The best clippable moments (up to the requested count, only those above the quality floor), ordered by viral_score descending"),
+  also_consider: z
+    .array(ClipSchema)
+    .max(3)
+    .describe("Up to 3 near-miss moments scoring 55-64, only when the main list is short and at least one moment cleared 65. Empty otherwise."),
 });
 
 export type Clip = z.infer<typeof ClipSchema>;
@@ -150,6 +154,10 @@ export function clipAnalysisSchemaForContentType(contentType: ContentType) {
       .array(clipSchemaForContentType(contentType))
       .max(20)
       .describe("The best clippable moments (up to the requested count, only those above the quality floor), ordered by viral_score descending"),
+    also_consider: z
+      .array(clipSchemaForContentType(contentType))
+      .max(3)
+      .describe("Up to 3 near-miss moments scoring 55-64, only when the main list is short and at least one moment cleared 65. Empty otherwise."),
   });
 }
 

@@ -13,6 +13,7 @@ import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
 import ClipPreviewModal from "./ResultsClipPreviewModal";
 import FoundClipCard from "./FoundClipCard";
+import { isTopPick } from "@/lib/clip-extras";
 import { platformName, type SavedClip } from "@/lib/clip-ui";
 import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import { resultsChargeMessage } from "@/lib/results-summary";
@@ -150,6 +151,8 @@ export default function AnalyzePanel() {
   const { balance, tier, sync } = useSparks();
   const isPro = tier === "pro";
   const busy = downloading !== null || zipProgress !== null || saving !== null;
+  /** Clips below the quality bar (near-miss extras). When there are none, every clip is a top pick and no badges are shown. */
+  const extraCount = (clips ?? []).filter((clip) => !isTopPick(clip)).length;
   const outOfSparks = balance !== null && balance < MIN_ANALYZE_COST;
   // Full estimate = VOD length cost (probed) + clip count cost.
   const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
@@ -1238,10 +1241,13 @@ export default function AnalyzePanel() {
             <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
               <div>
                 <h3 className="font-geist text-2xl font-bold text-white">
-                  <span aria-hidden="true" className="mr-2 text-accent">✦</span>We found {clips.length} great {clips.length === 1 ? "moment" : "moments"}!
+                  <span aria-hidden="true" className="mr-2 text-accent">✦</span>
+                  {extraCount > 0
+                    ? `We found ${clips.length} clips for you`
+                    : `We found ${clips.length} great ${clips.length === 1 ? "moment" : "moments"}!`}
                 </h3>
                 <p className="text-[15px] text-foreground-muted mt-0.5">
-                  Your stream highlights are ready to review.
+                  {extraCount > 0 ? "Best ones first. Your stream highlights are ready to review." : "Your stream highlights are ready to review."}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1302,7 +1308,7 @@ export default function AnalyzePanel() {
           )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
             {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <FoundClipCard
-              key={i} clip={editorClips[i]} kept={clipStatus[i] === "kept"} busy={busy}
+              key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy}
               saving={saving === i || saving === "all"} exporting={downloading === i}
               rawSeconds={downloading === i ? downloadElapsed : 0}
               onPreview={() => { if (!busy) setPreviewIndex(i); }} onCustomize={() => void editClip(i)}

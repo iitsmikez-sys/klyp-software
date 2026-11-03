@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import * as clipExtras from "../lib/clip-extras.ts";
 
 const nativeRequire = createRequire(import.meta.url);
 const source = await readFile(new URL("../lib/analyze-pipeline.ts", import.meta.url), "utf8");
@@ -17,6 +18,7 @@ function pipelineHarness({ denyBudget = false } = {}) {
     constructor() { calls.transcription++; this.transcripts = { transcribe: async (options) => { providerSubmissions++; submittedOptions = options; return { status: "completed", words: [{ text: "hello", start: 0, end: 500 }], audio_duration: 10 }; } }; }
   };
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     "@anthropic-ai/sdk": class { constructor() { calls.ai++; } },
     "@anthropic-ai/sdk/helpers/zod": { zodOutputFormat: () => ({}) },
     "@/lib/anthropic-rate-limits": { logAnthropicRateLimits: () => {} },
