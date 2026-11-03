@@ -36,3 +36,10 @@ test("the analyze route picks the model by plan, and the picker defaults to Opus
   const rates = read("lib/provider-budget-core.ts");
   assert.ok(rates.includes("'claude-sonnet-5-5': { input: 2, output: 10 }") && rates.includes("'claude-opus-5-5': { input: 4, output: 20 }"));
 });
+
+test("cost logging prices the Sonnet 5.5 analyses Free now runs", async () => {
+  const { estimateProviderCost } = await import("../lib/provider-cost.ts");
+  const usage = { runId: "r", provider: "anthropic", inputTokens: 33323, outputTokens: 4186, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  assert.equal(estimateProviderCost({ ...usage, model: "claude-sonnet-5-5" }), 0.108506);
+  assert.equal(estimateProviderCost({ ...usage, model: "claude-opus-4-8" }), 0.271265);
+});
