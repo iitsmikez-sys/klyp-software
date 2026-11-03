@@ -52,7 +52,7 @@ export type RetSubscription = {
   cancel_at_period_end: boolean;
   pause_collection: { behavior: string; resumes_at?: number | null } | null;
   discounts?: Array<string | { source?: { coupon?: IdOrObject } | null; coupon?: IdOrObject }>;
-  items: { data: Array<{ current_period_end: number }> };
+  items: { data: Array<{ current_period_end: number; price?: { recurring?: { interval?: string } | null } }> };
 };
 
 export type RetentionStripe = {
@@ -80,6 +80,11 @@ const idOf = (v: IdOrObject): string | undefined => (!v ? undefined : typeof v =
 const isMissing = (e: unknown) => !!e && typeof e === "object" && (e as { code?: string }).code === "resource_missing";
 const iso = (seconds: number | null | undefined) => (seconds ? new Date(seconds * 1000).toISOString() : null);
 const FAIL_STRIPE = "We couldn't reach Stripe to make that change. Nothing was changed and you have not been charged. Please try again.";
+
+/** A yearly subscription: no pause and no one-payment discount, only cancel at the end of the term. */
+export const isYearly = (sub: RetSubscription): boolean => sub.items.data[0]?.price?.recurring?.interval === "year";
+const YEARLY_PRICE_CENTS = 27_600;
+const YEARLY_MESSAGE = "Pause and the one-payment discount are for monthly plans. Your yearly plan keeps Pro until the end of the year if you cancel.";
 
 export function periodEnd(sub: RetSubscription): number {
   return sub.items.data[0].current_period_end;
@@ -147,11 +152,12 @@ export async function getRetentionState(deps: Deps, ctx: RetentionCtx): Promise<
       pausedUntil: iso(sub.pause_collection?.resumes_at),
       paused: isPaused(sub),
       discountApplied: discounted,
-      discountEligible: isLive(sub) && !availableOn && !hasAnyDiscount(sub) && !isPaused(sub) && !sub.cancel_at_period_end,
+      billingInterval: isYearly(sub) ? "year" : "month",
+      discountEligible: !isYearly(sub) && isLive(sub) && !availableOn && !hasAnyDiscount(sub) && !isPaused(sub) && !sub.cancel_at_period_end,
       discountAvailableOn: availableOn,
-      priceCents: RETENTION.PRICE_CENTS,
+      priceCents: isYearly(sub) ? YEARLY_PRICE_CENTS : RETENTION.PRICE_CENTS,
       discountedCents: DISCOUNTED_CENTS,
-      nextAmountCents: discounted ? DISCOUNTED_CENTS : RETENTION.PRICE_CENTS,
+      nextAmountCents: isYearly(sub) ? YEARLY_PRICE_CENTS : discounted ? DISCOUNTED_CENTS : RETENTION.PRICE_CENTS,
     },
   };
 }
@@ -215,6 +221,7 @@ export async function applyDiscount(deps: Deps, ctx: RetentionCtx, input: { even
   if (!event) return { status: 400, body: { error: "Start from the cancellation survey." } };
   let sub: RetSubscription;
   try { sub = await readSub(deps.stripe, ctx.subscriptionId); } catch { return { status: 502, body: { error: FAIL_STRIPE } }; }
+  if (isYearly(sub)) return { status: 409, body: { code: "yearly_plan", error: YEARLY_MESSAGE } };
   if (!isLive(sub) || sub.cancel_at_period_end || isPaused(sub))
     return { status: 409, body: { code: "not_applicable", error: "The discount can't be applied to this subscription right now." } };
   if (hasAnyDiscount(sub)) return { status: 409, body: { code: "already_discounted", error: "This subscription already has a discount." } };
@@ -250,6 +257,7 @@ export async function applyPause(deps: Deps, ctx: RetentionCtx, input: { eventId
 
   let sub: RetSubscription;
   try { sub = await readSub(deps.stripe, ctx.subscriptionId); } catch { return { status: 502, body: { error: FAIL_STRIPE } }; }
+  if (isYearly(sub)) return { status: 409, body: { code: "yearly_plan", error: YEARLY_MESSAGE } };
   if (!isLive(sub)) return { status: 409, body: { code: "not_applicable", error: "This subscription can't be paused right now." } };
   if (sub.cancel_at_period_end)
     return { status: 409, body: { code: "cancellation_pending", error: "Your cancellation is already scheduled. Undo it first if you'd rather pause." } };

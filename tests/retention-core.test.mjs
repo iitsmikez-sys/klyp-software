@@ -412,3 +412,29 @@ test("cancel -> undo -> cancel again in the same period works (cancel and undo a
   assert.equal(s.sub.cancel_at_period_end, true);
   for (const call of s.calls.filter((c) => c[0] === "update")) assert.equal(call[3], undefined);
 });
+
+/* ───────────── yearly subscribers ───────────── */
+const yearlySub = { items: { data: [{ current_period_end: PERIOD_END, price: { recurring: { interval: "year" } } }] } };
+
+test("yearly: no pause and no discount (refused on the server, Stripe never written), state says so", async () => {
+  const admin = makeAdmin(); const s = makeStripe({ sub: yearlySub });
+  const st = (await getRetentionState({ stripe: s.stripe, admin, now: NOW }, ctx)).body;
+  assert.deepEqual([st.billingInterval, st.discountEligible, st.nextAmountCents], ["year", false, 27600]);
+  const d = await applyDiscount({ stripe: s.stripe, admin, now: NOW }, ctx, { eventId: await survey(admin, "too_expensive") });
+  assert.deepEqual([d.status, d.body.code], [409, "yearly_plan"]);
+  const p = await applyPause({ stripe: s.stripe, admin }, ctx, { eventId: await survey(admin, "break"), months: 1 });
+  assert.deepEqual([p.status, p.body.code], [409, "yearly_plan"]);
+  assert.equal(writes(s.calls).length, 0);
+  assert.equal(admin.t.retention_offers.length, 0);
+});
+
+test("yearly: cancelling still works, ends at the end of the term, and a monthly plan is unaffected", async () => {
+  const admin = makeAdmin(); const s = makeStripe({ sub: yearlySub });
+  const r = await cancelSubscription({ stripe: s.stripe, admin }, ctx, {});
+  assert.equal(r.status, 200);
+  assert.equal(r.body.accessUntil, new Date(PERIOD_END * 1000).toISOString());
+  assert.deepEqual(s.calls.find((c) => c[0] === "update")[2], { cancel_at_period_end: true });
+  const m = makeStripe();
+  const state = (await getRetentionState({ stripe: m.stripe, admin: makeAdmin(), now: NOW }, ctx)).body;
+  assert.deepEqual([state.billingInterval, state.discountEligible], ["month", true]);
+});

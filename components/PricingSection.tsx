@@ -1,7 +1,11 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import FadeIn from "./FadeIn";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import { vodsPhrase } from "@/lib/sparks";
+import { MONTHLY_PRICE_USD, YEARLY_PER_MONTH_USD, YEARLY_PRICE_USD, YEARLY_SAVE_PERCENT } from "@/lib/pricing";
 
 /* ─── Icons ─── */
 function CheckIcon() {
@@ -151,6 +155,7 @@ function FeatureRow({ item }: { item: FeatureItem }) {
 
 /* ─── Section ─── */
 export default function PricingSection() {
+  const [yearly, setYearly] = useState(true);
   return (
     <section id="pricing" className="px-4 sm:px-6 py-24 max-w-[90rem] mx-auto w-full">
       {/* Header */}
@@ -165,6 +170,21 @@ export default function PricingSection() {
           <p className="mt-4 text-foreground-muted max-w-md mx-auto text-sm">
             Start free. Upgrade when you&apos;re ready to grow.
           </p>
+          <div className="mt-6 flex items-center justify-center gap-3 text-sm">
+            <span className={yearly ? "text-foreground-muted" : "font-semibold text-foreground"}>Monthly</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={yearly}
+              aria-label="Bill yearly"
+              onClick={() => setYearly((v) => !v)}
+              className={`relative h-6 w-11 rounded-full border transition-colors ${yearly ? "border-accent/50 bg-accent-glow" : "border-border bg-surface-2"}`}
+            >
+              <span className={`absolute top-0.5 block h-4 w-4 rounded-full transition-all ${yearly ? "left-6 bg-accent" : "left-1 bg-foreground-muted"}`} />
+            </button>
+            <span className={yearly ? "font-semibold text-foreground" : "text-foreground-muted"}>Yearly</span>
+          </div>
+          <p className="mt-2 text-xs font-semibold text-accent">Save {YEARLY_SAVE_PERCENT}% with yearly billing</p>
         </div>
       </FadeIn>
 
@@ -197,7 +217,18 @@ export default function PricingSection() {
                     {plan.name}
                   </p>
                   <p className="text-xs text-foreground-muted leading-snug mb-4">{plan.tagline}</p>
-                  <Price p={plan.price} />
+                  {plan.id === "pro" && yearly ? (
+                    <div>
+                      <div className="flex items-end gap-2 min-h-[3.5rem]">
+                        <span className="font-syne text-4xl font-bold text-accent">${YEARLY_PER_MONTH_USD}</span>
+                        <span className="mb-1.5 text-base text-foreground-muted line-through">${MONTHLY_PRICE_USD}</span>
+                        <span className="mb-1.5 text-sm text-foreground-muted">USD/mo</span>
+                      </div>
+                      <p className="text-xs text-foreground-muted">Billed ${YEARLY_PRICE_USD} a year · Save {YEARLY_SAVE_PERCENT}%</p>
+                    </div>
+                  ) : (
+                    <Price p={plan.price} />
+                  )}
                 </div>
 
                 {/* Divider */}

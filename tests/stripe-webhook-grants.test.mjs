@@ -9,7 +9,7 @@ const code = ts.transpileModule(source, {compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
 }}).outputText;
 
-function harness({missingTable = false, failGrantOnce = false, currentSubscriptionStatus = 'active'} = {}) {
+function harness({missingTable = false, failGrantOnce = false, currentSubscriptionStatus = 'active', interval = undefined} = {}) {
   const claimed = new Set();
   const grants = [];
   const profile = {id: 'user', tier: 'free', stripe_customer_id: 'cus', stripe_subscription_id: null};
@@ -61,7 +61,8 @@ function harness({missingTable = false, failGrantOnce = false, currentSubscripti
     'next/server': {NextResponse},
     '@/lib/stripe': {getStripe: () => ({webhooks: {constructEvent: payload => JSON.parse(payload)},
       subscriptions: {retrieve: async id => ({id, status: subscriptionStatus, latest_invoice: latestInvoiceId,
-        pause_collection: paused ? {behavior: 'void', resumes_at: 1} : null})}})},
+        pause_collection: paused ? {behavior: 'void', resumes_at: 1} : null,
+        ...(interval ? {items: {data: [{price: {recurring: {interval}}}]}} : {})})}})},
     '@/lib/supabase/admin': {createAdminClient: () => admin},
     '@/lib/tier': {SPARKS_ALLOWANCE: {free: 150, pro: 500}},
   };
@@ -275,4 +276,29 @@ test('a voided invoice does NOT downgrade a subscription that is not paused, or 
   h.setPaused(true);
   await h.send(voided('evt_void_other', 'manual'));
   assert.equal(h.profile.tier, 'pro');
+});
+
+test('a paid yearly subscription is recorded as yearly (so its Sparks are refilled monthly); a monthly one stays monthly', async () => {
+  const yearly = harness({interval: 'year'});
+  await yearly.send(invoice('evt_year', 'subscription_create'));
+  assert.equal(yearly.profile.tier, 'pro');
+  assert.equal(yearly.profile.billing_interval, 'year');
+  assert.equal(yearly.grants.length, 1);
+  const monthly = harness({interval: 'month'});
+  await monthly.send(invoice('evt_month', 'subscription_create'));
+  assert.equal(monthly.profile.billing_interval, 'month');
+  const unknown = harness(); // price not visible on the object: treated as monthly, never as yearly
+  await unknown.send(invoice('evt_unknown', 'subscription_create'));
+  assert.equal(unknown.profile.billing_interval, 'month');
+});
+
+test('the yearly renewal a year later grants a fresh allotment once, like any paid cycle', async () => {
+  const h = harness({interval: 'year'});
+  await h.send(invoice('evt_y1', 'subscription_create'));
+  h.spend(400);
+  await h.send(invoice('evt_y2', 'subscription_cycle'));
+  assert.equal(h.balance, 500);
+  assert.equal(h.grants.length, 2);
+  await h.send(invoice('evt_y2_again', 'subscription_cycle', 'evt_y2')); // same invoice, new event id
+  assert.equal(h.grants.length, 2);
 });

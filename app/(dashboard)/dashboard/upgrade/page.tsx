@@ -6,6 +6,7 @@ import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import { vodsPhrase } from "@/lib/sparks";
 import CancelFlow from "@/components/CancelFlow";
+import { MONTHLY_PRICE_USD, YEARLY_PER_MONTH_USD, YEARLY_PRICE_USD, YEARLY_SAVE_PERCENT } from "@/lib/pricing";
 
 function Check() {
   return (
@@ -75,6 +76,7 @@ export default function UpgradePage() {
   const [error, setError] = useState<string | null>(null);
   const [billingSetupNeeded, setBillingSetupNeeded] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [yearly, setYearly] = useState(true);
 
   const allowance = SPARKS_ALLOWANCE[tier];
   const used = balance !== null ? Math.min(allowance, Math.max(0, allowance - balance)) : 0;
@@ -85,7 +87,11 @@ export default function UpgradePage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interval: yearly ? "year" : "month" }),
+      });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.url) {
         throw new Error(data?.error ?? `Checkout failed (HTTP ${res.status}).`);
@@ -191,10 +197,38 @@ export default function UpgradePage() {
               🔥 Limited early adopter pricing
             </p>
           )}
-          <div className="flex items-end gap-1.5 mb-3">
-            <span className="font-syne text-4xl font-bold text-accent">$28</span>
-            <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
-          </div>
+          {!isPro && (
+            <div className="mb-3 flex items-center gap-3 text-xs">
+              <span className={yearly ? "text-foreground-muted" : "font-semibold text-foreground"}>Monthly</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={yearly}
+                aria-label="Bill yearly"
+                onClick={() => setYearly((v) => !v)}
+                className={`relative h-5 w-9 rounded-full border transition-colors ${yearly ? "border-accent/50 bg-accent-glow" : "border-border bg-surface-2"}`}
+              >
+                <span className={`absolute top-0.5 block h-3.5 w-3.5 rounded-full transition-all ${yearly ? "left-4 bg-accent" : "left-0.5 bg-foreground-muted"}`} />
+              </button>
+              <span className={yearly ? "font-semibold text-foreground" : "text-foreground-muted"}>Yearly</span>
+              <span className="font-semibold text-accent">Save {YEARLY_SAVE_PERCENT}%</span>
+            </div>
+          )}
+          {!isPro && yearly ? (
+            <div className="mb-3">
+              <div className="flex items-end gap-2">
+                <span className="font-syne text-4xl font-bold text-accent">${YEARLY_PER_MONTH_USD}</span>
+                <span className="mb-1.5 text-base text-foreground-muted line-through">${MONTHLY_PRICE_USD}</span>
+                <span className="mb-1.5 text-sm text-foreground-muted">USD/mo</span>
+              </div>
+              <p className="text-xs text-foreground-muted">Billed ${YEARLY_PRICE_USD} a year</p>
+            </div>
+          ) : (
+            <div className="flex items-end gap-1.5 mb-3">
+              <span className="font-syne text-4xl font-bold text-accent">${MONTHLY_PRICE_USD}</span>
+              <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
+            </div>
+          )}
 
           {/* Savings badge */}
           <div className="mb-5 px-3 py-2 rounded-lg bg-accent-glow border border-accent/30">

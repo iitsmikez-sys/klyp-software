@@ -5,6 +5,8 @@
  * grant or a cancellation never arrived), reads their real state from Stripe and
  * applies it with the same idempotent rules as the webhook (lib/stripe-sync.ts).
  *
+ * The same daily run also tops up yearly subscribers' monthly Sparks (lib/yearly-refill.ts).
+ *
  * Protected by CRON_SECRET, sent as "Authorization: Bearer <secret>" (which is what
  * Vercel Cron does when CRON_SECRET is set). Nothing schedules this for you: add a
  * daily cron entry for /api/stripe/reconcile yourself (see .env.example).
@@ -14,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reconcileStuckPro, type StripeSyncClient } from "@/lib/stripe-sync";
+import { refillYearlySparks, type RefillStripe } from "@/lib/yearly-refill";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -39,7 +42,18 @@ async function handle(req: NextRequest) {
       admin: createAdminClient() as never,
     });
     if (summary.failed > 0) console.error("[stripe reconcile] failures:", summary.errors);
-    return NextResponse.json({ ok: true, ...summary });
+    // The same daily run tops up yearly subscribers' monthly Sparks. A failure here must not hide the
+    // reconcile result above (or the other way round), so it reports its own outcome.
+    let yearlyRefill: unknown;
+    try {
+      const refill = await refillYearlySparks({ stripe: getStripe() as unknown as RefillStripe, admin: createAdminClient() as never });
+      if (refill.failed > 0) console.error("[yearly refill] failures:", refill.errors);
+      yearlyRefill = refill;
+    } catch (err) {
+      console.error("[yearly refill] failed:", err);
+      yearlyRefill = { error: err instanceof Error ? err.message : "Yearly refill failed." };
+    }
+    return NextResponse.json({ ok: true, ...summary, yearlyRefill });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Reconcile failed." }, { status: 500 });
   }

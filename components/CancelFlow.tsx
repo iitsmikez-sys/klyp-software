@@ -11,6 +11,7 @@ type State = {
   discountEligible: boolean;
   discountAvailableOn: string | null;
   nextAmountCents: number;
+  billingInterval?: "month" | "year";
 };
 type Step = "survey" | "offer" | "confirm_cancel" | "done_pause" | "done_discount" | "done_cancel";
 type Done = { proUntil?: string; resumesOn?: string; accessUntil?: string; nextBillingDate?: string };
@@ -94,6 +95,18 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
 
   const renderOffer = () => {
     if (!reason) return null;
+    if (state?.billingInterval === "year") {
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2 rounded-xl border border-border bg-surface-2 p-4 text-sm text-foreground-muted">
+            <p className="font-semibold text-foreground">Thanks for telling us.</p>
+            <p>Your yearly plan runs until <b className="text-foreground">{day(state.periodEnd)}</b>. If you cancel, you keep Pro and your monthly Sparks until then.</p>
+          </div>
+          <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>Keep Pro</button>
+          <button type="button" className={quiet} disabled={!!busy} onClick={goCancel}>Continue cancellation</button>
+        </div>
+      );
+    }
     const pauseCard = (
       <div className="space-y-4 rounded-xl border border-border bg-surface-2 p-4">
         <p className="text-sm font-semibold text-foreground">Pause instead of cancelling</p>
@@ -240,7 +253,7 @@ export default function CancelFlow({ onClose }: { onClose: () => void }) {
               {busy ?? "Confirm cancellation"}
             </button>
             <button type="button" className={secondary} disabled={!!busy} onClick={onClose}>Keep Pro</button>
-            {(reason === "break" || reason === "not_using") && (
+            {(reason === "break" || reason === "not_using") && state?.billingInterval !== "year" && (
               <button type="button" className={quiet} disabled={!!busy} onClick={() => { setError(null); setStep("offer"); }}>Pause instead</button>
             )}
           </>
