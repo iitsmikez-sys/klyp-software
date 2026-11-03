@@ -89,12 +89,12 @@ export function describeLimits(plan: PlanName) {
 }
 
 /**
- * Which Claude model picks the clip-worthy moments in a VOD. Pro keeps Opus 4.8. Free uses Sonnet 5.5, which
- * found the same moments in side-by-side tests at roughly half the cost. Change either without a code change:
- * set FREE_ANALYSIS_MODEL or PRO_ANALYSIS_MODEL to one of the models below (FREE_ANALYSIS_MODEL=claude-opus-4-8
- * puts Free back on Opus).
+ * Which Claude model picks the clip-worthy moments in a VOD. Free and Pro both use Sonnet 5.5, which found the
+ * same big moments as Opus 4.8 in side-by-side tests at roughly 40% of the cost. Change either plan without a
+ * code change: set FREE_ANALYSIS_MODEL or PRO_ANALYSIS_MODEL to one of the models below (for example
+ * PRO_ANALYSIS_MODEL=claude-opus-4-8 puts Pro back on Opus).
  */
-export const PRO_ANALYSIS_MODEL = "claude-opus-4-8";
+export const PRO_ANALYSIS_MODEL = "claude-sonnet-5-5";
 export const FREE_ANALYSIS_MODEL = "claude-sonnet-5-5";
 export const ANALYSIS_MODELS = ["claude-opus-4-8", "claude-opus-5-5", "claude-sonnet-5-5"] as const;
 

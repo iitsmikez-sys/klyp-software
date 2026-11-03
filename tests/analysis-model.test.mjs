@@ -6,18 +6,19 @@ import { resultCacheKey } from "../lib/analysis-result-cache.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 
-test("Free analyses use Sonnet 5.5 and Pro keeps Opus 4.8", () => {
+test("Free and Pro analyses both use Sonnet 5.5", () => {
   assert.equal(FREE_ANALYSIS_MODEL, "claude-sonnet-5-5");
-  assert.equal(PRO_ANALYSIS_MODEL, "claude-opus-4-8");
+  assert.equal(PRO_ANALYSIS_MODEL, "claude-sonnet-5-5");
   assert.equal(analysisModelFor(false, {}), "claude-sonnet-5-5");
-  assert.equal(analysisModelFor(true, {}), "claude-opus-4-8");
+  assert.equal(analysisModelFor(true, {}), "claude-sonnet-5-5");
 });
 
 test("each side can be changed with a setting, but only to a known model", () => {
   assert.equal(analysisModelFor(false, { FREE_ANALYSIS_MODEL: "claude-opus-4-8" }), "claude-opus-4-8");
-  assert.equal(analysisModelFor(true, { PRO_ANALYSIS_MODEL: " claude-sonnet-5-5 " }), "claude-sonnet-5-5");
+  assert.equal(analysisModelFor(true, { PRO_ANALYSIS_MODEL: " claude-opus-4-8 " }), "claude-opus-4-8");
   assert.equal(analysisModelFor(false, { FREE_ANALYSIS_MODEL: "gpt-4" }), "claude-sonnet-5-5", "an unknown value is ignored");
-  assert.equal(analysisModelFor(true, { FREE_ANALYSIS_MODEL: "claude-opus-5-5" }), "claude-opus-4-8", "the Free setting never changes Pro");
+  assert.equal(analysisModelFor(true, { FREE_ANALYSIS_MODEL: "claude-opus-5-5" }), "claude-sonnet-5-5", "the Free setting never changes Pro");
+  assert.equal(analysisModelFor(false, { PRO_ANALYSIS_MODEL: "claude-opus-4-8" }), "claude-sonnet-5-5", "the Pro setting never changes Free");
 });
 
 test("cached results keep their old key for Opus 4.8, and a different model gets its own", () => {
@@ -27,7 +28,8 @@ test("cached results keep their old key for Opus 4.8, and a different model gets
   assert.notEqual(resultCacheKey({ ...input, model: "claude-sonnet-5-5" }), before);
 });
 
-test("the analyze route picks the model by plan, and the picker defaults to Opus 4.8 when nobody asks", () => {
+test("the analyze route and the auto-clip worker pick the model by plan", () => {
+  assert.ok(read("lib/vod-poll.ts").includes("model: analysisModelFor(true),"));
   assert.ok(read("app/api/analyze/route.ts").includes('model: analysisModelFor(plan === "pro"),'));
   const pipeline = read("lib/analyze-pipeline.ts");
   assert.ok(pipeline.includes('model: string = "claude-opus-4-8"'));
