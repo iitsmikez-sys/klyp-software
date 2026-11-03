@@ -4,6 +4,7 @@ import { outputDuration, type CaptionCue, type SourceSegment, type ResolvedCutaw
 import { timeToPixels, type EditorThumbnail } from '@/lib/editor-preview';
 import { groupCaptionCues } from '@/lib/editor-caption-groups';
 import type { FocusSpan } from '@/lib/editor-focus';
+import { SNAP_PX, nearestSnap, timelineSnapPoints } from '@/lib/editor-timeline-snap';
 export type TimelineSelection = {type:'video' | 'caption' | 'cutaway' | 'insert'; id:string} | null;
 export type EditorTimelineProps = {
  segments: SourceSegment[]; captions: CaptionCue[]; hook: string; outputTime: number;
@@ -18,8 +19,10 @@ export type EditorTimelineProps = {
  clampInsert?: (id:string,lengthMs:number)=>number; onResizeInsert?: (id:string,lengthMs:number)=>void;
  clampCutaway?: (id:string,startMs:number,endMs:number)=>{startMs:number;endMs:number}; onResizeCutaway?: (id:string,startMs:number,endMs:number)=>void;
 };
+const MAX_ZOOM=8;
 export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],inserts=[],focusSpans=[],selection,onSelect,onSeek,onTrim,clampInsert,onResizeInsert,clampCutaway,onResizeCutaway}:EditorTimelineProps) {
  const [resize,setResize]=useState<{kind:'insert'|'cutaway';id:string;startMs:number;endMs:number}|null>(null);
+ const [snapAt,setSnapAt]=useState<number|null>(null);
  const shown=(kind:'insert'|'cutaway',id:string,startMs:number,endMs:number)=>resize&&resize.kind===kind&&resize.id===id?{startMs:resize.startMs,endMs:resize.endMs}:{startMs,endMs};
  const [height,setHeight]=useState(248),[collapsed,setCollapsed]=useState(false);
  const drag=useRef<{y:number;height:number}|null>(null);
@@ -36,6 +39,13 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
  const rulerStep=[1,2,5,10,15,30,60].find(step=>step*scale>=65)??60;
  const position=(event:React.PointerEvent)=>{const rect=track.current!.getBoundingClientRect();return Math.max(0,Math.min(duration,(event.clientX-rect.left)/scale));};
  const seek=(event:React.PointerEvent)=>{onSeek(position(event));};
+ /** Zoom while keeping the playhead where it is on screen. */
+ const changeZoom=(next:number)=>{const clamped=Math.min(MAX_ZOOM,Math.max(1,Math.round(next*4)/4));const node=viewport.current;
+  const before=outputTime*scale-(node?.scrollLeft??0);const newScale=timeToPixels(1,availableWidth/Math.max(duration,.1),clamped);
+  setZoom(clamped);if(node)requestAnimationFrame(()=>{node.scrollLeft=clamped===1?0:Math.max(0,outputTime*newScale-before);});};
+ /** The nearest place a dragged edge clicks into (playhead, clip ends, cuts, inserts, overlays) within 8 pixels. */
+ const snap=(seconds:number)=>nearestSnap(timelineSnapPoints({segments,inserts,cutaways,duration,outputTime}),seconds,scale);
+ const outputRangeOf=(id:string)=>{let at=0;for(const s of segments){const length=s.end_seconds-s.start_seconds;if(s.id===id)return {start:at,end:at+length};at+=length+inserts.filter(i=>i.after_segment_id===s.id).reduce((n,i)=>n+(i.end_ms-i.start_ms)/1000,0);}return null;};
  let sourceOffset=0;
  const coveredSegments=segments.map((segment,index)=>{
   const start=sourceOffset;sourceOffset+=segment.end_seconds-segment.start_seconds;
@@ -49,8 +59,14 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
   event.stopPropagation();cancelTrim.current?.();const element=event.currentTarget;element.setPointerCapture(event.pointerId);
   const initialX=event.clientX; const index=segments.findIndex(s=>s.id===segment.id); const lower=index?segments[index-1].end_seconds:sourceStart; const upper=segments[index+1]?.start_seconds ?? sourceEnd;
   let lastX: number | null = null;
-  const move=(e:PointerEvent)=>{if(e.clientX===lastX)return;lastX=e.clientX;const delta=(e.clientX-initialX)/scale;const start=edge==='start'?Math.min(segment.end_seconds-.1,Math.max(lower,segment.start_seconds+delta)):segment.start_seconds;const end=edge==='end'?Math.max(segment.start_seconds+.1,Math.min(upper,segment.end_seconds+delta)):segment.end_seconds;setActiveTrim({edge,start,end});onTrim(segment.id,start,end);};
-  const cleanup=()=>{element.removeEventListener('pointermove',move);element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);cancelTrim.current=null;setActiveTrim(null);};
+  const move=(e:PointerEvent)=>{if(e.clientX===lastX)return;lastX=e.clientX;const delta=(e.clientX-initialX)/scale;let start=edge==='start'?Math.min(segment.end_seconds-.1,Math.max(lower,segment.start_seconds+delta)):segment.start_seconds;let end=edge==='end'?Math.max(segment.start_seconds+.1,Math.min(upper,segment.end_seconds+delta)):segment.end_seconds;
+   // Clicks into the playhead when it sits inside this clip and the dragged edge comes within 8 pixels of it.
+   const range=outputRangeOf(segment.id);let guide:number|null=null;
+   if(range&&outputTime>=range.start&&outputTime<=range.end){const playheadSource=segment.start_seconds+(outputTime-range.start);
+    if(edge==='start'&&Math.abs(start-playheadSource)*scale<=SNAP_PX&&playheadSource>=lower&&playheadSource<=segment.end_seconds-.1){start=playheadSource;guide=outputTime;}
+    if(edge==='end'&&Math.abs(end-playheadSource)*scale<=SNAP_PX&&playheadSource<=upper&&playheadSource>=segment.start_seconds+.1){end=playheadSource;guide=outputTime;}}
+   setSnapAt(guide);setActiveTrim({edge,start,end});onTrim(segment.id,start,end);};
+  const cleanup=()=>{element.removeEventListener('pointermove',move);element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);cancelTrim.current=null;setActiveTrim(null);setSnapAt(null);};
   const finish=(e:PointerEvent)=>{move(e);cleanup();};
   cancelTrim.current=cleanup;
   setActiveTrim({edge,start:segment.start_seconds,end:segment.end_seconds});
@@ -63,11 +79,15 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
   const element=event.currentTarget;element.setPointerCapture(event.pointerId);
   const initialX=event.clientX;let latest={startMs,endMs};
   const compute=(clientX:number)=>{const delta=((clientX-initialX)/scale)*1000;
-   if(kind==='insert'){const wanted=endMs-startMs+delta;const length=clampInsert?clampInsert(id,wanted):wanted;return {startMs,endMs:startMs+length};}
-   const wantedStart=Math.round(edge==='start'?startMs+delta:startMs),wantedEnd=Math.round(edge==='end'?endMs+delta:endMs);
-   return clampCutaway?clampCutaway(id,wantedStart,wantedEnd):{startMs:wantedStart,endMs:wantedEnd};};
+   // The dragged edge clicks into the playhead or a nearby cut; the guide line shows where.
+   if(kind==='insert'){const wantedEnd=snap((endMs+delta)/1000);const wanted=wantedEnd.value*1000-startMs;const length=clampInsert?clampInsert(id,wanted):wanted;
+    setSnapAt(wantedEnd.hit&&Math.abs(startMs+length-wantedEnd.value*1000)<1?wantedEnd.value:null);return {startMs,endMs:startMs+length};}
+   const target=snap((edge==='start'?startMs+delta:endMs+delta)/1000);
+   const wantedStart=Math.round(edge==='start'?target.value*1000:startMs),wantedEnd=Math.round(edge==='end'?target.value*1000:endMs);
+   const result=clampCutaway?clampCutaway(id,wantedStart,wantedEnd):{startMs:wantedStart,endMs:wantedEnd};
+   const edgeNow=edge==='start'?result.startMs:result.endMs;setSnapAt(target.hit&&Math.abs(edgeNow-target.value*1000)<1?target.value:null);return result;};
   const move=(e:PointerEvent)=>{latest=compute(e.clientX);setResize({kind,id,...latest});};
-  const cleanup=()=>{element.removeEventListener('pointermove',move);element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);setResize(null);cancelTrim.current=null;};
+  const cleanup=()=>{element.removeEventListener('pointermove',move);element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);setResize(null);setSnapAt(null);cancelTrim.current=null;};
   const finish=(e:PointerEvent)=>{latest=compute(e.clientX);cleanup();
    if(kind==='insert'){if(latest.endMs-latest.startMs!==endMs-startMs)onResizeInsert?.(id,latest.endMs-latest.startMs);}
    else if(latest.startMs!==startMs||latest.endMs!==endMs)onResizeCutaway?.(id,latest.startMs,latest.endMs);};
@@ -99,7 +119,7 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
      <button type="button" aria-label={`Trim end of source clip ${index+1}`} onPointerDown={e=>trim(e,s,'end')} onKeyDown={e=>handleKey(e,s,'end')}>Trim end</button>
     </fieldset>)}
    </div></details>}
-   <label>Zoom <input aria-label="Timeline zoom" type="range" min="1" max="4" step="0.25" value={zoom} onChange={e=>setZoom(Number(e.target.value))}/></label></div>
+   </div>
   {selectedCaptionGroup&&<div className="editor-caption-detail" aria-label="Selected caption words"><strong>Words</strong><div className="editor-caption-words">{selectedCaptionGroup.cues.map(cue=><button key={cue.id} type="button" aria-pressed={selection?.type==='caption'&&selection.id===cue.id} title={`${(cue.start_ms/1000).toFixed(1)}s – ${(cue.end_ms/1000).toFixed(1)}s`} onClick={()=>{onSelect({type:'caption',id:cue.id});onSeek(cue.start_ms/1000);}}>{cue.text}</button>)}</div><button type="button" className="editor-caption-detail-close" aria-label="Close caption words" onClick={()=>onSelect(null)}>Done</button></div>}
   <div aria-label="Short segment controls" className="editor-short-segments">
    {segments.filter(s=>(s.end_seconds-s.start_seconds)*scale<44||s.end_seconds-s.start_seconds<1.1).map((s,index)=><fieldset key={s.id}>
@@ -110,6 +130,13 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
    </fieldset>)}
   </div>
   <div className="editor-track-layout"><div className="editor-track-labels" aria-hidden="true">{focusSpans.length>0&&<p>Focus</p>}<p>Overlay</p><p>Video</p>{captions.length>0&&<p>Captions</p>}{(!!peaks?.length||mediaLoading)&&<p className="editor-audio-track-label">Audio</p>}{!!hook&&<p>Hook</p>}</div>
+   <div className="editor-zoom-controls" role="group" aria-label="Timeline zoom controls">
+    <button type="button" aria-label="Fit whole clip in view" disabled={zoom===1} onClick={()=>changeZoom(1)}>Fit all</button>
+    <button type="button" aria-label="Zoom out" disabled={zoom<=1} onClick={()=>changeZoom(zoom-.5)}>–</button>
+    <input aria-label="Timeline zoom" type="range" min="1" max={MAX_ZOOM} step="0.25" value={zoom} onChange={e=>changeZoom(Number(e.target.value))}/>
+    <button type="button" aria-label="Zoom in" disabled={zoom>=MAX_ZOOM} onClick={()=>changeZoom(zoom+.5)}>+</button>
+    <span aria-live="polite">{zoom.toFixed(zoom%1?2:0)}×</span>
+   </div>
    <div ref={viewport} className="editor-track-scroll overflow-x-auto"><div ref={track} style={{width, minWidth:1,position:'relative'}}>
     <div className="editor-ruler" onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);seek(e);}} onPointerMove={e=>{if(e.buttons===1)seek(e);}}>
      {Array.from({length:Math.ceil(duration/(rulerStep))},(_,i)=>{const seconds=i*(rulerStep);return <span key={i} style={{left:seconds*scale}}>{Math.floor(seconds/60).toString().padStart(2,'0')}:{(seconds%60).toString().padStart(2,'0')}</span>;})}
@@ -134,6 +161,7 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
     {captionGroups.length>0&&<div aria-label="Caption lane" className="editor-lane editor-caption-lane">{captionGroups.map((group,index)=><button key={group.id} type="button" style={blockStyle(group.start_ms/1000,group.end_ms/1000)} className="editor-caption-group" aria-label={`Open caption phrase ${index+1}: ${group.text}`} title={group.text} aria-pressed={selectedCaptionGroup?.id===group.id} onClick={()=>{onSelect({type:'caption',id:group.cues[0].id});onSeek(group.start_ms/1000);}}><span>{group.text}</span></button>)}</div>}
     {(!!peaks?.length||mediaLoading)&&<div aria-label="Audio lane" className="editor-lane editor-audio-lane">{peaks?.length?<svg width={width} height="26" role="img" aria-label="Source audio waveform" preserveAspectRatio="none" viewBox={`0 0 ${peaks.length} 2`}><path className="editor-waveform-center" d={`M0 1 H${peaks.length}`}/><path className="editor-waveform-envelope" d={`M0 1 ${peaks.map((p,i)=>`L${i+.5} ${(1-p*.28).toFixed(3)}`).join(' ')} L${peaks.length} 1 ${peaks.map((_,i)=>`L${peaks.length-i-.5} ${(1+peaks[peaks.length-i-1]*.28).toFixed(3)}`).join(' ')} Z`}/></svg>:<span>{mediaLoading?'Loading audio…':'Waveform unavailable'}</span>}</div>}
     {!!hook&&<div aria-label="Hook lane" className="editor-lane">{hook && <div className="editor-hook-block" style={blockStyle(0,Math.min(3,duration))}>{hook}</div>}</div>}
+    {snapAt!==null&&<div aria-hidden="true" className="editor-snap-line" style={{left:snapAt*scale}}/>}
     <div aria-hidden="true" className="editor-playhead" style={{left:outputTime*scale}}><span style={{transform:outputTime*scale<24?'none':outputTime*scale>width-24?'translateX(-100%)':'translateX(-50%)'}}>{Math.floor(outputTime/60).toString().padStart(2,'0')}:{Math.floor(outputTime%60).toString().padStart(2,'0')}</span></div>
    </div></div>
   </div>
