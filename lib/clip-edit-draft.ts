@@ -24,7 +24,7 @@ export type ClipEditDraftV1 = {
 
 export type ClipEditDraftV2 = Omit<ClipEditDraftV1, "version"> & {
  version: 2; segments: SourceSegment[]; caption_cues: CaptionCue[] | null;
- caption_color: "white" | "yellow" | "green" | "pink";
+ caption_color: "white" | "yellow" | "green" | "pink" | "blue";
  caption_position: "top" | "center" | "bottom";
  caption_font?: CaptionFont;
  audio_polish?: AudioPolish;
@@ -191,7 +191,7 @@ function validateV2(input: Record<string, unknown>, clip: ClipSource): ClipEditD
  if (input.start_seconds !== start || input.end_seconds !== end) throw new ClipEditDraftError("Trim must match the kept segment envelope.");
  // The single-range duration rule must not count removed spans.
  const common = validateClipEditDraft({ ...input, version: 1, start_seconds: start, end_seconds: Math.min(end, start + 180) }, clip) as ClipEditDraftV1;
- if (!["white", "yellow", "green", "pink"].includes(input.caption_color as string) || !["top", "center", "bottom"].includes(input.caption_position as string)) throw new ClipEditDraftError("Invalid caption appearance.");
+ if (!["white", "yellow", "green", "pink", "blue"].includes(input.caption_color as string) || !["top", "center", "bottom"].includes(input.caption_position as string)) throw new ClipEditDraftError("Invalid caption appearance.");
  if (input.caption_font !== undefined && !(CAPTION_FONTS as readonly unknown[]).includes(input.caption_font)) throw new ClipEditDraftError("Invalid caption font.");
  if (input.audio_polish !== undefined && !(AUDIO_POLISH as readonly unknown[]).includes(input.audio_polish)) throw new ClipEditDraftError("Invalid audio polish setting.");
  let cues: CaptionCue[] | null = null;

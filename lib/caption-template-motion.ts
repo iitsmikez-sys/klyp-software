@@ -27,6 +27,10 @@ export function captionMotion(style: CaptionStyle, elapsedMs: number): CaptionMo
     scale: 1, yOffset: 55 * (1 - progress(elapsedMs, 220)),
     alpha: progress(elapsedMs, 180),
   };
+  if (style === "POP") return {
+    scale: elapsedMs < 90 ? 0.7 + 0.45 * progress(elapsedMs, 90) : 1.15 - 0.15 * progress(elapsedMs - 90, 110),
+    yOffset: 0, alpha: progress(elapsedMs, 50),
+  };
   if (style === "SPARK") return {
     scale: 0.82 + 0.18 * progress(elapsedMs, 140), yOffset: 0,
     alpha: progress(elapsedMs, 60),
@@ -41,6 +45,7 @@ export function captionAssMotion(
   if (style === "PULSE") return "{\\fscx72\\fscy72\\t(0,180,\\fscx100\\fscy100)\\fad(80,0)}";
   if (style === "BOUNCE") return "{\\fscx58\\fscy58\\t(0,110,\\fscx110\\fscy110)\\t(110,250,\\fscx100\\fscy100)\\fad(65,0)}";
   if (style === "GLOW") return "{\\fscx95\\fscy95\\t(0,220,\\fscx100\\fscy100)\\fad(180,0)}";
+  if (style === "POP") return "{\\fscx70\\fscy70\\t(0,90,\\fscx115\\fscy115)\\t(90,200,\\fscx100\\fscy100)\\fad(50,0)}";
   if (style === "SPARK") return "{\\fscx82\\fscy82\\t(0,140,\\fscx100\\fscy100)\\fad(60,0)}";
   if (style === "SLIDE") {
     const scale = height / 1920;

@@ -14,6 +14,7 @@ import type { CaptionOptions } from "./editor-captions";
 import type { CaptionFont } from "./clip-edit-draft.ts";
 import type { TextPlacement } from "./text-placement.ts";
 import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
+import { isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
@@ -143,6 +144,12 @@ const STYLE_PARAMS: Record<
   GLOW: { fontSize: 72, color: "&H00FF99FF", bold: 1, outline: 3, shadow: 7 },
   COMIC: { fontSize: 76, color: "&H0000DFFF", bold: 1, italic: 1, outline: 7, shadow: 2 },
   KEYWORD: { fontSize: 66, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 1 },
+  // White phrase, the word being said turns red; thick outline and a hard shadow.
+  HYPE: { fontSize: 82, color: "&H00FFFFFF", bold: 1, outline: 6, shadow: 4 },
+  // One huge word at a time; yellow unless the person picks light blue or white.
+  POP: { fontSize: 120, color: "&H004AE9FF", bold: 1, outline: 8, shadow: 4 },
+  // White phrase, neon green word, and an emoji that matches what is said.
+  FIRE: { fontSize: 68, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
 };
 
 /**
@@ -171,8 +178,8 @@ function styleBlock(style: CaptionStyle, res: PlayRes, bottomInset = 0, options?
   const position = options?.position ?? 'BOTTOM';
   const marginV = position === 'CENTER' ? 0 : Math.round((position === 'TOP' ? 400 : 80) * scale + (position === 'BOTTOM' ? bottomInset : 0));
   const alignment = position === 'TOP' ? 8 : position === 'CENTER' ? 5 : 2;
-  const colors = { WHITE: '#FFFFFF', YELLOW: '#FFE14D', GREEN: '#4ADE80', PINK: '#FF7AB8' };
-  const hex = style !== 'COMIC' && style !== 'KEYWORD' && options?.color && options.color !== 'DEFAULT' ? colors[options.color] : null;
+  const colors = { WHITE: '#FFFFFF', YELLOW: '#FFE14D', GREEN: '#4ADE80', PINK: '#FF7AB8', BLUE: '#5FD6FF' };
+  const hex = !hasFixedPalette(style) && options?.color && options.color !== 'DEFAULT' ? colors[options.color] : null;
   const color = hex ? '&H00' + hex.slice(5,7) + hex.slice(3,5) + hex.slice(1,3) : p.color;
   return [
     "[V4+ Styles]",
@@ -216,25 +223,32 @@ export function keywordAtTime(elapsedMs: number, durationMs: number, wordCount: 
   return Math.min(wordCount - 1, Math.max(0, Math.floor(Math.max(0, elapsedMs) * wordCount / Math.max(1, durationMs))));
 }
 
-function keywordAssText(lines: string[], activeIndex: number): string {
+/** Fire's emoji: a flat icon after the last word, tinted per emoji, in the bundled emoji font. */
+function emojiAssText(emoji: { char: string; color: string } | null): string {
+  return emoji ? ` {\\fn${EMOJI_FONT}\\c${assColorOf(emoji.color)}}${emoji.char}` : "";
+}
+
+function keywordAssText(lines: string[], activeIndex: number, style: CaptionStyle = "KEYWORD", emoji: { char: string; color: string } | null = null): string {
   let offset = 0;
-  return lines.map(line => {
+  const active = highlightColor(style).ass;
+  return lines.map((line, lineIndex) => {
     const words = line.split(/\s+/).filter(Boolean);
     const colored = words.map((word, index) => offset + index === activeIndex
-      ? `{\\c&H00A0E500&}${word}{\\c&H00FFFFFF&}` : word).join(" ");
+      ? `{\\c${active}}${word}{\\c&H00FFFFFF&}` : word).join(" ");
     offset += words.length;
-    return colored;
+    return colored + (lineIndex === lines.length - 1 ? emojiAssText(emoji) : "");
   }).join("\\N");
 }
 
-function keywordDialogues(startMs: number, endMs: number, lines: string[]): string[] {
+function keywordDialogues(startMs: number, endMs: number, lines: string[], style: CaptionStyle = "KEYWORD"): string[] {
   const count = lines.join(" ").split(/\s+/).filter(Boolean).length;
   if (!count) return [];
   const events: string[] = [];
+  const emoji = style === "FIRE" ? emojiForText(lines.join(" ")) : null;
   for (let index = 0; index < count; index++) {
     const start = Math.round(startMs + (endMs - startMs) * index / count);
     const end = Math.round(startMs + (endMs - startMs) * (index + 1) / count);
-    if (end > start) events.push(dialogue(start, end, keywordAssText(lines, index)));
+    if (end > start) events.push(dialogue(start, end, keywordAssText(lines, index, style, emoji)));
   }
   return events;
 }
@@ -262,14 +276,13 @@ export function generateAss(
   const options = typeof bottomInsetOrOptions === 'number' ? captionOptions : bottomInsetOrOptions;
   const sections = [assHeader(res), "", styleBlock(style, res, bottomInset, options), "", EVENTS_HEADER];
 
-  // KLYP and SPARK show one word at a time; other styles show small word groups.
-  const cues = buildCaptionCues(words, clipStartMs, clipEndMs,
-    style === "KLYP" || style === "SPARK" ? 1 : CUE_MAX_WORDS);
+  // KLYP, SPARK and POP show one word at a time; other styles show small word groups.
+  const cues = buildCaptionCues(words, clipStartMs, clipEndMs, isOneWordStyle(style) ? 1 : CUE_MAX_WORDS);
   for (const cue of cues) {
-    const text = sanitizeAssText(style === "KLYP" || style === "SPARK" ? cue.text.toUpperCase() : cue.text);
+    const text = sanitizeAssText(isUppercaseStyle(style) ? cue.text.toUpperCase() : cue.text);
     const wrapped = composed ? wrapCaptionText(text, style).join("\\N") : text;
-    if (style === "KEYWORD") sections.push(...keywordDialogues(cue.startMs, cue.endMs,
-      composed ? wrapCaptionText(text, style) : [text]));
+    if (isHighlightStyle(style)) sections.push(...keywordDialogues(cue.startMs, cue.endMs,
+      composed ? wrapCaptionText(text, style) : [text], style));
     else sections.push(dialogue(cue.startMs, cue.endMs,
       captionAssMotion(style, res.w, res.h, options?.position ?? "BOTTOM") + wrapped));
   }
@@ -418,8 +431,8 @@ export function toFfmpegPath(p: string): string {
 
 export type CaptionAppearance = { color: string; assColor: string; anchorY: number; alignment: 8 | 5 | 2; transform?: TextPlacement };
 /** Shared normalized anchors use the caption-safe rectangle supplied by the layout. */
-export function captionAppearance(draft: { caption_color: "white" | "yellow" | "green" | "pink"; caption_position: "top" | "center" | "bottom"; caption_placement?: TextPlacement }): CaptionAppearance {
- const color = { white: "#FFFFFF", yellow: "#FFE14D", green: "#4ADE80", pink: "#FF7AB8" }[draft.caption_color];
+export function captionAppearance(draft: { caption_color: "white" | "yellow" | "green" | "pink" | "blue"; caption_position: "top" | "center" | "bottom"; caption_placement?: TextPlacement }): CaptionAppearance {
+ const color = { white: "#FFFFFF", yellow: "#FFE14D", green: "#4ADE80", pink: "#FF7AB8", blue: "#5FD6FF" }[draft.caption_color];
  return { color, assColor: `&H00${color.slice(5,7)}${color.slice(3,5)}${color.slice(1,3)}`,
  anchorY: draft.caption_position === "top" ? 80/1920 : draft.caption_position === "center" ? 0.5 : 1-80/1920,
  alignment: draft.caption_position === "top" ? 8 : draft.caption_position === "center" ? 5 : 2,
@@ -436,12 +449,13 @@ export function generateTimedCueAss(
  font: CaptionFont = "sans",
 ): string {
  const textScale=appearance.transform?.scale ?? 1;
- const styles = style === "COMIC" || style === "KEYWORD" ? styleBlock(style, res, 0, undefined, font, textScale)
+ const styles = hasFixedPalette(style) ? styleBlock(style, res, 0, undefined, font, textScale)
    : styleBlock(style, res, 0, undefined, font, textScale).replace(STYLE_PARAMS[style].color, appearance.assColor);
  const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
  for (const cue of normalizeTimedCues(cues)) {
   const layout = layoutTimedCaption(cue.text, style, appearance, res, typeof safeArea === 'function' ? safeArea(cue) : safeArea, font);
-  if (style === "KEYWORD") {
+  if (isHighlightStyle(style)) {
+   const emoji = style === "FIRE" ? emojiForText(layout.lines.map(line => line.text).join(" ")) : null;
    const count = layout.lines.map(line => line.text.split(/\s+/).filter(Boolean).length).reduce((sum, n) => sum + n, 0);
    for (let index = 0; index < count; index++) {
     const start = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * index / count);
@@ -450,7 +464,8 @@ export function generateTimedCueAss(
     let offset = 0;
     for (const line of layout.lines) {
      const words = line.text.split(/\s+/).filter(Boolean);
-     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset)}`));
+     const last = line === layout.lines[layout.lines.length - 1];
+     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset, style, last ? emoji : null)}`));
      offset += words.length;
     }
    }
@@ -475,7 +490,7 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const p = STYLE_PARAMS[style];
  const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1));
  const lineHeight = Math.round(fontSize * 1.2);
- const normalized = sanitizeAssText(style === "KLYP" ? text.toUpperCase() : text);
+ const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" ? text.toUpperCase() : text);
  const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : 20)/appearance.transform.scale)) : undefined);
  const outline = Math.max(2, Math.round(p.outline * res.h / DEFAULT_RES.h * OUTLINE_BOOST * (appearance.transform?.scale ?? 1)));
  const edgeMargin = Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));

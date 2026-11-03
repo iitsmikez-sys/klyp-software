@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, canUseExportFormat, resolveExportFormat, type CaptionStyle, type ExportFormat, type TimedWord } from "@/lib/clips";
 import { buildCaptionCues, HOOK_STYLES, type HookStyle } from "@/lib/captions";
+import { hasFixedPalette } from "@/lib/caption-looks";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { drawWatermarkPreview } from "@/lib/watermark";
 import { drawCaptionPreview } from "@/lib/caption-preview";
@@ -1199,7 +1200,7 @@ export default function LegacySavedClipEditor({
 
       {hasWords && (
         <div className="space-y-3">
-          {captionStyle === "COMIC" || captionStyle === "KEYWORD" ? <p className="text-xs text-foreground-muted">This template uses its own yellow or green palette.</p> : <div>
+          {hasFixedPalette(captionStyle) ? <p className="text-xs text-foreground-muted">This template uses its own palette.</p> : <div>
             <p className={`${workspace ? "text-sm font-semibold text-white" : "text-[10px] font-bold font-syne uppercase tracking-wider text-foreground-muted"} mb-2`}>Caption color</p>
             <div className={workspace ? "grid grid-cols-5 gap-1.5" : "flex flex-wrap gap-1.5"}>
               {CAPTION_COLORS.map((color) => (

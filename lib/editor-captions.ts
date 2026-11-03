@@ -1,6 +1,7 @@
 import type { ClipEditDraftV2, ClipEditDraftV3 } from "./clip-edit-draft.ts";
 import type { SavedClip } from "./clip-ui.ts";
 import type { CaptionStyle } from "./clips.ts";
+import { isOneWordStyle } from "./caption-looks.ts";
 import { buildCaptionCues, HOOK_DURATION_MS, normalizeTimedCues } from "./captions.ts";
 import { outputSpansForSourceCue, outputDuration, type CaptionCue } from "./editor-timeline.ts";
 export { captionAppearance } from "./captions.ts";
@@ -8,7 +9,7 @@ export { captionAppearance } from "./captions.ts";
 function automaticCaptionCues(draft: ClipEditDraftV3, clip: SavedClip, style: CaptionStyle): CaptionCue[] {
  const words = draft.words ?? clip.words ?? [];
  return buildCaptionCues(words, clip.start_seconds * 1000, clip.end_seconds * 1000,
-  style === "KLYP" || style === "SPARK" ? 1 : 4)
+  isOneWordStyle(style) ? 1 : 4)
   .map((cue, index) => ({ id: `auto-${index}`, text: cue.text,
    start_ms: cue.startMs + clip.start_seconds * 1000,
    end_ms: cue.endMs + clip.start_seconds * 1000 }));
@@ -22,8 +23,8 @@ export function changeCaptionTemplate(draft: ClipEditDraftV3, clip: SavedClip, s
  const untouched = current?.length && current.length === generated.length &&
   current.every((cue, index) => cue.id === generated[index].id && cue.text === generated[index].text &&
    cue.start_ms === generated[index].start_ms && cue.end_ms === generated[index].end_ms);
- const caption_color = style === "KLYP" || style === "SPARK" || style === "KEYWORD" ? "green"
-  : style === "PULSE" || style === "BOUNCE" || style === "COMIC" ? "yellow"
+ const caption_color = style === "KLYP" || style === "SPARK" || style === "KEYWORD" || style === "FIRE" ? "green"
+  : style === "PULSE" || style === "BOUNCE" || style === "COMIC" || style === "POP" ? "yellow"
   : style === "GLOW" ? "pink" : "white";
  return { ...draft, caption_style: style, caption_color,
   caption_cues: untouched ? automaticCaptionCues(draft, clip, style) : current };
@@ -31,7 +32,7 @@ export function changeCaptionTemplate(draft: ClipEditDraftV3, clip: SavedClip, s
 
 /** Source anchors remain in the draft; only this resolved view uses edited time. */
 export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip): CaptionCue[] {
- const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === "KLYP" || draft.caption_style === "SPARK" ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
+ const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, isOneWordStyle(draft.caption_style) ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
  const usedIds = new Set(source.map(cue => cue.id));
  return normalizeTimedCues(source.flatMap(cue => {
   const spans = outputSpansForSourceCue(draft.segments, cue, draft.version===3?draft.inserts:undefined);
@@ -57,14 +58,14 @@ export function editorOverlayAtTime(draft: ClipEditDraftV2 | ClipEditDraftV3, cl
 // Compatibility for existing single-range exports.
 import type { TimedWord } from "./clips";
 
-export const CAPTION_COLORS = ["DEFAULT", "WHITE", "YELLOW", "GREEN", "PINK"] as const;
+export const CAPTION_COLORS = ["DEFAULT", "WHITE", "YELLOW", "GREEN", "PINK", "BLUE"] as const;
 export type CaptionColor = (typeof CAPTION_COLORS)[number];
 export const CAPTION_POSITIONS = ["BOTTOM", "CENTER", "TOP"] as const;
 export type CaptionPosition = (typeof CAPTION_POSITIONS)[number];
 export type CaptionOptions = { color: CaptionColor; position: CaptionPosition };
 
 export const CAPTION_HEX: Record<Exclude<CaptionColor, "DEFAULT">, string> = {
-  WHITE: "#FFFFFF", YELLOW: "#FFE14D", GREEN: "#4ADE80", PINK: "#FF7AB8",
+  WHITE: "#FFFFFF", YELLOW: "#FFE14D", GREEN: "#4ADE80", PINK: "#FF7AB8", BLUE: "#5FD6FF",
 };
 
 export function parseCaptionOptions(value: Record<string, unknown>): CaptionOptions {

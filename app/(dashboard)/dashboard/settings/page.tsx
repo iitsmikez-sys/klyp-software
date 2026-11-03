@@ -26,6 +26,9 @@ const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   GLOW: "Soft luminous captions fade in",
   COMIC: "Yellow comic captions pop onto the screen",
   KEYWORD: "One word turns green as each phrase plays",
+  HYPE: "The word being said turns red, thick outline",
+  POP: "One huge word at a time in yellow, light blue or white",
+  FIRE: "Neon green word plus an emoji that matches",
 };
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
