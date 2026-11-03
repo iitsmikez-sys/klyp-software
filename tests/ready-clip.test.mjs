@@ -46,8 +46,8 @@ test("the server accepts the layout and zooms a 16:9 source into a square over a
   const layout = validateVerticalLayout(READY_CLIP_LAYOUT);
   const plan = planVerticalLayout({ w: 1920, h: 1080 }, layout, { w: 1080, h: 1920 });
   assert.equal(plan.mode, "full_frame");
-  // Just over half the 1920px height, sides cropped past the 1080px canvas.
-  assert.ok(plan.dest.h >= 1000 && plan.dest.h <= 1100, `video height ${plan.dest.h}`);
+  // About two thirds of the 1920px height, sides cropped past the 1080px canvas.
+  assert.ok(plan.dest.h >= 1250 && plan.dest.h <= 1300, `video height ${plan.dest.h}`);
   assert.ok(plan.dest.w > 1080, `video width ${plan.dest.w}`);
   assert.equal(plan.dest.y, Math.round((1920 - plan.dest.h) / 2 / 2) * 2);
 });

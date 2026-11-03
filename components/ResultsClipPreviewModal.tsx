@@ -408,7 +408,7 @@ export default function ResultsClipPreviewModal({
                 autoPlay
                 playsInline
                 onLoadedData={() => setVideoReady(true)}
-                className={finishedLook ? "absolute left-0 top-1/2 aspect-square w-full -translate-y-1/2 object-cover" : "absolute inset-0 w-full h-full object-contain"}
+                className={finishedLook ? "absolute left-0 top-1/2 h-[66.5%] w-full -translate-y-1/2 object-cover" : "absolute inset-0 w-full h-full object-contain"}
                 style={{
                   opacity: videoReady ? 1 : 0,
                   transition: reducedMotion ? "none" : "opacity 220ms ease-out",
