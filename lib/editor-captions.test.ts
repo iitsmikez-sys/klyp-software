@@ -35,11 +35,11 @@ test("hook follows first three output seconds and captions use output time", () 
 test("timed ASS preserves cue times and shares canvas colors and safe-area anchors", () => {
  for (const position of ["top", "center", "bottom"] as const) {
   const appearance = captionAppearance({ ...base(), caption_color: "pink", caption_position: position });
-  assert.equal(appearance.color, "#FF69B4");
+  assert.equal(appearance.color, "#FF7AB8");
   assert.equal(appearance.anchorY, position === "top" ? 80/1920 : position === "center" ? 0.5 : 1-80/1920);
   const ass = generateTimedCueAss([{ id: "a", start_ms: 1250, end_ms: 2750, text: "{corrected}\\text" }], "CLEAN", appearance);
   assert.match(ass, /0:00:01.25,0:00:02.75/);
-  assert.match(ass, /&H00B469FF/);
+  assert.match(ass, /&H00B87AFF/);
   assert.ok(ass.includes(`\\an5\\pos(540,${1920*appearance.anchorY + (appearance.alignment === 8 ? 29 : appearance.alignment === 2 ? -29 : 0)})`));
   assert.ok(ass.includes("correctedtext"));
  }
@@ -55,7 +55,7 @@ test("short output clamps the hook and derived captions disappear in deleted foo
  assert.deepEqual(resolveEditorCues(draft, clip), []);
 });
 test("all palette colors reach ASS and composed safe geometry scales", () => {
- for (const [caption_color, expected] of [["white","&H00FFFFFF"],["yellow","&H0000FFFF"],["green","&H00A0E500"],["pink","&H00B469FF"]] as const) {
+ for (const [caption_color, expected] of [["white","&H00FFFFFF"],["yellow","&H004DE1FF"],["green","&H0080DE4A"],["pink","&H00B87AFF"]] as const) {
   const appearance = captionAppearance({ ...base(), caption_color, caption_position: "center" });
   const ass = generateTimedCueAss([{ start_ms: 0, end_ms: 1000, text: "hi" }], "BOLD", appearance, { w: 540, h: 960 }, { x: 0, y: 0, w: 540, h: 672 });
   assert.ok(ass.includes(expected));

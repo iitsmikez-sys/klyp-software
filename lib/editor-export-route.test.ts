@@ -68,7 +68,7 @@ test('source fallback uses owned URL/envelope, server-resolved cues and zero-bas
  assert.ok(calls.some(c=>c.name==='eq'&&c.args[0]==='user_id'&&c.args[1]==='user'));
  assert.deepEqual(calls.find(c=>c.name==='render')?.args.slice(0,3),['/source.mp4',100,draft.segments]);
  const cues=calls.find(c=>c.name==='cues')!.args;assert.deepEqual(cues[0].map((c:any)=>[c.start_ms,c.end_ms,c.text]),[[500,1000,'corrected'],[1000,1500,'corrected']]);
- assert.equal(cues[2].color,'#00E5A0');assert.ok(cues[4].h>0);
+ assert.equal(cues[2].color,'#4ADE80');assert.ok(cues[4].h>0);
  const args=calls.find(c=>c.name==='encode')!.args[1];assert.deepEqual(Array.from(args.slice(0,6)),['-ss','0','-t','2','-i',path.join('/temp/editor','kept.mp4')]);
  assert.equal(calls.filter(c=>c.name==='charge').length,0);assert.ok(calls.some(c=>c.name==='rm'&&c.args[0]==='/temp/editor'));
 });

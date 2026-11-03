@@ -109,3 +109,9 @@ body {
     border-radius: 9999px;
   }
 }
+
+/* Bundled caption fonts (SIL Open Font License) - the same files the export renders with. */
+@font-face { font-family: "Poppins ExtraBold"; src: url("/fonts/Poppins-ExtraBold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Poppins SemiBold"; src: url("/fonts/Poppins-SemiBold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Anton"; src: url("/fonts/Anton-Regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Archivo Black"; src: url("/fonts/ArchivoBlack-Regular.ttf") format("truetype"); font-display: swap; }

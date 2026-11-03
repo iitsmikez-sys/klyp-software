@@ -51,6 +51,10 @@ export const OPTIONS = corsPreflight;
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
 
+/** Bundled caption fonts (public/fonts) handed to libass so captions render in the same fonts as the preview. */
+const fontsDir = () => path.join(process.cwd?.() ?? ".", "public", "fonts");
+const fontsOpt = () => `:fontsdir='${toFfmpegPath(fontsDir())}'`;
+
 /**
  * Static streamer-handle overlay (Pro only): plain, slightly see-through text centered near the bottom,
  * which on a vertical clip sits in the blurred band under the video. The handle is validated
@@ -147,10 +151,10 @@ async function cutClip(
     vf = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
   }
   if (assPath) {
-    vf += `,subtitles='${toFfmpegPath(assPath)}'`;
+    vf += `,subtitles='${toFfmpegPath(assPath)}'${fontsOpt()}`;
   }
   if (hookAssPath) {
-    vf += `,subtitles='${toFfmpegPath(hookAssPath)}'`;
+    vf += `,subtitles='${toFfmpegPath(hookAssPath)}'${fontsOpt()}`;
   }
   if (isPro && handle) {
     vf += `,${handleFilter(handle)}`;

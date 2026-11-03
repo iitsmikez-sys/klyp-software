@@ -148,9 +148,12 @@ export default function SavedClipEditor({
     if (!video || !canvas) return;
 
     const draw = () => {
-      if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
-        canvas.width = video.clientWidth;
-        canvas.height = video.clientHeight;
+      // Draw at screen resolution (CSS size x display scaling) so text stays sharp on scaled displays.
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const targetW = Math.round(video.clientWidth * dpr), targetH = Math.round(video.clientHeight * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
       }
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
