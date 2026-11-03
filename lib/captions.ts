@@ -297,15 +297,36 @@ const HOOK_STYLE_PARAMS: Record<
   WHITE_BOX: { font: "Arial Black", fontSize: 62, color: "&H00000000", bold: 1, outline: 0, borderStyle: 1 },
 };
 
+/**
+ * Advance widths, in em, of the capital letters A to Z in the two fonts a white-box hook can be drawn
+ * with: Arial Black (the preview in the browser) and DejaVu Sans Bold (what the server falls back to
+ * when exporting, since Arial Black is not installed there). The larger of the two is used for each
+ * letter, so the card is never narrower than the text in either place.
+ */
+const ARIAL_BLACK_EM = [.778, .778, .778, .833, .722, .667, .833, .833, .389, .667, .833, .667, .944, .833, .833, .722, .833, .778, .722, .722, .833, .778, 1, .778, .778, .722];
+const DEJAVU_BOLD_EM = [.774, .762, .734, .830, .683, .683, .821, .837, .372, .372, .775, .637, .995, .837, .850, .733, .850, .770, .720, .682, .812, .774, 1.103, .774, .724, .725];
+const HOOK_GLYPH_EM = ARIAL_BLACK_EM.map((width, i) => Math.max(width, DEJAVU_BOLD_EM[i]));
+
+/** Width of one hook character in em, from the table above; a wide default for anything unlisted. */
+export function hookGlyphEm(char: string): number {
+  const code = char.toUpperCase().charCodeAt(0);
+  if (code >= 65 && code <= 90) return HOOK_GLYPH_EM[code - 65];
+  if (char === " ") return .36;
+  if (/[0-9]/.test(char)) return .70;
+  if (/[.,:;!'|]/.test(char)) return .40;
+  if (char === "-") return .45;
+  if (char === "?") return .76;
+  return .85;
+}
+
 /** One card around all hook lines, shared by canvas preview and ASS export. */
 export function whiteBoxCardGeometry(lines: string[], fontSize: number, lineHeight: number, cx: number, firstY: number, res: PlayRes) {
   const scale = res.h / DEFAULT_RES.h;
   const padX = Math.max(6, Math.round(20 * scale));
   const padY = Math.max(4, Math.round(9 * scale));
-  // Character-aware estimate keeps wide glyphs inside the card without making
-  // ordinary spoken hooks needlessly wide. ASS and canvas use this same bound.
-  const textWidth = Math.max(0, ...lines.map(line => [...line].reduce((sum, char) =>
-    sum + fontSize * (char === " " ? .35 : /[MW@]/.test(char) ? .82 : /[IJL1!.,:]/.test(char) ? .45 : .67), 0)));
+  // Width from real per-letter advances (see HOOK_GLYPH_EM) so the card hugs the text instead of
+  // guessing. ASS and canvas use this same bound, so preview and export match.
+  const textWidth = Math.max(0, ...lines.map(line => [...line].reduce((sum, char) => sum + fontSize * hookGlyphEm(char), 0))) * 1.03;
   const width = Math.min(res.w - 8, Math.ceil(textWidth + padX * 2));
   const height = Math.ceil((lines.length - 1) * lineHeight + fontSize + padY * 2);
   const x = Math.round(Math.max(4, Math.min(res.w - width - 4, cx - width / 2)));
