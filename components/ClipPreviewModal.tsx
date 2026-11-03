@@ -31,6 +31,7 @@ import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
 import { isTopPick } from "@/lib/clip-extras";
+import { FinishedBackdrop, FinishedOverlays, LookSwitch } from "./FinishedLook";
 import {
   type SavedClip,
   TYPE_STYLES,
@@ -86,6 +87,7 @@ export default function ClipPreviewModal({
   const [sourceStart, setSourceStart] = useState(clip.start_seconds);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [finishedLook, setFinishedLook] = useState(true);
   const [poster, setPoster] = useState<string | null>(() => peekClipThumbnail(clip));
   const [showSpinner, setShowSpinner] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -380,10 +382,13 @@ export default function ClipPreviewModal({
 
         {/* ── Player ── object-contain keeps the source aspect ratio intact ── */}
         <div className="mx-4 overflow-hidden rounded-lg bg-black sm:mx-6">
-          <div className="relative min-h-[210px] w-full" style={{ height: "min(48dvh, 440px)" }}>
+          <div className="relative min-h-[210px] w-full" style={finishedLook
+            ? { height: "min(48dvh, 440px)", width: "auto", aspectRatio: "9 / 16", margin: "0 auto", containerType: "inline-size" }
+            : { height: "min(48dvh, 440px)" }}>
+            {finishedLook && <FinishedBackdrop poster={poster} />}
             {/* The clip's own frame, under the video and crossfaded out once
                 the first video frame has decoded. */}
-            {poster && !loadError && (
+            {poster && !loadError && !finishedLook && (
               <img
                 src={poster}
                 alt=""
@@ -440,15 +445,20 @@ export default function ClipPreviewModal({
                   const next = clipPreviewPlayback(event.currentTarget.currentTime, trimStart, trimEnd);
                   if (next.time !== event.currentTarget.currentTime) event.currentTarget.currentTime = next.time;
                 }}
-                className="absolute inset-0 w-full h-full object-contain"
+                className={finishedLook ? "absolute left-0 top-1/2 aspect-square w-full -translate-y-1/2 object-cover" : "absolute inset-0 w-full h-full object-contain"}
                 style={{
                   opacity: videoReady ? 1 : 0,
                   transition: reducedMotion ? "none" : "opacity 220ms ease-out",
                 }}
               />
             )}
+            {finishedLook && (
+              <FinishedOverlays hook={clip.hooks?.[0]} words={clip.words} startSeconds={clip.start_seconds}
+                endSeconds={clip.end_seconds} videoRef={videoRef} />
+            )}
           </div>
         </div>
+        <LookSwitch finished={finishedLook} onChange={setFinishedLook} />
 
         {/* The source preview and raw download always use the detected moment. */}
         <div className="flex flex-wrap gap-2 px-4 pt-4 pb-2 sm:px-6">

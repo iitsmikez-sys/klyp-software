@@ -26,6 +26,7 @@ import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
+import { FinishedBackdrop, FinishedOverlays, LookSwitch, FINISHED_FRAME_WIDTH } from "./FinishedLook";
 import {
   type SavedClip,
   TYPE_STYLES,
@@ -85,6 +86,7 @@ export default function ResultsClipPreviewModal({
 }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [finishedLook, setFinishedLook] = useState(true);
   const [poster, setPoster] = useState<string | null>(() => peekClipThumbnail(clip));
   const [showSpinner, setShowSpinner] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -357,10 +359,13 @@ export default function ResultsClipPreviewModal({
 
         {/* ── Player ── object-contain keeps the source aspect ratio intact ── */}
         <div className="mx-6 rounded-xl bg-black border border-border overflow-hidden">
-          <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
+          <div className="relative w-full" style={finishedLook
+            ? { aspectRatio: "9 / 16", width: FINISHED_FRAME_WIDTH, maxWidth: "100%", margin: "0 auto", containerType: "inline-size" }
+            : { aspectRatio: "16 / 9" }}>
+            {finishedLook && <FinishedBackdrop poster={poster} />}
             {/* The clip's own frame, under the video and crossfaded out once
                 the first video frame has decoded. */}
-            {poster && !loadError && (
+            {poster && !loadError && !finishedLook && (
               <img
                 src={poster}
                 alt=""
@@ -403,15 +408,20 @@ export default function ResultsClipPreviewModal({
                 autoPlay
                 playsInline
                 onLoadedData={() => setVideoReady(true)}
-                className="absolute inset-0 w-full h-full object-contain"
+                className={finishedLook ? "absolute left-0 top-1/2 aspect-square w-full -translate-y-1/2 object-cover" : "absolute inset-0 w-full h-full object-contain"}
                 style={{
                   opacity: videoReady ? 1 : 0,
                   transition: reducedMotion ? "none" : "opacity 220ms ease-out",
                 }}
               />
             )}
+            {finishedLook && (
+              <FinishedOverlays hook={clip.hooks?.[0]} words={clip.words} startSeconds={clip.start_seconds}
+                endSeconds={clip.end_seconds} videoRef={videoRef} />
+            )}
           </div>
         </div>
+        <LookSwitch finished={finishedLook} onChange={setFinishedLook} />
 
         <div className="flex flex-wrap gap-2 px-6 pt-4 pb-2">
           <button type="button" onClick={onDownloadReady} disabled={!onDownloadReady || readyWorking || rawWorking}
