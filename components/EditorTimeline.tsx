@@ -14,8 +14,13 @@ export type EditorTimelineProps = {
  focusSpans?: FocusSpan[];
  selection: TimelineSelection; onSelect: (selection: TimelineSelection)=>void;
  onSeek: (seconds:number)=>void; onTrim: (id:string,start:number,end:number)=>void;
+ /** Drag a handle on an inserted section or overlay to make it longer or shorter. The clamp functions keep the preview inside what is allowed. */
+ clampInsert?: (id:string,lengthMs:number)=>number; onResizeInsert?: (id:string,lengthMs:number)=>void;
+ clampCutaway?: (id:string,startMs:number,endMs:number)=>{startMs:number;endMs:number}; onResizeCutaway?: (id:string,startMs:number,endMs:number)=>void;
 };
-export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],inserts=[],focusSpans=[],selection,onSelect,onSeek,onTrim}:EditorTimelineProps) {
+export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],inserts=[],focusSpans=[],selection,onSelect,onSeek,onTrim,clampInsert,onResizeInsert,clampCutaway,onResizeCutaway}:EditorTimelineProps) {
+ const [resize,setResize]=useState<{kind:'insert'|'cutaway';id:string;startMs:number;endMs:number}|null>(null);
+ const shown=(kind:'insert'|'cutaway',id:string,startMs:number,endMs:number)=>resize&&resize.kind===kind&&resize.id===id?{startMs:resize.startMs,endMs:resize.endMs}:{startMs,endMs};
  const [height,setHeight]=useState(248),[collapsed,setCollapsed]=useState(false);
  const drag=useRef<{y:number;height:number}|null>(null);
  const clampHeight=(value:number)=>Math.max(160,Math.min(Math.round(window.innerHeight*.55),430,value));
@@ -53,6 +58,30 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
   element.addEventListener('pointercancel',cleanup,{once:true});element.addEventListener('lostpointercapture',cleanup,{once:true});
   element.addEventListener('pointerup',finish,{once:true});
  };
+ const startResize=(event:React.PointerEvent<HTMLElement>,kind:'insert'|'cutaway',id:string,edge:'start'|'end',startMs:number,endMs:number)=>{
+  event.stopPropagation();event.preventDefault();cancelTrim.current?.();
+  const element=event.currentTarget;element.setPointerCapture(event.pointerId);
+  const initialX=event.clientX;let latest={startMs,endMs};
+  const compute=(clientX:number)=>{const delta=((clientX-initialX)/scale)*1000;
+   if(kind==='insert'){const wanted=endMs-startMs+delta;const length=clampInsert?clampInsert(id,wanted):wanted;return {startMs,endMs:startMs+length};}
+   const wantedStart=Math.round(edge==='start'?startMs+delta:startMs),wantedEnd=Math.round(edge==='end'?endMs+delta:endMs);
+   return clampCutaway?clampCutaway(id,wantedStart,wantedEnd):{startMs:wantedStart,endMs:wantedEnd};};
+  const move=(e:PointerEvent)=>{latest=compute(e.clientX);setResize({kind,id,...latest});};
+  const cleanup=()=>{element.removeEventListener('pointermove',move);element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);setResize(null);cancelTrim.current=null;};
+  const finish=(e:PointerEvent)=>{latest=compute(e.clientX);cleanup();
+   if(kind==='insert'){if(latest.endMs-latest.startMs!==endMs-startMs)onResizeInsert?.(id,latest.endMs-latest.startMs);}
+   else if(latest.startMs!==startMs||latest.endMs!==endMs)onResizeCutaway?.(id,latest.startMs,latest.endMs);};
+  cancelTrim.current=cleanup;setResize({kind,id,startMs,endMs});
+  element.addEventListener('pointermove',move);element.addEventListener('pointerup',finish,{once:true});
+  element.addEventListener('pointercancel',cleanup,{once:true});element.addEventListener('lostpointercapture',cleanup,{once:true});
+ };
+ const resizeKey=(event:React.KeyboardEvent<HTMLElement>,kind:'insert'|'cutaway',id:string,edge:'start'|'end',startMs:number,endMs:number)=>{
+  if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;event.preventDefault();event.stopPropagation();
+  const delta=event.key==='ArrowRight'?100:-100;
+  if(kind==='insert'){const length=clampInsert?clampInsert(id,endMs-startMs+delta):endMs-startMs+delta;if(length!==endMs-startMs)onResizeInsert?.(id,length);return;}
+  const next=clampCutaway?clampCutaway(id,edge==='start'?startMs+delta:startMs,edge==='end'?endMs+delta:endMs):null;
+  if(next&&(next.startMs!==startMs||next.endMs!==endMs))onResizeCutaway?.(id,next.startMs,next.endMs);
+ };
  const handleKey=(event:React.KeyboardEvent<HTMLButtonElement>,s:SourceSegment,edge:'start'|'end')=>{
   if(event.key!=='ArrowLeft' && event.key!=='ArrowRight')return;event.preventDefault();event.stopPropagation();
   const delta=event.key==='ArrowRight'?.1:-.1; const index=segments.findIndex(item=>item.id===s.id); const lower=index?segments[index-1].end_seconds:sourceStart; const upper=segments[index+1]?.start_seconds ?? sourceEnd;
@@ -86,14 +115,21 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
      {Array.from({length:Math.ceil(duration/(rulerStep))},(_,i)=>{const seconds=i*(rulerStep);return <span key={i} style={{left:seconds*scale}}>{Math.floor(seconds/60).toString().padStart(2,'0')}:{(seconds%60).toString().padStart(2,'0')}</span>;})}
     </div>
     {focusSpans.length>0&&<div aria-label="Focus lane" className="editor-lane editor-focus-lane">{focusSpans.map((span,index)=><button key={`${span.start_ms}:${index}`} type="button" style={blockStyle(span.start_ms/1000,span.end_ms/1000)} aria-label={`${span.mode === 'reaction' ? 'Reaction' : 'Gameplay'} focus from ${(span.start_ms/1000).toFixed(1)} to ${(span.end_ms/1000).toFixed(1)} seconds`} className={span.mode === 'reaction' ? 'reaction' : 'gameplay'} onClick={()=>onSeek(span.start_ms/1000)}>{span.mode === 'reaction' ? 'Reaction focus' : 'Gameplay focus'}</button>)}</div>}
-    <div aria-label="Overlay lane" data-editor-overlay-lane="true" data-duration={duration} className="editor-lane editor-overlay-lane">{cutaways.map(c=><button key={`${c.id}:${c.start_ms}`} type="button" style={blockStyle(c.start_ms/1000,c.end_ms/1000)} className="editor-cutaway-block" aria-label={`Select imported media ${c.id}`} aria-pressed={selection?.type==='cutaway'&&selection.id===c.id} onClick={()=>{onSelect({type:'cutaway',id:c.id});onSeek((c.start_ms+Math.min(50,(c.end_ms-c.start_ms)/2))/1000);}}>Media <small>{((c.end_ms-c.start_ms)/1000).toFixed(1)}s</small></button>)}</div>
+    <div aria-label="Overlay lane" data-editor-overlay-lane="true" data-duration={duration} className="editor-lane editor-overlay-lane">{cutaways.map(c=>{const v=shown('cutaway',c.id,c.start_ms,c.end_ms);const selected=selection?.type==='cutaway'&&selection.id===c.id;return <div key={`${c.id}:${c.start_ms}`} style={blockStyle(v.startMs/1000,v.endMs/1000)} className="editor-resizable-wrap" data-selected={selected}>
+     {selected&&<button type="button" className="editor-resize-handle start" aria-label={`Change start of imported media ${c.id}`} onPointerDown={e=>startResize(e,'cutaway',c.id,'start',c.start_ms,c.end_ms)} onKeyDown={e=>resizeKey(e,'cutaway',c.id,'start',c.start_ms,c.end_ms)}/>}
+     <button type="button" className="editor-cutaway-block" aria-label={`Select imported media ${c.id}`} aria-pressed={selected} onClick={()=>{onSelect({type:'cutaway',id:c.id});onSeek((c.start_ms+Math.min(50,(c.end_ms-c.start_ms)/2))/1000);}}>Media <small>{((v.endMs-v.startMs)/1000).toFixed(1)}s</small></button>
+     {selected&&<button type="button" className="editor-resize-handle end" aria-label={`Change end of imported media ${c.id}`} onPointerDown={e=>startResize(e,'cutaway',c.id,'end',c.start_ms,c.end_ms)} onKeyDown={e=>resizeKey(e,'cutaway',c.id,'end',c.start_ms,c.end_ms)}/>}
+    </div>;})}</div>
     <div aria-label="Video lane" className="editor-lane editor-video-lane">{segments.map((s,index)=>{const start=offset;offset+=s.end_seconds-s.start_seconds;const end=offset;const after=inserts.filter(item=>item.after_segment_id===s.id);offset+=after.reduce((sum,item)=>sum+(item.end_ms-item.start_ms)/1000,0);return <Fragment key={s.id}><div style={blockStyle(start,end)} className="editor-video-block" data-selected={selection?.type==='video'&&selection.id===s.id}>
      <button type="button" aria-label={`Trim start of segment ${s.id}`} className="editor-trim-handle" onPointerDown={e=>trim(e,s,'start')} onKeyDown={e=>handleKey(e,s,'start')}/>
      <button type="button" aria-label={`Select video segment ${s.id}`} aria-pressed={selection?.type==='video' && selection.id===s.id} className="editor-video-frames" onClick={()=>onSelect({type:'video',id:s.id})}>
       {thumbnails.filter(t=>t.outputSeconds>=start && t.outputSeconds<end).map(t=><img key={t.outputSeconds} src={t.url} alt="" draggable={false} style={{left:(t.outputSeconds-start)*scale,width:2*scale}}/>)}
       <span>{thumbnails.length?`Clip ${index+1} · ${(s.end_seconds-s.start_seconds).toFixed(1)}s`:mediaLoading?'Loading frames…':'Frames unavailable'}</span>
      </button><button type="button" aria-label={`Trim end of segment ${s.id}`} className="editor-trim-handle" onPointerDown={e=>trim(e,s,'end')} onKeyDown={e=>handleKey(e,s,'end')}/>
-    </div>{after.map(item=><button key={item.id} type="button" style={blockStyle(item.start_ms/1000,item.end_ms/1000)} className="editor-insert-block" aria-label={`Select inserted media ${item.id}`} aria-pressed={selection?.type==='insert'&&selection.id===item.id} onClick={()=>{onSelect({type:'insert',id:item.id});onSeek(item.start_ms/1000);}}>Imported media <small>{((item.end_ms-item.start_ms)/1000).toFixed(1)}s</small></button>)}{index<segments.length-1&&<button type="button" data-editor-insert-after={s.id} className="editor-insert-target" style={{left:(offset-.01)*scale}} aria-label={`Insert media after clip ${index+1}`}>+</button>}</Fragment>;})}
+    </div>{after.map(item=>{const v=shown('insert',item.id,item.start_ms,item.end_ms);const selected=selection?.type==='insert'&&selection.id===item.id;return <div key={item.id} style={blockStyle(v.startMs/1000,v.endMs/1000)} className="editor-resizable-wrap" data-selected={selected}>
+     <button type="button" className="editor-insert-block" aria-label={`Select inserted media ${item.id}`} aria-pressed={selected} onClick={()=>{onSelect({type:'insert',id:item.id});onSeek(item.start_ms/1000);}}>Imported media <small>{((v.endMs-v.startMs)/1000).toFixed(1)}s</small></button>
+     {selected&&<button type="button" className="editor-resize-handle end" aria-label={`Change length of inserted media ${item.id}`} onPointerDown={e=>startResize(e,'insert',item.id,'end',item.start_ms,item.end_ms)} onKeyDown={e=>resizeKey(e,'insert',item.id,'end',item.start_ms,item.end_ms)}/>}
+    </div>;})}{index<segments.length-1&&<button type="button" data-editor-insert-after={s.id} className="editor-insert-target" style={{left:(offset-.01)*scale}} aria-label={`Insert media after clip ${index+1}`}>+</button>}</Fragment>;})}
     </div>
     {captionGroups.length>0&&<div aria-label="Caption lane" className="editor-lane editor-caption-lane">{captionGroups.map((group,index)=><button key={group.id} type="button" style={blockStyle(group.start_ms/1000,group.end_ms/1000)} className="editor-caption-group" aria-label={`Open caption phrase ${index+1}: ${group.text}`} title={group.text} aria-pressed={selectedCaptionGroup?.id===group.id} onClick={()=>{onSelect({type:'caption',id:group.cues[0].id});onSeek(group.start_ms/1000);}}><span>{group.text}</span></button>)}</div>}
     {(!!peaks?.length||mediaLoading)&&<div aria-label="Audio lane" className="editor-lane editor-audio-lane">{peaks?.length?<svg width={width} height="26" role="img" aria-label="Source audio waveform" preserveAspectRatio="none" viewBox={`0 0 ${peaks.length} 2`}><path className="editor-waveform-center" d={`M0 1 H${peaks.length}`}/><path className="editor-waveform-envelope" d={`M0 1 ${peaks.map((p,i)=>`L${i+.5} ${(1-p*.28).toFixed(3)}`).join(' ')} L${peaks.length} 1 ${peaks.map((_,i)=>`L${peaks.length-i-.5} ${(1+peaks[peaks.length-i-1]*.28).toFixed(3)}`).join(' ')} Z`}/></svg>:<span>{mediaLoading?'Loading audio…':'Waveform unavailable'}</span>}</div>}

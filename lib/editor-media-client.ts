@@ -72,3 +72,29 @@ export function cutawayDrawRect(sw:number,sh:number,w:number,h:number,fit:'cover
  const dh=fit==='cover'?(wide?h:even(w*sh/sw)):(wide?even(w*sh/sw):h);
  return {x:(w-dw)*focal.x,y:(h-dh)*focal.y,w:dw,h:dh};
 }
+
+/** An inserted section may be 0.1 to 60 seconds, and the whole clip stays within 3 minutes. */
+export const INSERT_MIN_MS = 100;
+export const INSERT_MAX_MS = 60000;
+
+/** The shortest and longest an inserted photo or video can be right now (a video cannot run past its own end). */
+export function insertDurationLimits(draft: ClipEditDraftV3, insert: TimelineInsert, asset?: EditorAsset) {
+  const room = Math.floor((180 - composedDuration(draft)) * 1000) + insert.duration_ms;
+  let max = Math.min(INSERT_MAX_MS, room);
+  if (asset?.kind === 'video' && asset.duration_ms !== null) max = Math.min(max, asset.duration_ms - insert.asset_in_ms);
+  return { min: INSERT_MIN_MS, max: Math.max(INSERT_MIN_MS, max) };
+}
+
+export function clampInsertDuration(draft: ClipEditDraftV3, insert: TimelineInsert, asset: EditorAsset | undefined, wantedMs: number): number {
+  const { min, max } = insertDurationLimits(draft, insert, asset);
+  return Math.round(Math.min(max, Math.max(min, Number.isFinite(wantedMs) ? wantedMs : insert.duration_ms)));
+}
+
+/** A copy of the draft with one inserted section made longer or shorter. Everything after it moves with it. */
+export function resizeInsert(draft: ClipEditDraftV3, insertId: string, asset: EditorAsset | undefined, wantedMs: number): ClipEditDraftV3 {
+  const insert = draft.inserts?.find((item) => item.id === insertId);
+  if (!insert) return draft;
+  const duration_ms = clampInsertDuration(draft, insert, asset, wantedMs);
+  if (duration_ms === insert.duration_ms) return draft;
+  return { ...draft, inserts: (draft.inserts ?? []).map((item) => (item.id === insertId ? { ...item, duration_ms } : item)) };
+}
