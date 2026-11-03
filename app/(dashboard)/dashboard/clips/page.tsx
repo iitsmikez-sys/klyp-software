@@ -48,7 +48,7 @@ function ClipsPageContent() {
   const { refresh } = useSparks();
   // Shared with the dashboard's Saved Clips so both behave identically.
   const { exports, createClip, invalidateClip } = useClipExports(refresh);
-  const { rawDownloads, downloadRaw } = useRawClipDownloads();
+  const { rawDownloads, downloadRaw, readyDownloads, downloadReady } = useRawClipDownloads();
 
   useEffect(() => {
     const supabase = createClient();
@@ -279,6 +279,7 @@ function ClipsPageContent() {
           {filtered.map(clip => <CompactClipCard key={clip.id} clip={clip}
             onPreview={() => { setPreviewId(clip.id); setPreviewDetails(false); }}
             rawState={rawDownloads[clip.id]} onDownloadRaw={() => void downloadRaw(clip)}
+            readyState={readyDownloads[clip.id]} onDownloadReady={() => void downloadReady(clip)}
             more={<div className="relative">
               <button type="button" aria-label={"More actions for " + clip.title} aria-expanded={menuOpenId === clip.id}
                 onClick={() => setMenuOpenId(menuOpenId === clip.id ? null : clip.id)}
@@ -322,6 +323,7 @@ function ClipsPageContent() {
           }}
           rawState={rawDownloads[previewClip.id]}
           onDownloadRaw={() => void downloadRaw(previewClip)}
+          readyState={readyDownloads[previewClip.id]} onDownloadReady={() => void downloadReady(previewClip)}
         />
       )}
 

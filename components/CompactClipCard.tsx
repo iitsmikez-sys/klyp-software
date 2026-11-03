@@ -7,11 +7,13 @@ import type { RawDownloadState } from "./useRawClipDownloads";
 import { type SavedClip, fmtTime, platformName, footageGone, vodLinkAt } from "@/lib/clip-ui";
 import { backupState } from "@/lib/clip-backup-state";
 
-export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawState, more, compact = false }: {
+export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawState, onDownloadReady, readyState, more, compact = false }: {
   clip: SavedClip;
   onPreview: () => void;
   onDownloadRaw: () => void;
   rawState?: RawDownloadState;
+  onDownloadReady?: () => void;
+  readyState?: RawDownloadState;
   more?: React.ReactNode;
   compact?: boolean;
 }) {
@@ -21,6 +23,9 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
   const rawLabel = rawState?.status === "working"
     ? rawState.received !== undefined ? `Downloading ${rawState.received}%` : `Preparing raw ${rawState.seconds}s`
     : rawState?.status === "ready" ? "Download Raw Again" : "Download Raw";
+  const readyLabel = readyState?.status === "working"
+    ? readyState.received !== undefined ? `Downloading ${readyState.received}%` : `Preparing ${readyState.seconds}s`
+    : readyState?.status === "ready" ? "Download ready clip again" : "Download ready clip";
   return <article className={`group flex min-w-0 flex-col rounded-xl border border-border bg-surface transition-colors hover:border-subtle ${compact ? "p-2.5" : "p-3"}`}>
     <ClipThumbnail clip={clip} onPlay={onPreview} />
     <div className={`${compact ? "mt-2" : "mt-3"} flex items-start justify-between gap-2`}>
@@ -41,10 +46,15 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
     <p role="status" className={`mt-2 text-xs ${backup.kind === 'saved' ? 'text-accent' : 'text-amber-300'}`}>{backup.message}</p>
     {clip.archive_status === 'stored' && clip.media_expires_at &&
       <p className="mt-1 text-xs text-foreground-muted">Saved until {new Date(clip.media_expires_at).toLocaleDateString()}</p>}
-    <div className={`mt-auto grid grid-cols-2 gap-2 ${compact ? "pt-3" : "pt-4"}`}>
-      <Link href={`/dashboard/clips/${clip.id}/edit`} className={`flex items-center justify-center rounded-lg border border-accent/35 px-2 text-center font-semibold text-accent transition-colors hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${compact ? "min-h-9 text-xs" : "min-h-10 text-sm"}`}>Edit Clip</Link>
-      <button type="button" onClick={onDownloadRaw} disabled={gone || rawState?.status === "working"} title={gone ? "Source footage is unavailable" : undefined} className={`rounded-lg border border-border px-2 font-medium text-foreground-muted transition-colors hover:border-subtle hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${compact ? "min-h-9 text-xs" : "min-h-10 text-sm"}`}>{gone ? "Footage unavailable" : rawLabel}</button>
+    <div className={`mt-auto ${compact ? "pt-3" : "pt-4"}`}>
+      <button type="button" onClick={onDownloadReady} disabled={gone || !onDownloadReady || readyState?.status === "working"} title={gone ? "Source footage is unavailable" : undefined} className={`w-full rounded-lg bg-accent px-2 font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${compact ? "min-h-9 text-xs" : "min-h-10 text-sm"}`}>{gone ? "Footage unavailable" : readyLabel}</button>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+      <Link href={`/dashboard/clips/${clip.id}/edit`} className={`flex items-center justify-center rounded-lg border border-border px-2 text-center font-semibold text-foreground-muted transition-colors hover:border-subtle hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent min-h-8 text-xs`}>Edit</Link>
+      <button type="button" onClick={onDownloadRaw} disabled={gone || rawState?.status === "working"} title={gone ? "Source footage is unavailable" : undefined} className={`rounded-lg border border-border px-2 font-medium text-foreground-muted transition-colors hover:border-subtle hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 min-h-8 text-xs`}>{gone ? "Footage unavailable" : rawLabel}</button>
+      </div>
     </div>
+    {readyState?.status === "working" && <p role="status" className="mt-2 text-xs text-foreground-muted">Building your finished clip with the hook and captions.</p>}
+    {readyState?.status === "error" && <p role="alert" className="mt-2 text-xs text-red-400">{readyState.error} <button type="button" onClick={onDownloadReady} className="underline">Retry</button></p>}
     {rawState?.status === "working" && <p role="status" className="mt-2 text-xs text-foreground-muted">Extracting original video and audio. No Sparks charged.</p>}
     {rawState?.status === "error" && <p role="alert" className="mt-2 text-xs text-red-400">{rawState.error} <button type="button" onClick={onDownloadRaw} className="underline">Retry</button></p>}
   </article>;

@@ -119,7 +119,7 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState<PeriodKey>("all"); // default: All time
   const [showAllTypes, setShowAllTypes] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const { rawDownloads, downloadRaw } = useRawClipDownloads();
+  const { rawDownloads, downloadRaw, readyDownloads, downloadReady } = useRawClipDownloads();
   const { exports, createClip, invalidateClip } = useClipExports();
 
   useEffect(() => {
@@ -412,6 +412,7 @@ export default function AnalyticsPage() {
           }}
           rawState={rawDownloads[previewClip.id]}
           onDownloadRaw={() => void downloadRaw(previewClip)}
+          readyState={readyDownloads[previewClip.id]} onDownloadReady={() => void downloadReady(previewClip)}
         />
       )}
     </div>
