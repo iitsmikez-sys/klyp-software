@@ -13,7 +13,7 @@ class NextResponse extends Response {
   static redirect(url) { return new NextResponse(null, {status: 307, headers: {location: url}}); }
 }
 
-function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
+function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, offer = false, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
   let created;
   const validated = [];
   const stripe = {
@@ -26,6 +26,7 @@ function checkoutHarness({signedIn = true, subscribed = false, validPrice = true
     '@/lib/supabase/server': {createClient: async () => ({auth: {getUser: async () => ({data: {user: signedIn ? {id: 'user-1', email: 'test@example.com'} : null}})}})},
     '@/lib/profile': {getProfile: async () => ({stripe_customer_id: null, stripe_subscription_id: null})},
     '@/lib/stripe-billing': {resolveBillingState: async () => ({checkoutCustomerId: null, portalCustomerId: subscribed ? 'cus_existing' : null})},
+    '@/lib/first-month-offer': {firstMonthOfferAvailable: () => offer, ensureFirstMonthCoupon: async () => 'coupon_test', FIRST_MONTH_PRICE_CENTS: 1700},
     '@/lib/checkout-price': {validateProPrice: (...args) => { validated.push(args.slice(1)); return validPrice; }},
   };
   const exports = {};
@@ -44,6 +45,18 @@ test('mocked signed-in checkout uses the advertised price and user identity with
   assert.equal(h.created.metadata.user_id, 'user-1');
   assert.equal(h.created.subscription_data.metadata.user_id, 'user-1');
   assert.equal(h.created.line_items[0].price, 'price_test');
+});
+
+test('a new monthly subscriber gets the $17 first-month coupon; yearly and non-qualifying people do not', async () => {
+  const monthly = checkoutHarness({offer: true});
+  assert.equal((await monthly.post({interval: 'month'})).status, 200);
+  assert.equal(JSON.stringify(monthly.created.discounts), '[{"coupon":"coupon_test"}]');
+  const yearly = checkoutHarness({offer: true});
+  await yearly.post({interval: 'year'});
+  assert.equal(yearly.created.discounts, undefined);
+  const returning = checkoutHarness({offer: false});
+  await returning.post({interval: 'month'});
+  assert.equal(returning.created.discounts, undefined);
 });
 
 test('mocked checkout rejects guests, existing subscribers and mismatched price', async () => {
