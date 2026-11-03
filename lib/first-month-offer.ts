@@ -14,6 +14,13 @@ export const FIRST_MONTH_DISCOUNT_CENTS = PRO_PRICE_CENTS - FIRST_MONTH_PRICE_CE
 
 type OfferProfile = { tier?: string | null; stripe_customer_id?: string | null; stripe_subscription_id?: string | null; complimentary_pro?: boolean } | null | undefined;
 
+/** Never subscribed or bought anything with Klyp, and not already Pro: the people a first-month discount is for. */
+export function isNewCustomer(profile: OfferProfile): boolean {
+  if (!profile) return false;
+  if (profile.tier === "pro" || profile.complimentary_pro) return false;
+  return !profile.stripe_customer_id && !profile.stripe_subscription_id;
+}
+
 export function firstMonthOfferAvailable(
   profile: OfferProfile, env: Record<string, string | undefined> = process.env, hasOfferLink = false,
 ): boolean {
@@ -21,8 +28,7 @@ export function firstMonthOfferAvailable(
   const mode = (env.FIRST_MONTH_OFFER ?? "").trim().toLowerCase();
   if (mode === "off") return false;
   if (mode !== "all" && !hasOfferLink) return false;
-  if (profile.tier === "pro" || profile.complimentary_pro) return false;
-  return !profile.stripe_customer_id && !profile.stripe_subscription_id;
+  return isNewCustomer(profile);
 }
 
 type CouponStripe = {

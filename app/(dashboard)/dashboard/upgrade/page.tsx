@@ -93,10 +93,12 @@ export default function UpgradePage() {
   useEffect(() => { const t = setTimeout(() => setWaitedTooLong(true), 4000); return () => clearTimeout(t); }, []);
   // New people can pay $17 for the first month; the server decides who qualifies. Open on the monthly view so they see it.
   const [firstMonthCents, setFirstMonthCents] = useState<number | null>(null);
+  const [promoHint, setPromoHint] = useState(false);
   useEffect(() => {
     if (isPro) return;
     let cancelled = false;
     fetch("/api/stripe/checkout").then((r) => r.json()).then((d) => {
+      if (!cancelled && d?.promo_code_field === true) setPromoHint(true);
       if (cancelled || typeof d?.first_month?.price_cents !== "number") return;
       setFirstMonthCents(d.first_month.price_cents);
       setYearly(false);
@@ -294,6 +296,9 @@ export default function UpgradePage() {
               <span className="font-syne text-4xl font-bold text-accent">${MONTHLY_PRICE_USD}</span>
               <span className="text-sm text-foreground-muted mb-1.5">USD/mo</span>
             </div>
+          )}
+          {!isPro && !yearly && promoHint && firstMonthCents === null && (
+            <p className="-mt-1 mb-3 text-xs text-foreground-muted">Have a promo code? Enter it at checkout.</p>
           )}
 
           <div className="h-px bg-border mb-5" />
