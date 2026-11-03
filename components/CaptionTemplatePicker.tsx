@@ -19,7 +19,7 @@ const templateInfo: Record<CaptionStyle, { name: string; detail: string; sample:
   HYPE: { name: 'Hype', detail: 'Red word focus', sample: 'BROWN FOX' },
   POP: { name: 'Pop', detail: 'One huge word', sample: 'THE' },
   FIRE: { name: 'Fire', detail: 'Green word and emoji', sample: 'THE QUICK BROWN' },
-  TRICOLOR: { name: 'Tri-color', detail: 'Green, red, white', sample: 'THE QUICK BROWN' },
+  TRICOLOR: { name: 'Tri-color', detail: 'Green and red word', sample: 'THE QUICK BROWN' },
 };
 
 export default function CaptionTemplatePicker({ value, onChange }: {
@@ -34,7 +34,7 @@ export default function CaptionTemplatePicker({ value, onChange }: {
       {visibleStyles.map(style => {
         const info = templateInfo[style];
         return <button key={style} type="button" className="caption-template-card" data-style={style.toLowerCase()} aria-label={`${info.name} caption template`} aria-pressed={value === style} onClick={() => onChange(style)}>
-          <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : style === 'HYPE' ? <>BROWN <em>FOX</em></> : style === 'FIRE' ? <>THE QUICK <em>BROWN</em> 🔥</> : style === 'TRICOLOR' ? <><i className="tri-g">THE</i> <i className="tri-r">QUICK</i> <i>BROWN</i></> : info.sample}</b></span>
+          <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : style === 'HYPE' ? <>BROWN <em>FOX</em></> : style === 'FIRE' ? <>THE QUICK <em>BROWN</em> 🔥</> : style === 'TRICOLOR' ? <><i>THE</i> <i className="tri-r">QUICK</i> <i>BROWN</i></> : info.sample}</b></span>
           <span className="caption-template-meta"><strong>{info.name}</strong><small>{info.detail}</small></span>
         </button>;
       })}
