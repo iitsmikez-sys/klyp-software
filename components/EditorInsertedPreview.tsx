@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import type {ResolvedInsertSpan} from '@/lib/editor-timeline';
 import type {EditorAsset} from '@/lib/editor-assets';
-import {mediaResponse} from '@/lib/editor-media-client';
+import {cachedInsertPreview,prefetchInsertPreview} from '@/lib/editor-insert-preview-cache';
 import type {CutawayPicture} from './EditorCutawayPreview';
 
 export default function EditorInsertedPreview({clipId,active,time,playing,muted,volume,onPicture,onTimeChange,onFinish}:{
@@ -14,13 +14,15 @@ export default function EditorInsertedPreview({clipId,active,time,playing,muted,
  const clock=useRef(time);clock.current=time;
  picture.current=onPicture;change.current=onTimeChange;finish.current=onFinish;
  const id=active?.asset_id;
- useEffect(()=>{const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;picture.current(null);setPreview(null);setError(null);if(!id)return;
-  void fetch(`/api/clips/${clipId}/media/${id}`,{signal:controller.signal}).then(response=>mediaResponse<{asset:EditorAsset;preview_url:string;expires_in:number}>(response)).then(data=>{
-   if(controller.signal.aborted)return;
-   setPreview({asset:data.asset,url:data.preview_url});
-   timer=setTimeout(()=>setAttempt(n=>n+1),Math.max(1000,data.expires_in*1000-30000));
-  }).catch(e=>{if(!controller.signal.aborted)setError((e as Error).message);});
-  return()=>{controller.abort();clearTimeout(timer);picture.current(null);};
+ useEffect(()=>{let cancelled=false;let timer:ReturnType<typeof setTimeout>;picture.current(null);setError(null);if(!id){setPreview(null);return;}
+  // The editor fetches inserted media ahead of time, so the file is usually ready the moment the insert starts.
+  const hit=cachedInsertPreview(clipId,id);setPreview(hit?{asset:hit.asset,url:hit.url}:null);
+  void prefetchInsertPreview(clipId,id).then(entry=>{
+   if(cancelled)return;
+   setPreview({asset:entry.asset,url:entry.url});
+   timer=setTimeout(()=>setAttempt(n=>n+1),Math.max(1000,entry.expiresAt-Date.now()-30000));
+  }).catch(e=>{if(!cancelled)setError((e as Error).message);});
+  return()=>{cancelled=true;clearTimeout(timer);picture.current(null);};
  },[clipId,id,attempt]);
  const start=active?.start_ms??0,end=active?.end_ms??0,assetStart=active?.asset_in_ms??0;
  useEffect(()=>{const element=video.current;if(!element||!active||preview?.asset.kind!=='video')return;

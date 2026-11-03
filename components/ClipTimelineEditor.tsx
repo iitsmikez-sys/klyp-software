@@ -16,6 +16,7 @@ import { getStoredHandle } from '@/lib/streamer-handle';
 import { readLayoutExportWarning } from '@/lib/layout-export-warning';
 import type { VerticalLayoutV1 } from '@/lib/vertical-layout';
 import { useSparks } from './SparksProvider';
+import { prefetchInsertPreview } from '@/lib/editor-insert-preview-cache';
 import ProGateModal from './ProGateModal';
 import Logo from './Logo';
 import EditorIcon from './EditorIcon';
@@ -63,6 +64,8 @@ export default function ClipTimelineEditor({ clip, compatibilityNotice }: {
     const [hasSaved, setHasSaved] = useState(!!clip.edit_draft);
     const [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null), [exporting, setExporting] = useState(false), [gate, setGate] = useState(false), [youtubeOpen, setYoutubeOpen] = useState(false), [layout, setLayout] = useState<VerticalLayoutV1 | null>(null);
     useEffect(() => { if (new URLSearchParams(window.location.search).has('youtube')) setYoutubeOpen(true); }, []);
+    // Load inserted photos and videos before the playhead reaches them, so playback does not stall at the insert.
+    useEffect(() => { for (const item of draft.inserts ?? []) void prefetchInsertPreview(clip.id, item.asset_id).catch(() => { /* the preview reports a real failure when it plays */ }); }, [clip.id, draft.inserts]);
     const [foregroundPreview,setForegroundPreview]=useState<VerticalLayoutV1|null>(null);
     const [textPreview,setTextPreview]=useState<Pick<ClipEditDraftV3,'hook_placement'|'caption_placement'>|null>(null);
     const router = useRouter(), { tier, complimentaryPro } = useSparks();
