@@ -67,11 +67,16 @@ export async function GET(req: NextRequest) {
         .is("twitch_user_id", null)
         .maybeSingle();
       if (urlOnly) {
-        const { error: adoptError } = await supabase
+        // Signed-in users may read, add and delete their channels but not update them (no UPDATE
+        // policy), so a plain update through their session changes nothing and reports no error.
+        // Write with the server's own client, scoped to this user's row, and require a row back.
+        const { data: adopted, error: adoptError } = await createAdminClient()
           .from("streams")
           .update({ twitch_user_id: twitchUser.id, twitch_login: twitchUser.login })
-          .eq("id", urlOnly.id);
-        if (adoptError) {
+          .eq("id", urlOnly.id)
+          .eq("user_id", user.id)
+          .select("id");
+        if (adoptError || !adopted || adopted.length === 0) {
           console.error("[twitch callback] could not attach Twitch identity:", adoptError);
           const failed = redirectWithStatus(req, "save_failed");
           failed.cookies.delete("twitch_oauth_state");
