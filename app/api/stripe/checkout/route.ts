@@ -13,7 +13,7 @@ import { getProfile } from "@/lib/profile";
 import { resolveBillingState } from "@/lib/stripe-billing";
 import { validateProPrice } from "@/lib/checkout-price";
 import { OFFER_COOKIE, OFFER_VALUE } from "@/lib/offer-cookie";
-import { ensureFirstMonthCoupon, firstMonthOfferAvailable, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
+import { ensureFirstMonthCoupon, firstMonthOfferAvailable, isNewCustomer, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
 
 export const runtime = "nodejs";
 
@@ -25,9 +25,13 @@ export async function GET(req: NextRequest) {
   try {
     const profile = await getProfile();
     const offered = firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
-    return NextResponse.json({ first_month: offered ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null });
+    return NextResponse.json({
+      first_month: offered ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null,
+      // New monthly subscribers without the ad offer can type a promo code on Stripe's checkout page.
+      promo_code_field: !offered && isNewCustomer(profile),
+    });
   } catch {
-    return NextResponse.json({ first_month: null });
+    return NextResponse.json({ first_month: null, promo_code_field: false });
   }
 }
 
@@ -73,11 +77,16 @@ export async function POST(req: NextRequest) {
     }
     // New monthly subscribers pay $17 for the first month (lib/first-month-offer.ts). Stripe also
     // confirms they have never been a customer, so a returning person pays the full price.
-    const firstMonth = !yearly && !billing.checkoutCustomerId && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
+    const newMonthly = !yearly && !billing.checkoutCustomerId && isNewCustomer(profile);
+    const firstMonth = newMonthly && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
+    // Stripe does not allow a preset discount and the promo code box together: ad-link visitors get the
+    // preset $17, other new monthly subscribers get the box (codes are made in the Stripe dashboard).
+    const promoField = newMonthly && !firstMonth;
     const couponId = firstMonth ? await ensureFirstMonthCoupon(stripe) : null;
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
+      ...(promoField ? { allow_promotion_codes: true } : {}),
       line_items: [
         configuredPrice
           ? { price: configuredPrice, quantity: 1 }

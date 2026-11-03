@@ -46,7 +46,8 @@ test("the coupon is created once with the right terms, and reused", async () => 
 
 test("checkout applies the coupon only to new monthly subscribers; the page shows the offer", () => {
   const route = read("app/api/stripe/checkout/route.ts");
-  assert.ok(route.includes("!yearly && !billing.checkoutCustomerId && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req))"));
+  assert.ok(route.includes("const newMonthly = !yearly && !billing.checkoutCustomerId && isNewCustomer(profile);"));
+  assert.ok(route.includes("const firstMonth = newMonthly && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));"));
   assert.ok(route.includes("discounts: [{ coupon: couponId }]"));
   const page = read("app/(dashboard)/dashboard/upgrade/page.tsx");
   assert.ok(page.includes('fetch("/api/stripe/checkout")'));
@@ -61,4 +62,16 @@ test("the proxy saves the ad link in a 30-day cookie, and the pricing card no lo
   const cookie = await import("../lib/offer-cookie.ts");
   assert.deepEqual([cookie.OFFER_COOKIE, cookie.OFFER_VALUE, cookie.OFFER_PARAM, cookie.OFFER_COOKIE_MAX_AGE], ["klyp_offer", "17", "offer", 2592000]);
   assert.ok(!read("app/(dashboard)/dashboard/upgrade/page.tsx").includes("early adopter"));
+});
+
+test("isNewCustomer: only people who never subscribed or bought and are not Pro", async () => {
+  const { isNewCustomer } = await import("../lib/first-month-offer.ts");
+  assert.equal(isNewCustomer({ tier: "free" }), true);
+  assert.equal(isNewCustomer({ tier: "free", stripe_customer_id: "cus_1" }), false);
+  assert.equal(isNewCustomer({ tier: "pro" }), false);
+  assert.equal(isNewCustomer({ tier: "free", complimentary_pro: true }), false);
+  assert.equal(isNewCustomer(null), false);
+  const page = read("app/(dashboard)/dashboard/upgrade/page.tsx");
+  assert.ok(page.includes("Have a promo code? Enter it at checkout."));
+  assert.ok(read("app/api/stripe/checkout/route.ts").includes("promo_code_field"));
 });

@@ -13,7 +13,7 @@ class NextResponse extends Response {
   static redirect(url) { return new NextResponse(null, {status: 307, headers: {location: url}}); }
 }
 
-function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, offer = false, link = true, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
+function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, offer = false, link = true, newCustomer = true, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
   let created;
   const validated = [];
   const stripe = {
@@ -27,7 +27,7 @@ function checkoutHarness({signedIn = true, subscribed = false, validPrice = true
     '@/lib/profile': {getProfile: async () => ({stripe_customer_id: null, stripe_subscription_id: null})},
     '@/lib/stripe-billing': {resolveBillingState: async () => ({checkoutCustomerId: null, portalCustomerId: subscribed ? 'cus_existing' : null})},
     '@/lib/offer-cookie': {OFFER_COOKIE: 'klyp_offer', OFFER_VALUE: '17'},
-    '@/lib/first-month-offer': {firstMonthOfferAvailable: (_profile, _env, fromLink) => offer && fromLink === true, ensureFirstMonthCoupon: async () => 'coupon_test', FIRST_MONTH_PRICE_CENTS: 1700},
+    '@/lib/first-month-offer': {firstMonthOfferAvailable: (_profile, _env, fromLink) => offer && fromLink === true, isNewCustomer: () => newCustomer, ensureFirstMonthCoupon: async () => 'coupon_test', FIRST_MONTH_PRICE_CENTS: 1700},
     '@/lib/checkout-price': {validateProPrice: (...args) => { validated.push(args.slice(1)); return validPrice; }},
   };
   const exports = {};
@@ -62,6 +62,23 @@ test('a new monthly subscriber gets the $17 first-month coupon; yearly and non-q
   const returning = checkoutHarness({offer: false});
   await returning.post({interval: 'month'});
   assert.equal(returning.created.discounts, undefined);
+});
+
+test('new monthly subscribers without the ad offer get the promo code box; nobody else does', async () => {
+  const plain = checkoutHarness({offer: false});
+  await plain.post({interval: 'month'});
+  assert.equal(plain.created.allow_promotion_codes, true);
+  assert.equal(plain.created.discounts, undefined);
+  const fromLink = checkoutHarness({offer: true});
+  await fromLink.post({interval: 'month'});
+  assert.equal(fromLink.created.allow_promotion_codes, undefined, 'a preset discount and the code box cannot be combined');
+  assert.ok(fromLink.created.discounts);
+  const yearly = checkoutHarness({offer: false});
+  await yearly.post({interval: 'year'});
+  assert.equal(yearly.created.allow_promotion_codes, undefined);
+  const returning = checkoutHarness({offer: false, newCustomer: false});
+  await returning.post({interval: 'month'});
+  assert.equal(returning.created.allow_promotion_codes, undefined);
 });
 
 test('mocked checkout rejects guests, existing subscribers and mismatched price', async () => {
