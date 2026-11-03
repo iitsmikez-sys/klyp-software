@@ -12,15 +12,20 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/profile";
 import { resolveBillingState } from "@/lib/stripe-billing";
 import { validateProPrice } from "@/lib/checkout-price";
+import { OFFER_COOKIE, OFFER_VALUE } from "@/lib/offer-cookie";
 import { ensureFirstMonthCoupon, firstMonthOfferAvailable, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
 
 export const runtime = "nodejs";
 
+/** Did this person arrive from the ad link? The proxy saved that in a cookie. */
+const hasOfferLink = (req: NextRequest) => req.cookies.get(OFFER_COOKIE)?.value === OFFER_VALUE;
+
 /** GET /api/stripe/checkout — does the signed-in person qualify for the $17 first month? */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const profile = await getProfile();
-    return NextResponse.json({ first_month: firstMonthOfferAvailable(profile) ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null });
+    const offered = firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
+    return NextResponse.json({ first_month: offered ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null });
   } catch {
     return NextResponse.json({ first_month: null });
   }
@@ -68,7 +73,7 @@ export async function POST(req: NextRequest) {
     }
     // New monthly subscribers pay $17 for the first month (lib/first-month-offer.ts). Stripe also
     // confirms they have never been a customer, so a returning person pays the full price.
-    const firstMonth = !yearly && !billing.checkoutCustomerId && firstMonthOfferAvailable(profile);
+    const firstMonth = !yearly && !billing.checkoutCustomerId && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
     const couponId = firstMonth ? await ensureFirstMonthCoupon(stripe) : null;
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",

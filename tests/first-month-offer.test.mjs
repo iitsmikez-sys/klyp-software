@@ -10,19 +10,26 @@ test("the first month costs $17: $28 minus an $11 coupon", () => {
   assert.equal(FIRST_MONTH_DISCOUNT_CENTS, 1100);
 });
 
-test("only someone who never subscribed qualifies", () => {
-  assert.equal(firstMonthOfferAvailable({ tier: "free" }, {}), true);
-  assert.equal(firstMonthOfferAvailable({ tier: "free", stripe_customer_id: "cus_1" }, {}), false);
-  assert.equal(firstMonthOfferAvailable({ tier: "free", stripe_subscription_id: "sub_1" }, {}), false);
-  assert.equal(firstMonthOfferAvailable({ tier: "pro" }, {}), false);
-  assert.equal(firstMonthOfferAvailable({ tier: "free", complimentary_pro: true }, {}), false);
-  assert.equal(firstMonthOfferAvailable(null, {}), false);
+test("only someone from the ad link who never subscribed qualifies", () => {
+  assert.equal(firstMonthOfferAvailable({ tier: "free" }, {}, true), true);
+  assert.equal(firstMonthOfferAvailable({ tier: "free", stripe_customer_id: "cus_1" }, {}, true), false);
+  assert.equal(firstMonthOfferAvailable({ tier: "free", stripe_subscription_id: "sub_1" }, {}, true), false);
+  assert.equal(firstMonthOfferAvailable({ tier: "pro" }, {}, true), false);
+  assert.equal(firstMonthOfferAvailable({ tier: "free", complimentary_pro: true }, {}, true), false);
+  assert.equal(firstMonthOfferAvailable(null, {}, true), false);
+});
+
+test("without the ad link there is no offer, unless FIRST_MONTH_OFFER=all", () => {
+  assert.equal(firstMonthOfferAvailable({ tier: "free" }, {}), false);
+  assert.equal(firstMonthOfferAvailable({ tier: "free" }, {}, false), false);
+  assert.equal(firstMonthOfferAvailable({ tier: "free" }, { FIRST_MONTH_OFFER: "all" }, false), true);
+  assert.equal(firstMonthOfferAvailable({ tier: "free", stripe_customer_id: "cus_1" }, { FIRST_MONTH_OFFER: "all" }, false), false);
 });
 
 test("FIRST_MONTH_OFFER=off stops the offer", () => {
-  assert.equal(firstMonthOfferAvailable({ tier: "free" }, { FIRST_MONTH_OFFER: "off" }), false);
-  assert.equal(firstMonthOfferAvailable({ tier: "free" }, { FIRST_MONTH_OFFER: "OFF " }), false);
-  assert.equal(firstMonthOfferAvailable({ tier: "free" }, { FIRST_MONTH_OFFER: "on" }), true);
+  assert.equal(firstMonthOfferAvailable({ tier: "free" }, { FIRST_MONTH_OFFER: "off" }, true), false);
+  assert.equal(firstMonthOfferAvailable({ tier: "free" }, { FIRST_MONTH_OFFER: "OFF " }, true), false);
+  assert.equal(firstMonthOfferAvailable({ tier: "free" }, { FIRST_MONTH_OFFER: "on" }, true), true);
 });
 
 test("the coupon is created once with the right terms, and reused", async () => {
@@ -39,10 +46,19 @@ test("the coupon is created once with the right terms, and reused", async () => 
 
 test("checkout applies the coupon only to new monthly subscribers; the page shows the offer", () => {
   const route = read("app/api/stripe/checkout/route.ts");
-  assert.ok(route.includes("!yearly && !billing.checkoutCustomerId && firstMonthOfferAvailable(profile)"));
+  assert.ok(route.includes("!yearly && !billing.checkoutCustomerId && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req))"));
   assert.ok(route.includes("discounts: [{ coupon: couponId }]"));
   const page = read("app/(dashboard)/dashboard/upgrade/page.tsx");
   assert.ok(page.includes('fetch("/api/stripe/checkout")'));
   assert.ok(page.includes("USD first month"));
   assert.ok(!page.includes("40% off your first month"));
+});
+
+test("the proxy saves the ad link in a 30-day cookie, and the pricing card no longer says early adopter", async () => {
+  const proxy = read("proxy.ts");
+  assert.ok(proxy.includes('matcher: ["/", "/dashboard/:path*", "/login"]'));
+  assert.ok(proxy.includes("if (fromAd) saveOffer(response);") && proxy.includes("if (fromAd) saveOffer(supabaseResponse);"));
+  const cookie = await import("../lib/offer-cookie.ts");
+  assert.deepEqual([cookie.OFFER_COOKIE, cookie.OFFER_VALUE, cookie.OFFER_PARAM, cookie.OFFER_COOKIE_MAX_AGE], ["klyp_offer", "17", "offer", 2592000]);
+  assert.ok(!read("app/(dashboard)/dashboard/upgrade/page.tsx").includes("early adopter"));
 });
