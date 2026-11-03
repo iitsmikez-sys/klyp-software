@@ -6,6 +6,7 @@ import ts from "typescript";
 import * as planLimits from "../lib/plan-limits.ts";
 import * as entitlement from "../lib/auto-clip-entitlement.ts";
 import { fakeAdmin } from "./helpers/fake-admin.mjs";
+import * as clipExtras from "../lib/clip-extras.ts";
 
 const transpile = (p) => ts.transpileModule(readFileSync(new URL(p, import.meta.url), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
@@ -33,6 +34,7 @@ function toggleHarness(plan, { enabled = true, flag = false, failOn = null, stre
   const admin = world(plan, { stream: { auto_clip_enabled: flag, ...(streamOwner ? { user_id: streamOwner } : {}) }, failOn,
     jobs: [{ stream_id: "s1", status: "pending" }] });
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     "next/server": { NextResponse: response },
     "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: PROFILES[plan].id } } }) } }) },
     "@/lib/supabase/admin": { createAdminClient: () => admin },
@@ -83,6 +85,7 @@ test("toggle: someone else's channel is still not found", async () => {
 function eventsubHarness(plan) {
   const admin = world(plan);
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/twitch": { verifyEventSubSignature: () => true },
     "@/lib/supabase/admin": { createAdminClient: () => admin },
@@ -126,6 +129,7 @@ function workerHarness(plan, { job, pendingCheck = false, duration = 3600 } = {}
     throw new Error(`Unexpected RPC: ${name}`);
   };
   const modules = {
+    "@/lib/clip-extras": clipExtras,
     "fs/promises": { mkdtemp: async () => "fixture-dir", rm: async () => {} },
     os: { tmpdir: () => "fixture-tmp" }, path: { join: (...p) => p.join("/") },
     "@/lib/supabase/admin": { createAdminClient: () => admin },

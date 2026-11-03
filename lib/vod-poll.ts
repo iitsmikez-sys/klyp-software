@@ -26,6 +26,7 @@ import { preferencesForUser } from "@/lib/creator-feedback-data";
 import { processClipArchiveJobs } from "@/lib/clip-archive-worker";
 import { processR2Maintenance } from "@/lib/r2-maintenance";
 import { runQueued } from "@/lib/job-queue";
+import { isTopPick } from "@/lib/clip-extras";
 import { estimateSparks, analysisCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
 import type { Profile } from "@/lib/tier";
 import { PLAN_LIMITS } from "@/lib/plan-limits";
@@ -155,8 +156,10 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
             client: admin, durationHint: job.duration_seconds })
         : runAnalysisPipeline(options));
 
-    const sparksSpent = analysisCharge(result.durationSeconds, result.clips.length);
-    const rows = result.clips.map((clip) => ({
+    // Automatic clipping saves top picks only; near-miss extras are for the dashboard results page.
+    const topPicks = result.clips.filter(isTopPick);
+    const sparksSpent = analysisCharge(result.durationSeconds, topPicks.length);
+    const rows = topPicks.map((clip) => ({
         title: clip.title,
         clip_type: clip.type,
         viral_score: Math.round(clip.viral_score),
@@ -182,9 +185,9 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
     await notify(
       admin,
       job.user_id,
-      `Your new VOD is clipped — ${result.clips.length} clip${result.clips.length === 1 ? "" : "s"} ready in your dashboard.`
+      `Your new VOD is clipped — ${topPicks.length} clip${topPicks.length === 1 ? "" : "s"} ready in your dashboard.`
     );
-    log("auto-clipped", job.stream_id, job.video_id, `${result.clips.length} clips`, `${sparksSpent}⚡`);
+    log("auto-clipped", job.stream_id, job.video_id, `${topPicks.length} clips`, `${sparksSpent}⚡`);
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }

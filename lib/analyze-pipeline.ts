@@ -44,6 +44,7 @@ import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/a
 import { reviewProcessingBudget, runLimitForSeconds } from "@/lib/vod-budget";
 import { budgetForRun } from "@/lib/provider-budget";
 import { quoteSelectMessage, quoteTranscription } from "@/lib/provider-budget-core";
+import { pickExtras } from "@/lib/clip-extras";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
@@ -469,7 +470,11 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 - From your full Phase 1 candidate pool, return the TOP ${clipCount} by viral_score, highest first — never the first ${clipCount} you happened to find while scanning. A late-VOD 88 always beats an early-VOD 74, full stop.
 - QUALITY FLOOR: include a clip ONLY if its viral_score is 65 or higher. If the VOD has just 3 genuinely great moments, return 3 — NEVER pad the list with filler to hit the count. The streamer is charged per clip returned; a weak clip costs them money and trust.
 - Prefer variety ONLY as a tiebreaker between near-identical scores (within ~2 points): a wall of RAGE clips from one VOD is a worse deliverable than a spread of types. Variety is NEVER a reason to drop a higher-scoring moment for a lower-scoring one — score ranking always wins.
-- Do not pick overlapping or near-duplicate moments; if one moment produces two candidate windows, pick the better cut.${spikeSection}${keywordSection}`,
+- Do not pick overlapping or near-duplicate moments; if one moment produces two candidate windows, pick the better cut.
+
+## ALSO CONSIDER (near-misses, separate list)
+
+After your main list, fill "also_consider" with up to 3 more moments that scored 55-64, just below the quality floor. Do this ONLY when your main list has fewer than ${clipCount} clips AND at least one moment cleared 65; otherwise return an empty list. At most the smaller of 3 and (${clipCount} minus your main list length). Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${keywordSection}`,
     messages: [
       {
         role: "user",
@@ -523,6 +528,14 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
   const clipSchema = clipSchemaForContentType(contentType);
   const clips: Clip[] = [];
+  const extraCandidates: Clip[] = [];
+  const rawExtras = (parsed as { also_consider?: unknown }).also_consider;
+  if (Array.isArray(rawExtras)) {
+    for (const raw of rawExtras) {
+      const result = clipSchema.safeParse(raw);
+      if (result.success) extraCandidates.push(result.data); // a malformed extra is simply dropped
+    }
+  }
   let skipped = 0;
   for (const raw of rawClips) {
     const result = clipSchema.safeParse(raw);
@@ -574,7 +587,11 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
     );
   }
   clips.length = 0;
-  clips.push(...deduped.filter(clip => clip.viral_score >= 65).slice(0, clipCount));
+  const mainPicks = deduped.filter(clip => clip.viral_score >= 65).slice(0, clipCount);
+  const observedExtras = observedWindows ? extraCandidates.filter(clip => clipInsideObservedCoverage(clip, observedWindows)) : extraCandidates;
+  const extras = pickExtras({ mainPicks, candidates: observedExtras, requestedCount: clipCount, priorWindows });
+  clips.push(...mainPicks, ...extras);
+  if (extras.length > 0) console.log(`[analyze] added ${extras.length} near-miss extra(s) after ${mainPicks.length} top pick(s)`);
 
   console.log(
     `[analyze] content=${contentType} types:`,
