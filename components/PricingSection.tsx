@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import FadeIn from "./FadeIn";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
-import { vodsPhrase } from "@/lib/sparks";
 import { MONTHLY_PRICE_USD, YEARLY_PER_MONTH_USD, YEARLY_PRICE_USD, YEARLY_SAVE_PERCENT } from "@/lib/pricing";
 
 /* ─── Icons ─── */
@@ -75,10 +74,11 @@ const plans: Plan[] = [
     tagline: "Free forever",
     price: { kind: "free" },
     features: [
-      { kind: "check", text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.free)}` },
+      { kind: "check", text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days` },
+      { kind: "check", text: "AI clipping with Virality Score" },
       { kind: "check", text: "Up to 1080p rendered clips" },
       { kind: "check", text: "9:16 vertical and Original (no crop) exports" },
-      { kind: "check", text: "AI-suggested clips and timed captions" },
+      { kind: "check", text: "AI captions: Bold, Klyp, Spark and Pulse" },
       { kind: "check", text: "Save clips to your library" },
       { kind: "check", text: "YouTube and Twitch videos up to 2 hours" },
       { kind: "warn",  text: "No direct uploads or automatic clipping" },
@@ -94,13 +94,15 @@ const plans: Plan[] = [
     features: [
       { kind: "divider", text: "Everything in Free, plus:" },
       { kind: "check",   text: "No watermark" },
+      { kind: "check",   text: "More caption styles" },
       { kind: "check",   text: "Unlimited exports" },
       { kind: "check",   text: "500 Sparks every 30 days" },
       { kind: "check",   text: "Longer VODs from Twitch and YouTube, plus direct video uploads" },
       { kind: "check",   text: "Automatic clipping when your Twitch stream ends" },
       { kind: "check",   text: "Download clips for TikTok, Reels & Shorts" },
       { kind: "check",   text: "All formats: 9:16, Original, 1:1, 16:9" },
-      { kind: "check",   text: "Full in-app editor with timeline cuts, captions and media imports" },
+      { kind: "check",   text: "Full editor" },
+      { kind: "check",   text: "Post scheduling to YouTube (coming soon)" },
     ],
     cta: { label: "Get Klyp Pro", subtext: "Cancel anytime", href: "/login" },
     highlighted: true,

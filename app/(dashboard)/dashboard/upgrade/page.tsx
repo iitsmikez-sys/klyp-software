@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
-import { vodsPhrase } from "@/lib/sparks";
+import { ProDiamond } from "@/components/ProDiamond";
 import CancelFlow from "@/components/CancelFlow";
 import { DEFAULT_PACK_ID, SPARK_PACKS, packById } from "@/lib/spark-packs";
 import { MONTHLY_PRICE_USD, YEARLY_PER_MONTH_USD, YEARLY_PRICE_USD, YEARLY_SAVE_PERCENT } from "@/lib/pricing";
@@ -13,6 +13,15 @@ function Check() {
   return (
     <svg className="flex-shrink-0 mt-0.5" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#00E5A0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function Soon() {
+  return (
+    <svg className="flex-shrink-0 mt-0.5" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7a7a92" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
     </svg>
   );
 }
@@ -28,26 +37,32 @@ function Warn() {
 }
 
 const FREE_FEATURES: { ok: boolean; text: string }[] = [
-  { ok: true, text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.free)}` },
-  { ok: true, text: "AI clip detection with viral scores" },
+  { ok: true, text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days` },
+  { ok: true, text: "AI clipping with Virality Score" },
+  { ok: true, text: "Clip editor: trim, split and edit captions" },
   { ok: true, text: "9:16 vertical and Original (no crop) exports" },
-  { ok: true, text: "AI captions — BOLD, CLEAN & KLYP styles" },
+  { ok: true, text: "AI captions: Bold, Klyp, Spark and Pulse" },
   { ok: true, text: "YouTube and Twitch videos up to 2 hours" },
   { ok: false, text: "No direct video uploads or automatic clipping (Pro)" },
   { ok: false, text: "Animated Klyp watermark on free exports" },
 ];
 
-const PRO_FEATURES: string[] = [
-  `${SPARKS_ALLOWANCE.pro} Sparks every 30 days — ${vodsPhrase(SPARKS_ALLOWANCE.pro)}`,
-  "No watermark. Clean clips, your brand only",
-  "All export formats: 9:16, Original, 1:1 and 16:9",
-  "Raw exports — edit clips yourself in CapCut",
-  "Streamer handle overlay on exports",
-  "Longer VODs from Twitch and YouTube, plus direct video uploads",
-  "Automatic clipping when your Twitch stream ends",
-  "Twitch chat spike detection",
-  "Download all clips as ZIP",
-  "Priority support",
+/** `pro` marks a line that gets the Pro diamond instead of a check; `soon` marks a feature that is not live yet. */
+const PRO_FEATURES: { text: string; pro?: boolean; soon?: boolean }[] = [
+  { text: `${SPARKS_ALLOWANCE.pro} Sparks every 30 days` },
+  { text: "AI clipping with Virality Score" },
+  { text: "No watermark. Clean clips, your brand only" },
+  { text: "Full editor" },
+  { text: "More caption styles", pro: true },
+  { text: "All export formats: 9:16, Original, 1:1 and 16:9" },
+  { text: "Raw exports: edit clips yourself in CapCut" },
+  { text: "Streamer handle overlay on exports" },
+  { text: "Longer VODs from Twitch and YouTube, plus direct video uploads" },
+  { text: "Automatic clipping when your Twitch stream ends" },
+  { text: "Twitch chat spike detection" },
+  { text: "Download all clips as ZIP" },
+  { text: "Post scheduling to YouTube", soon: true },
+  { text: "Priority support" },
 ];
 
 /** Hover style shared by every feature row. */
@@ -303,10 +318,13 @@ export default function UpgradePage() {
 
           <div className="h-px bg-border mb-5" />
           <ul className="flex flex-col gap-2 flex-1 mb-7">
-            {PRO_FEATURES.map((text) => (
+            {PRO_FEATURES.map(({ text, pro, soon }) => (
               <li key={text} className={FEATURE_ROW}>
-                <Check />
-                <span className="text-sm leading-snug text-foreground-muted">{text}</span>
+                {soon ? <Soon /> : pro ? <ProDiamond size={15} className="mt-0.5 flex-shrink-0" /> : <Check />}
+                <span className="text-sm leading-snug text-foreground-muted">
+                  {text}
+                  {soon && <span className="ml-2 inline-block rounded-full border border-accent/40 bg-accent-glow px-2 py-px align-middle text-[10px] font-semibold text-accent">Coming soon</span>}
+                </span>
               </li>
             ))}
           </ul>
