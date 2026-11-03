@@ -323,7 +323,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // MAX_CONCURRENT_JOBS yt-dlp+ffmpeg pipelines at once regardless of
         // which route they came from.
         const cachedTranscript = job.analysis_clips || useDiscoveryV2 ? null
-          : await loadJobTranscript(token!, jobId) ?? await findReusableFullTranscript(token!, sourceKey);
+          : await loadJobTranscript(token!, jobId) ?? await findReusableFullTranscript(token!, sourceKey, verifiedDuration);
         const pipelineResult = job.analysis_clips ? {
           clips: job.analysis_clips, skipped: 0, durationSeconds: job.analysis_duration_seconds!,
           transcriptChars: job.transcript_chars ?? 0, words: [],

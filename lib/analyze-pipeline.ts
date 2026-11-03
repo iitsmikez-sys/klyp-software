@@ -745,7 +745,7 @@ export async function runAnalysisPipeline(opts: {
   } else if (!chatSpikesPromise && !uploadedPath) {
     chatSpikesPromise = detectChatSpikes(url, durationSeconds).catch(() => null);
   }
-  const transcriptText = await withMem("format-transcript", async () => formatTranscript(words));
+  const transcriptText = await withMem("format-transcript", async () => formatTranscript(words, { dropFillers: true }));
   console.log(`[mem] transcript is ${(transcriptText.length / 1048576).toFixed(1)}MB of text`);
   const chatSpikes = await withMem("chat-spikes", async () =>
     chatSpikesPromise ? await chatSpikesPromise : null

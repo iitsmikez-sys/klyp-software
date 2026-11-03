@@ -134,7 +134,7 @@ async function runDiscoveryPipelineUnlocked(opts: DiscoveryOptions): Promise<Pip
   progress('transcribe', 'done');
   const words = reusableWords([...stored, ...created], windows);
   if (!words.length) throw new Error('No speech found in the selected footage; no clips were charged.');
-  const transcriptText = formatTranscript(words);
+  const transcriptText = formatTranscript(words, { dropFillers: true });
   const keywordMatches = opts.keyword ? findKeywordMatches(words, opts.keyword) : [];
   progress('analyze', 'running');
   const selectionDone = meter.start('select');
