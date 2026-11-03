@@ -5,6 +5,7 @@ import { ensureCaptionFonts } from "@/lib/caption-fonts";
 import { planClipComposition, previewDimensions, visibleFrameRect, type VerticalLayoutV1 } from "@/lib/vertical-layout";
 import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, keywordAtTime, type HookStyle } from "@/lib/captions";
 import { paintCaptionLine } from "@/lib/caption-preview";
+import { emojiForText, isHighlightStyle } from "@/lib/caption-looks";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { captionAppearance, editorOverlayAtTime } from "@/lib/editor-captions";
 import { captionMotion } from "@/lib/caption-template-motion";
@@ -107,7 +108,8 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               ctx.textBaseline = "middle";
               ctx.lineWidth = caption.outline * 2;
               ctx.strokeStyle = "black";
-              ctx.fillStyle = style === "COMIC" ? "#FFDF00" : style === "KEYWORD" ? "#FFFFFF" : appearance.color;
+              ctx.fillStyle = style === "COMIC" ? "#FFDF00" : isHighlightStyle(style) ? "#FFFFFF" : appearance.color;
+              const emoji = style === "FIRE" ? emojiForText(activeCaption.text) : null;
               const keyword = keywordAtTime(outputTime * 1000 - activeCaption.start_ms,
                 activeCaption.end_ms - activeCaption.start_ms, activeCaption.text.trim().split(/\s+/).length);
               let wordOffset = 0;
@@ -117,7 +119,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
                 if (style === "GLOW") { ctx.shadowColor = "#FF99FF"; ctx.shadowBlur = 10 * canvas.height / 960; }
                 ctx.translate(line.x, line.y + motion.yOffset * canvas.height / 1920);
                 ctx.scale(motion.scale, motion.scale);
-                paintCaptionLine(ctx, line.text, 0, 0, safe.w - 20, style, keyword, wordOffset);
+                paintCaptionLine(ctx, line.text, 0, 0, safe.w - 20, style, keyword, wordOffset, line === caption.lines[caption.lines.length - 1] ? emoji : null);
                 wordOffset += line.text.split(/\s+/).filter(Boolean).length;
                 ctx.restore();
               }

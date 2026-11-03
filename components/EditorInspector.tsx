@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { ClipEditDraftV3 } from '@/lib/clip-edit-draft';
 import type { CaptionCue, SourceSegment } from '@/lib/editor-timeline';
 import { HOOK_STYLES } from '@/lib/captions';
+import { hasFixedPalette } from '@/lib/caption-looks';
 import { CAPTION_FONTS } from '@/lib/clip-edit-draft';
 import CaptionTemplatePicker from './CaptionTemplatePicker';
 import EditorFrameControls from './EditorFrameControls';
@@ -60,7 +61,7 @@ export default function EditorInspector({ tool, onToolChange, draft, segment, cu
             <CaptionTemplatePicker value={draft.caption_style} onChange={caption_style => onChange({ caption_style })}/>
             <details className="editor-fine-tune"><summary>Fine-tune captions</summary>
                 <section><h3>Font</h3><div className="caption-font-choices">{CAPTION_FONTS.map(font => <button key={font} type="button" aria-label={`${font} caption font`} aria-pressed={(draft.caption_font ?? 'sans') === font} onClick={() => onChange({ caption_font: font })} data-font={font}><strong>Ag</strong><span>{font === 'sans' ? 'Modern' : font === 'serif' ? 'Impact' : 'Heavy'}</span></button>)}</div></section>
-                {draft.caption_style === 'COMIC' || draft.caption_style === 'KEYWORD' ? <p className="editor-fixed-palette">This template uses its own yellow or green palette.</p> : <section><h3>Caption color</h3><div className="editor-options">{(['white', 'yellow', 'green', 'pink'] as const).map(c => <button key={c} type="button" aria-label={`Caption color ${c}`} aria-pressed={draft.caption_color === c} onClick={() => onChange({ caption_color: c })}><i style={{ background: { white: '#fff', yellow: '#ffff00', green: '#00ff00', pink: '#ff69b4' }[c] }}/>{c}</button>)}</div></section>}
+                {hasFixedPalette(draft.caption_style) ? <p className="editor-fixed-palette">This template uses its own palette.</p> : <section><h3>Caption color</h3><div className="editor-options">{(draft.caption_style === 'POP' ? ['yellow', 'blue', 'white'] as const : ['white', 'yellow', 'green', 'pink'] as const).map(c => <button key={c} type="button" aria-label={`Caption color ${c}`} aria-pressed={draft.caption_color === c} onClick={() => onChange({ caption_color: c })}><i style={{ background: { white: '#fff', yellow: '#ffff00', green: '#00ff00', pink: '#ff69b4', blue: '#5fd6ff' }[c] }}/>{c}</button>)}</div></section>}
                 <section><h3>Position</h3><div className="editor-options editor-position-options">{(['top', 'center', 'bottom'] as const).map(position => <button key={position} type="button" aria-label={`${position[0].toUpperCase()+position.slice(1)} caption position`} aria-pressed={!draft.caption_placement && draft.caption_position === position} onClick={() => onChange({ caption_position: position, caption_placement: undefined })}>{position[0].toUpperCase()+position.slice(1)}</button>)}</div><p>Drag captions on the video to place them anywhere.{draft.caption_placement ? ' Custom position is active.' : ''}</p></section>
             </details>
         </>}

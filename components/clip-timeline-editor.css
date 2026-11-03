@@ -231,6 +231,10 @@
 .caption-template-card[data-style=comic] .caption-template-sample b { color:#ffdf00; font-style:italic; transform:rotate(-3deg) scale(1.05); text-shadow:-2px -2px 0 #06090b,2px -2px 0 #06090b,-2px 2px 0 #06090b,2px 2px 0 #06090b,0 4px 8px #000 }
 .caption-template-card[data-style=keyword] .caption-template-sample b { font-size:13px; line-height:1.1 }
 .caption-template-card[data-style=keyword] .caption-template-sample em { color:#35ef85; font-style:normal }
+.caption-template-card[data-style=hype] .caption-template-sample b,.caption-template-card[data-style=fire] .caption-template-sample b { font-size:13px; line-height:1.1; text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 0 #000 }
+.caption-template-card[data-style=hype] .caption-template-sample em { color:#ff2d2d; font-style:normal }
+.caption-template-card[data-style=fire] .caption-template-sample em { color:#39ff3a; font-style:normal }
+.caption-template-card[data-style=pop] .caption-template-sample b { color:#ffe94a; font-size:26px; text-shadow:-3px -3px 0 #000,3px -3px 0 #000,-3px 3px 0 #000,3px 3px 0 #000,0 5px 0 #000 }
 .editor-fixed-palette { padding:8px 10px; border:1px solid #365449; border-radius:7px; background:#14271f; color:#bcebd4!important }
 .caption-template-meta { display:flex; align-items:center; justify-content:space-between; gap:4px; width:100%; padding:9px 10px; color:#e6f5f2 }
 .caption-template-meta strong { font-size:11px }

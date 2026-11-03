@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { ClipWithWords, CaptionStyle } from "@/lib/clips";
 import { CAPTION_STYLES } from "@/lib/clips";
 import { buildCaptionCues, type HookStyle } from "@/lib/captions";
+import { isOneWordStyle } from "@/lib/caption-looks";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { drawCaptionPreview } from "@/lib/caption-preview";
 import { useSparks } from "./SparksProvider";
@@ -40,7 +41,7 @@ function drawCaptions(
   W: number,
   H: number
 ) {
-  const selected = style === "KLYP" || style === "SPARK" ? wordCues : cues;
+  const selected = isOneWordStyle(style) ? wordCues : cues;
   const cue = selected.find((c) => t >= c.start && t < c.end);
   if (!cue) return;
   drawCaptionPreview(ctx, t, [{ text: cue.text, startMs: cue.start * 1000,
@@ -210,6 +211,9 @@ export default function ClipPreview({
     GLOW: "Soft luminous captions fade in",
     COMIC: "Yellow comic captions pop onto the screen",
     KEYWORD: "One word turns green as each phrase plays",
+    HYPE: "The word being said turns red, thick outline",
+    POP: "One huge word at a time in yellow, light blue or white",
+    FIRE: "Neon green word plus an emoji that matches",
   };
 
   return (
