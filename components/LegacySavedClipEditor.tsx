@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, canUseExportFormat, resolveExportFormat, type CaptionStyle, type ExportFormat, type TimedWord } from "@/lib/clips";
 import { buildCaptionCues, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { hasFixedPalette } from "@/lib/caption-looks";
+import { ProStyleNote, StyleDiamond } from "./ProDiamond";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { drawWatermarkPreview } from "@/lib/watermark";
 import { drawCaptionPreview } from "@/lib/caption-preview";
@@ -1180,7 +1181,7 @@ export default function LegacySavedClipEditor({
                 key={s}
                 onClick={() => setCaptionStyle(s)}
                 disabled={exporting}
-                className={`${workspace ? "min-w-0 rounded-lg py-2.5" : "shrink-0 min-w-[70px] px-2 py-1.5 rounded-md"} border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
+                className={`relative ${workspace ? "min-w-0 rounded-lg py-2.5" : "shrink-0 min-w-[70px] px-2 py-1.5 rounded-md"} border text-[11px] font-bold font-syne tracking-wide transition-colors disabled:opacity-50 ${
                   captionStyle === s
                     ? "bg-accent-glow border-accent/50 text-accent"
                     : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
@@ -1188,6 +1189,7 @@ export default function LegacySavedClipEditor({
               >
                 {workspace && <span className="block text-xl leading-none mb-1">Aa</span>}
                 <span className={workspace ? "text-[10px] capitalize tracking-normal" : ""}>{s === "KLYP" ? workspace ? "Klyp" : "⚡ KLYP" : workspace ? s.toLowerCase() : s}</span>
+                <StyleDiamond style={s} size={16} className="-right-1.5 -top-1.5" />
               </button>
             ))}
           </div>
@@ -1196,6 +1198,7 @@ export default function LegacySavedClipEditor({
             No word timestamps saved for this clip — captions aren&apos;t available. New analyses save them automatically.
           </p>
         )}
+        {hasWords && <ProStyleNote style={captionStyle} />}
       </div>
 
       {hasWords && (

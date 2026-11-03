@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { CAPTION_STYLES, type CaptionStyle } from '@/lib/clips';
+import { ProStyleNote, StyleDiamond } from './ProDiamond';
 
-const featuredStyles: readonly CaptionStyle[] = ['BOLD', 'CLEAN', 'KLYP', 'PULSE', 'HYPE', 'POP', 'FIRE', 'TRICOLOR'];
+const featuredStyles: readonly CaptionStyle[] = ['BOLD', 'CLEAN', 'KLYP', 'PULSE', 'HYPE', 'POP', 'FIRE', 'TRICOLOR', 'FOCUS'];
 
 const templateInfo: Record<CaptionStyle, { name: string; detail: string; sample: string }> = {
   BOLD: { name: 'Bold', detail: 'Clear and direct', sample: 'BIG MOMENT' },
@@ -20,6 +21,7 @@ const templateInfo: Record<CaptionStyle, { name: string; detail: string; sample:
   POP: { name: 'Pop', detail: 'One huge word', sample: 'THE' },
   FIRE: { name: 'Fire', detail: 'Green word and emoji', sample: 'THE QUICK BROWN' },
   TRICOLOR: { name: 'Tri-color', detail: 'Green and red word', sample: 'THE QUICK BROWN' },
+  FOCUS: { name: 'Focus', detail: 'Big green word', sample: 'HAVE BEEN POSSIBLE' },
 };
 
 export default function CaptionTemplatePicker({ value, onChange }: {
@@ -34,11 +36,13 @@ export default function CaptionTemplatePicker({ value, onChange }: {
       {visibleStyles.map(style => {
         const info = templateInfo[style];
         return <button key={style} type="button" className="caption-template-card" data-style={style.toLowerCase()} aria-label={`${info.name} caption template`} aria-pressed={value === style} onClick={() => onChange(style)}>
-          <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : style === 'HYPE' ? <>BROWN <em>FOX</em></> : style === 'FIRE' ? <>THE QUICK <em>BROWN</em> 🔥</> : style === 'TRICOLOR' ? <><i>THE</i> <i className="tri-r">QUICK</i> <i>BROWN</i></> : info.sample}</b></span>
+          <StyleDiamond style={style} size={24} className="right-1.5 top-1.5 z-10" />
+          <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : style === 'HYPE' ? <>BROWN <em>FOX</em></> : style === 'FIRE' ? <>THE QUICK <em>BROWN</em> 🔥</> : style === 'FOCUS' ? <>HAVE BEEN<br/><em>POSSIBLE</em> UNLESS</> : style === 'TRICOLOR' ? <><i>THE</i> <i className="tri-r">QUICK</i> <i>BROWN</i></> : info.sample}</b></span>
           <span className="caption-template-meta"><strong>{info.name}</strong><small>{info.detail}</small></span>
         </button>;
       })}
     </div>
+    <ProStyleNote style={value} />
     <button type="button" className="caption-template-more" aria-expanded={expanded} onClick={() => setExpanded(open => !open)}>{expanded ? 'Show fewer styles' : `See all ${CAPTION_STYLES.length} styles`}</button>
   </section>;
 }

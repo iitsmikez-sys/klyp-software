@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CAPTION_STYLES, type CaptionStyle } from "@/lib/clips";
+import { ProStyleNote, StyleDiamond } from "@/components/ProDiamond";
 import { SPARKS_ALLOWANCE, type Profile } from "@/lib/tier";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
@@ -30,6 +31,7 @@ const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
   POP: "One huge word at a time in yellow, light blue or white",
   FIRE: "Neon green word plus an emoji that matches",
   TRICOLOR: "Active word flashes bright green and red, no emoji",
+  FOCUS: "Clean two-line phrase, the active word turns neon green and grows",
 };
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -238,17 +240,19 @@ export default function SettingsPage() {
                   <button
                     key={s}
                     onClick={() => updateStyle(s)}
-                    className={`py-2.5 rounded-lg border text-xs font-bold font-syne transition-colors ${
+                    className={`relative py-2.5 rounded-lg border text-xs font-bold font-syne transition-colors ${
                       defaultStyle === s
                         ? "bg-accent-glow border-accent/50 text-accent"
                         : "bg-surface-2 border-border text-foreground-muted hover:border-subtle"
                     }`}
                   >
                     {s === "KLYP" ? "⚡ KLYP" : s}
+                    <StyleDiamond style={s} size={16} className="-right-1.5 -top-1.5" />
                   </button>
                 ))}
               </div>
               <p className="text-xs text-subtle mt-1.5">{STYLE_DESCRIPTIONS[defaultStyle]}</p>
+              <ProStyleNote style={defaultStyle} />
             </div>
           </div>
         </Section>

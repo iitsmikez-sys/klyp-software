@@ -5,6 +5,7 @@ import type { ClipWithWords, CaptionStyle } from "@/lib/clips";
 import { CAPTION_STYLES } from "@/lib/clips";
 import { buildCaptionCues, type HookStyle } from "@/lib/captions";
 import { isOneWordStyle } from "@/lib/caption-looks";
+import { ProStyleNote, StyleDiamond } from "./ProDiamond";
 import { drawHookPreview } from "@/lib/hook-preview";
 import { drawCaptionPreview } from "@/lib/caption-preview";
 import { useSparks } from "./SparksProvider";
@@ -215,6 +216,7 @@ export default function ClipPreview({
     POP: "One huge word at a time in yellow, light blue or white",
     FIRE: "Neon green word plus an emoji that matches",
     TRICOLOR: "Active word flashes bright green and red, no emoji",
+    FOCUS: "Clean two-line phrase, the active word turns neon green and grows",
   };
 
   return (
@@ -336,18 +338,20 @@ export default function ClipPreview({
                   <button
                     key={s}
                     onClick={() => setStyle(s)}
-                    className={`shrink-0 min-w-[70px] px-2 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors ${
+                    className={`relative shrink-0 min-w-[70px] px-2 py-1.5 rounded-md border text-[11px] font-bold font-syne tracking-wide transition-colors ${
                       active
                         ? "bg-accent-glow border-accent/50 text-accent"
                         : "border-border text-foreground-muted hover:border-accent/30 hover:text-foreground"
                     }`}
                   >
                     {s === "KLYP" ? "⚡ KLYP" : s}
+                    <StyleDiamond style={s} size={16} className="-right-1.5 -top-1.5" />
                   </button>
                 );
               })}
             </div>
             <p className="text-[10px] text-subtle mt-1.5">{styleDescriptions[style]}</p>
+            <ProStyleNote style={style} />
           </div>
 
           {/* Free tier watermark notice */}

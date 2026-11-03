@@ -15,11 +15,16 @@ const HIGHLIGHT: Partial<Record<CaptionStyle, { css: string; ass: string }>> = {
   FIRE: highlight("#39FF3A"),
   // Tri-color: the active word alternates bright green and red (see wordLook).
   TRICOLOR: highlight("#1FFF3A"),
+  // Focus: neon green word, a clean two-line phrase, and the active word drawn larger.
+  FOCUS: highlight("#39FF14"),
 };
 
 /** Tri-color's active word alternates bright green, bright red as the phrase is spoken. */
 const TRICOLOR_ACTIVE = [highlight("#1FFF3A"), highlight("#FF1F2A")];
 const WHITE_WORD = highlight("#FFFFFF");
+
+/** Focus draws the active word 25% larger than the rest of the phrase. */
+export const activeWordScale = (style: CaptionStyle) => (style === "FOCUS" ? 1.25 : 1);
 
 /** Color of one word: the phrase is white and the word being said lights up (Tri-color alternates green and red). */
 export function wordLook(style: CaptionStyle, index: number, active: boolean): { css: string; ass: string } {
@@ -65,4 +70,4 @@ export function emojiForText(text: string): { char: string; color: string } | nu
 export const assColorOf = (css: string) => "&H00" + css.slice(5, 7) + css.slice(3, 5) + css.slice(1, 3) + "&";
 
 /** Styles whose captions are drawn in capitals (the one-word styles plus Hype and Fire). */
-export const isUppercaseStyle = (style: CaptionStyle) => isOneWordStyle(style) || style === "HYPE" || style === "FIRE" || style === "TRICOLOR";
+export const isUppercaseStyle = (style: CaptionStyle) => isOneWordStyle(style) || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "FOCUS";
