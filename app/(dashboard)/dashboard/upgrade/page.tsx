@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
@@ -80,6 +80,8 @@ export default function UpgradePage() {
   const [yearly, setYearly] = useState(true);
   const [packId, setPackId] = useState<string>(DEFAULT_PACK_ID);
   const [packBusy, setPackBusy] = useState(false);
+  const [waitedTooLong, setWaitedTooLong] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setWaitedTooLong(true), 4000); return () => clearTimeout(t); }, []);
 
   const allowance = SPARKS_ALLOWANCE[tier];
   const used = balance !== null ? Math.min(allowance, Math.max(0, allowance - balance)) : 0;
@@ -147,6 +149,9 @@ export default function UpgradePage() {
       setBusy(false);
     }
   };
+
+  // Until the plan has loaded, show nothing: the page would otherwise flash the Free view to a Pro member.
+  if (balance === null && !waitedTooLong) return <div className="min-h-[60vh]" aria-busy="true" />;
 
   return (
     <div className="relative p-8 max-w-4xl mx-auto animate-fade-in pricing-grid-bg">
