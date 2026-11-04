@@ -115,6 +115,7 @@ function pipelineHarness(review) {
     "@anthropic-ai/sdk/helpers/zod": { zodOutputFormat: () => ({}) },
     "@/lib/anthropic-rate-limits": { logAnthropicRateLimits: () => {} },
     assemblyai: { AssemblyAI: class { constructor() { calls.transcription++; } } },
+    "@/lib/loud-moments": { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     "@/lib/clips": { DEFAULT_CONTENT_TYPE: "gaming", CLIP_TYPES_BY_CONTENT: { gaming: [] } },
     "@/lib/bin": { run: async () => { calls.download++; }, runCapture: async () => { calls.probe++; return "10"; },
       runYtDlpWithRetry: async () => { calls.download++; }, resolveBin: () => "ffmpeg", FFMPEG_THREADS: 1,

@@ -92,6 +92,7 @@ function harness(answer) {
     "@anthropic-ai/sdk/helpers/zod": { zodOutputFormat: () => ({ type: "json_schema" }) },
     "@/lib/anthropic-rate-limits": { logAnthropicRateLimits: () => {} },
     assemblyai: { AssemblyAI: class {} },
+    "@/lib/loud-moments": { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     "@/lib/clips": { DEFAULT_CONTENT_TYPE: "irl", CLIP_TYPES_BY_CONTENT: { irl: ["FUNNY"] }, clipAnalysisSchemaForContentType: () => ({}), clipSchemaForContentType: () => ({ safeParse: validClip }) },
     "@/lib/bin": { run: async () => {}, runCapture: async () => "10", runYtDlpWithRetry: async () => {}, resolveBin: () => "ffmpeg", FFMPEG_THREADS: 1, ffmpegLocationArgs: () => [], ytDlpThreadCapArgs: () => [] },
     "@/lib/twitch-chat": { twitchVideoId: () => null, detectChatSpikes: async () => null, formatSpikesForPrompt: () => "", spikeWindows: () => [] },

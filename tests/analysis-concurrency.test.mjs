@@ -104,6 +104,7 @@ function routeHarness({ startedLastHour = 0, countFails = false, jobStatus = "qu
     os: { tmpdir: () => "fixture-tmp" },
     path: { default: { join: (...p) => p.join("/") }, join: (...p) => p.join("/") },
     "@anthropic-ai/sdk": { default: class Anthropic {} },
+    "@/lib/loud-moments": { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     "@/lib/clips": { CONTENT_TYPES: ["gaming", "irl"], DEFAULT_CONTENT_TYPE: "gaming" },
     "@/lib/video-cache": { findUploadedVideo: async () => null },
     "@/lib/profile-token": { bearerToken: () => "fixture-token", getProfileFromToken: async () => ({ id: "fixture-user", sparks: 500, tier: "pro", stripe_subscription_id: "sub_test" }), tokenClient: () => ({}) },

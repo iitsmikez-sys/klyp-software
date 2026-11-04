@@ -32,6 +32,7 @@ function harness({ countTokens } = {}) {
     "@anthropic-ai/sdk/helpers/zod": { zodOutputFormat: () => ({ type: "json_schema" }) },
     "@/lib/anthropic-rate-limits": { logAnthropicRateLimits: () => {} },
     assemblyai: { AssemblyAI: class {} },
+    "@/lib/loud-moments": { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     "@/lib/clips": { DEFAULT_CONTENT_TYPE: "gaming", CLIP_TYPES_BY_CONTENT: { gaming: ["FUNNY"] },
       clipAnalysisSchemaForContentType: () => ({}), clipSchemaForContentType: () => ({ safeParse: (x) => ({ success: true, data: x }) }) },
     "@/lib/bin": { run: async () => {}, runCapture: async () => "10", runYtDlpWithRetry: async () => {}, resolveBin: () => "ffmpeg", FFMPEG_THREADS: 1, ffmpegLocationArgs: () => [], ytDlpThreadCapArgs: () => [] },

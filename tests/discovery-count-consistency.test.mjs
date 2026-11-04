@@ -36,6 +36,7 @@ function harness({ denyProviderSpend = false } = {}) {
     '@anthropic-ai/sdk/helpers/zod': { zodOutputFormat: () => ({}) },
     '@/lib/anthropic-rate-limits': { logAnthropicRateLimits: () => {} },
     assemblyai: { AssemblyAI: class {} },
+    '@/lib/loud-moments': { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     '@/lib/clips': { DEFAULT_CONTENT_TYPE: 'gaming', CLIP_TYPES_BY_CONTENT: { gaming: ['FUNNY'] },
       clipSchemaForContentType: () => ({ safeParse: clip => ({ success: true, data: clip }) }),
       clipAnalysisSchemaForContentType: () => ({}) },

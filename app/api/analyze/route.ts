@@ -392,7 +392,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         const result = await accountAnalysisJob(token!, jobId, runToken, clipsWithWords, durationSeconds, clipCount);
         if (result.type !== "result") throw new Error("Accounting returned an invalid result.");
         log("accounted", `${result.clips.length} new clips`, `${result.sparksSpent} Sparks`);
-        send(result);
+        send({ ...result, quiet: pipelineResult.quiet === true });
       } catch (err) {
         anthropicCreditGate.blockOn(err);
         let message = err instanceof Error ? err.message : "Pipeline failed.";

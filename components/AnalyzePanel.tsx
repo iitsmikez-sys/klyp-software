@@ -480,9 +480,10 @@ export default function AnalyzePanel() {
       const charge = resultsChargeMessage(
         event.sparksSpent, submittedEstimate.current, submittedAnalysisCost.current, event.clips.length
       );
+      const quietNote = event.quiet ? " This streamer talks very little, so there were few moments to go on." : "";
       setAnalysisNote(event.clips.length === 0
-        ? `No new moments cleared the quality floor. ${charge} Try another VOD or adjust your topic.`
-        : charge);
+        ? `No new moments cleared the quality floor.${quietNote} ${charge} Try another VOD or adjust your topic.`
+        : `${charge}${quietNote}`);
       setAnalyzedUrl(recoveringSource.current ?? sourceRef);
       recoveringSource.current = null;
       // The server already deducted — mirror its authoritative balance.

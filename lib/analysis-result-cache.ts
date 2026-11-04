@@ -12,6 +12,8 @@ export type ResultKeyInput = {
   pipeline?: 'legacy' | 'legacy-visual' | 'v2' | 'v2-visual';
   /** Left out for Opus 4.8 so existing cached results keep their key. */
   model?: string;
+  /** Extra evidence given to the model (for example loud-moment hints); left out when there is none. */
+  signals?: string;
 };
 export function resultCacheKey(input: ResultKeyInput): string {
   // An unset model means Opus 4.8, so keys for existing cached results do not change.
