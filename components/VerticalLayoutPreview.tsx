@@ -93,7 +93,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               }
             }
             const overlay = editorOverlayAtTime(editor.draft, editor.clip, outputTime);
-            if (overlay.hook) drawHookPreview(ctx, outputTime, overlay.hook, editor.draft.hook_style, canvas.width, canvas.height, editor.draft.hook_placement);
+            if (overlay.hook) drawHookPreview(ctx, outputTime, overlay.hook, editor.draft.hook_style, canvas.width, canvas.height, editor.draft.hook_placement, editor.draft.hook_duration_ms);
             const activeCaption = overlay.caption && focusSpans
               ? splitCuesForFocus([overlay.caption], focusSpans).find(cue => outputTime * 1000 >= cue.start_ms && outputTime * 1000 < cue.end_ms)
               : overlay.caption;

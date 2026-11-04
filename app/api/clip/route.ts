@@ -523,7 +523,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       }
       if (hook) {
         hookAssPath = path.join(assDir!, "hook.ass");
-        await writeFile(hookAssPath, generateHookAss(hook, res, hookStyle, editorDraft?.hook_placement), "utf-8");
+        await writeFile(hookAssPath, generateHookAss(hook, res, hookStyle, editorDraft?.hook_placement, editorDraft?.hook_duration_ms), "utf-8");
       }
 
       const t2 = Date.now();
