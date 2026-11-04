@@ -11,6 +11,7 @@ import { readdir, readFile } from "fs/promises";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { isMostlyEnglish, languageSection } from "@/lib/language-hint";
 import { detectLoudMoments, formatLoudMomentsForPrompt, isQuietStream, type LoudMoment } from "@/lib/loud-moments";
 import { logAnthropicRateLimits } from "@/lib/anthropic-rate-limits";
 import { AssemblyAI } from "assemblyai";
@@ -344,7 +345,9 @@ export async function findClips(
   /** Loud stretches of the audio (Gaming only), a free signal for streamers who say little. */
   loudMoments: LoudMoment[] = [],
   /** The streamer talks very little, so loud moments and chat carry more weight. */
-  quietStream = false
+  quietStream = false,
+  /** The transcript is not English: write titles and hooks in the streamer's language. */
+  nonEnglish = false
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -372,6 +375,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
 
   const keywordSection = keyword?.trim() ? formatKeywordSection(keyword.trim(), keywordMatchSeconds) : "";
   const loudSection = contentType === "gaming" ? formatLoudMomentsForPrompt(loudMoments, quietStream) : "";
+  const languageNote = nonEnglish ? languageSection() : "";
   const priorSection = priorWindows.length
     ? `\n\n## MOMENTS ALREADY DELIVERED TO THIS USER\n\nThese time ranges were already sold from this VOD. Find the next best genuinely different moments outside these ranges. Do not return a clip within 60 seconds of any listed start or overlapping a listed range. If no other moment clears the quality floor, return an empty clips array.\n${priorWindows.map((w) => `- ${Math.round(w.start_seconds)}s to ${Math.round(w.end_seconds)}s`).join("\n")}`
     : "";
@@ -482,7 +486,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## ALSO CONSIDER (near-misses, separate list)
 
-After your main list, fill "also_consider" with up to 3 more moments that scored 55-64, just below the quality floor. Do this ONLY when your main list has fewer than ${clipCount} clips AND at least one moment cleared 65; otherwise return an empty list. At most the smaller of 3 and (${clipCount} minus your main list length). Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${keywordSection}`,
+After your main list, fill "also_consider" with up to 3 more moments that scored 55-64, just below the quality floor. Do this ONLY when your main list has fewer than ${clipCount} clips AND at least one moment cleared 65; otherwise return an empty list. At most the smaller of 3 and (${clipCount} minus your main list length). Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${languageNote}${keywordSection}`,
     messages: [
       {
         role: "user",
@@ -771,6 +775,7 @@ export async function runAnalysisPipeline(opts: {
     durationSeconds = result.durationSeconds;
   }
   const quietStream = isQuietStream(words.length, durationSeconds);
+  const nonEnglish = !isMostlyEnglish(words);
   if (quietStream) console.log(`[analyze] quiet stream: ${words.length} words in ${Math.round(durationSeconds / 60)} min`);
   const coverageMode = cachedTranscript?.coverageMode ?? (windows.length ? "chat-sampled" : "full");
   if (!cachedTranscript) await opts.onTranscript?.({ words, durationSeconds, coverageMode });
@@ -804,7 +809,7 @@ export async function runAnalysisPipeline(opts: {
     keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
     windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
     // Results found with loud-moment hints are kept apart from older ones.
-    signals: loudMoments.length ? "loud-v1" : undefined };
+    signals: [loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") || undefined };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
@@ -812,7 +817,7 @@ export async function runAnalysisPipeline(opts: {
   if (judged === null) {
     const selected = await withMem("find-clips", () =>
       findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream));
+        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish));
     judged = selected.clips;
     skipped = selected.skipped;
     await cache?.save(judged);
@@ -838,7 +843,7 @@ export async function runAnalysisPipeline(opts: {
     if (nextJudged === null) {
       const next = await withMem("find-clips-more", () =>
         findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream));
+          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish));
       nextJudged = next.clips;
       skipped += next.skipped;
       await nextCache.save(nextJudged);
