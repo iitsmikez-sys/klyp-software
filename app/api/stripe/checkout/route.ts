@@ -12,13 +12,13 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/profile";
 import { resolveBillingState } from "@/lib/stripe-billing";
 import { validateProPrice } from "@/lib/checkout-price";
-import { OFFER_COOKIE, OFFER_VALUE } from "@/lib/offer-cookie";
+import { OFFER_COOKIE, offerCookieActive } from "@/lib/offer-cookie";
 import { ensureFirstMonthCoupon, firstMonthOfferAvailable, isNewCustomer, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
 
 export const runtime = "nodejs";
 
 /** Did this person arrive from the ad link? The proxy saved that in a cookie. */
-const hasOfferLink = (req: NextRequest) => req.cookies.get(OFFER_COOKIE)?.value === OFFER_VALUE;
+const hasOfferLink = (req: NextRequest) => offerCookieActive(req.cookies.get(OFFER_COOKIE)?.value);
 
 /** GET /api/stripe/checkout — does the signed-in person qualify for the $17 first month? */
 export async function GET(req: NextRequest) {

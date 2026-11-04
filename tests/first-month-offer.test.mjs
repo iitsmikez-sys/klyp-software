@@ -58,7 +58,7 @@ test("checkout applies the coupon only to new monthly subscribers; the page show
 test("the proxy saves the ad link in a 30-day cookie, and the pricing card no longer says early adopter", async () => {
   const proxy = read("proxy.ts");
   assert.ok(proxy.includes('matcher: ["/", "/dashboard/:path*", "/login"]'));
-  assert.ok(proxy.includes("if (fromAd) saveOffer(response);") && proxy.includes("if (fromAd) saveOffer(supabaseResponse);"));
+  assert.ok(proxy.includes("if (fromAd) saveOffer(response, request);") && proxy.includes("if (fromAd) saveOffer(supabaseResponse, request);"));
   const cookie = await import("../lib/offer-cookie.ts");
   assert.deepEqual([cookie.OFFER_COOKIE, cookie.OFFER_VALUE, cookie.OFFER_PARAM, cookie.OFFER_COOKIE_MAX_AGE], ["klyp_offer", "17", "offer", 2592000]);
   assert.ok(!read("app/(dashboard)/dashboard/upgrade/page.tsx").includes("early adopter"));
@@ -74,4 +74,27 @@ test("isNewCustomer: only people who never subscribed or bought and are not Pro"
   const page = read("app/(dashboard)/dashboard/upgrade/page.tsx");
   assert.ok(page.includes("Have a promo code? Enter it at checkout."));
   assert.ok(read("app/api/stripe/checkout/route.ts").includes("promo_code_field"));
+});
+
+test("an offer link with an end date gives $17 until the end of that day (Pacific) and then stops", async () => {
+  const { offerDeadlineMs, offerCookieValueFor, offerCookieActive } = await import("../lib/offer-cookie.ts");
+  const end = Date.parse("2026-11-09T23:59:59-08:00");
+  assert.equal(offerDeadlineMs("2026-11-09"), end);
+  for (const bad of [null, undefined, "", "nov9", "2026-13-40", "2026-11-9", "2026-11-09; drop"]) assert.equal(offerDeadlineMs(bad), null, String(bad));
+  // No end date: the ad link, never expires.
+  assert.equal(offerCookieValueFor(undefined), "17");
+  assert.equal(offerCookieValueFor(null), "17");
+  // Before the end: saved with its deadline. After the end, or a nonsense date: nothing is saved.
+  assert.equal(offerCookieValueFor("2026-11-09", end - 1000), `17|${end}`);
+  assert.equal(offerCookieValueFor("2026-11-09", end + 1000), null);
+  assert.equal(offerCookieValueFor("garbage", end - 1000), null);
+  // A saved cookie keeps working until the deadline, then stops. The plain ad cookie always works.
+  assert.equal(offerCookieActive("17", end + 10_000_000), true);
+  assert.equal(offerCookieActive(`17|${end}`, end - 1), true);
+  assert.equal(offerCookieActive(`17|${end}`, end), true);
+  assert.equal(offerCookieActive(`17|${end}`, end + 1), false);
+  assert.equal(offerCookieActive("17|abc", end - 1), false);
+  assert.equal(offerCookieActive("18", end - 1), false);
+  assert.equal(offerCookieActive(undefined), false);
+  assert.equal(offerCookieActive(""), false);
 });
