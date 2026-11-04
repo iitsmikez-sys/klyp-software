@@ -6,7 +6,7 @@ import { useUnsavedNavigationGuard } from './NavigationGuardProvider';
 import { useRouter } from 'next/navigation';
 import type { SavedClip } from '@/lib/clip-ui';
 import { freshTimelineDraft, readClipEditDraft, upgradeClipEditDraft, validateClipEditDraft, type ClipEditDraftV3 } from '@/lib/clip-edit-draft';
-import { buildCaptionCues, hookDurationMs, HOOK_MIN_MS } from '@/lib/captions';
+import { buildCaptionCues, CUE_MAX_WORDS, hookDurationMs, HOOK_MIN_MS } from '@/lib/captions';
 import { changeCaptionTemplate, resolveEditorCues } from '@/lib/editor-captions';
 import { cutawayAtOutputTime, resolveCutawaySpans, resolveInsertSpans, composedAtOutputTime, composedDuration, composedOutputForSourceOnlyTime, sourceOnlyOutputForSourceSeconds, splitSegment, deleteSegment, type CaptionCue, type SourceSegment } from '@/lib/editor-timeline';
 import { apply, reset, undo, redo } from '@/lib/editor-history';
@@ -114,8 +114,8 @@ export default function ClipTimelineEditor({ clip, compatibilityNotice }: {
     const focusSpans = draft.focus_events?.length ? resolveFocusSpans(draft.focus_events, draft.segments,draft.inserts) : [];
     const clock = useRef(time);
     clock.current = time;
-    const sourceCues = () => draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === 'KLYP' || draft.caption_style === 'SPARK' ? 1 : 4).map((c, i) => ({ id: `auto-${i}`, start_ms: c.startMs + clip.start_seconds * 1000, end_ms: c.endMs + clip.start_seconds * 1000, text: c.text }));
-    const addTranscriptCaptions = () => { const generated = buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === 'KLYP' || draft.caption_style === 'SPARK' ? 1 : 4).map((c,i) => ({ id: `auto-${i}`, start_ms: c.startMs + clip.start_seconds * 1000, end_ms: c.endMs + clip.start_seconds * 1000, text: c.text })); if (generated.length) commit({...draft, caption_cues:generated}); };
+    const sourceCues = () => draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === 'KLYP' || draft.caption_style === 'SPARK' ? 1 : CUE_MAX_WORDS).map((c, i) => ({ id: `auto-${i}`, start_ms: c.startMs + clip.start_seconds * 1000, end_ms: c.endMs + clip.start_seconds * 1000, text: c.text }));
+    const addTranscriptCaptions = () => { const generated = buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, draft.caption_style === 'KLYP' || draft.caption_style === 'SPARK' ? 1 : CUE_MAX_WORDS).map((c,i) => ({ id: `auto-${i}`, start_ms: c.startMs + clip.start_seconds * 1000, end_ms: c.endMs + clip.start_seconds * 1000, text: c.text })); if (generated.length) commit({...draft, caption_cues:generated}); };
     const cue = selection?.type === 'caption' ? sourceCues().filter(c => selection.id === c.id || selection.id.startsWith(c.id + ':fragment:')).sort((a, b) => b.id.length - a.id.length)[0] : undefined;
     const commit = (next: ClipEditDraftV3) => { setHistory(h => apply(h, next)); setError(null); setNotice(null); };
     // Drag handles on inserted media and overlays: make them longer or shorter, like CapCut.

@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { buildCaptionCues } from "@/lib/captions";
+import { clipTimeMs } from "@/lib/clip-trim";
 import type { TimedWord } from "@/lib/clips";
 
 /** Frame width in px; the 9:16 height follows from it. */
@@ -34,7 +35,7 @@ export function FinishedBackdrop({ poster }: { poster: string | null }) {
 }
 
 /** The caption that is on screen right now, following the video's own clock. */
-function useCaption(videoRef: RefObject<HTMLVideoElement | null>, words: TimedWord[] | null | undefined, startSeconds: number, endSeconds: number, active: boolean) {
+function useCaption(videoRef: RefObject<HTMLVideoElement | null>, words: TimedWord[] | null | undefined, startSeconds: number, endSeconds: number, active: boolean, leadSeconds = 0) {
   const cues = useMemo(
     () => (words?.length ? buildCaptionCues(words, startSeconds * 1000, endSeconds * 1000) : []),
     [words, startSeconds, endSeconds]
@@ -44,23 +45,26 @@ function useCaption(videoRef: RefObject<HTMLVideoElement | null>, words: TimedWo
     if (!active || cues.length === 0) { setText(""); return; }
     let frame = 0;
     const tick = () => {
-      const ms = (videoRef.current?.currentTime ?? 0) * 1000;
+      // The saved clip file can start up to a second before the clip (whole-second cut), so clip time is video time minus that lead.
+      const ms = clipTimeMs(videoRef.current?.currentTime ?? 0, leadSeconds);
       const cue = cues.find((c) => ms >= c.startMs && ms < c.endMs);
       setText((prev) => (prev === (cue?.text ?? "") ? prev : cue?.text ?? ""));
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [active, cues, videoRef]);
+  }, [active, cues, videoRef, leadSeconds]);
   return text;
 }
 
 /** Hook box and captions, placed where the finished clip puts them (percent of the 9:16 frame). */
-export function FinishedOverlays({ hook, words, startSeconds, endSeconds, videoRef }: {
+export function FinishedOverlays({ hook, words, startSeconds, endSeconds, videoRef, leadSeconds = 0 }: {
   hook?: string | null; words?: TimedWord[] | null; startSeconds: number; endSeconds: number;
   videoRef: RefObject<HTMLVideoElement | null>;
+  /** How far into the video file the clip starts (0 when the file begins exactly at the clip). */
+  leadSeconds?: number;
 }) {
-  const caption = useCaption(videoRef, words, startSeconds, endSeconds, true);
+  const caption = useCaption(videoRef, words, startSeconds, endSeconds, true, leadSeconds);
   return (
     <>
       {hook && (

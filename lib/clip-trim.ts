@@ -39,3 +39,11 @@ export function updateClipTrim(
   }
   return { start, end: round(Math.min(originalEnd, Math.max(proposed, round(start + 0.1)))) };
 }
+
+/**
+ * Time since the clip's own start, in milliseconds, for a position in the video file the player is showing. A saved
+ * clip's file begins up to a second before the clip (the lead), so the lead is taken off before captions are matched.
+ */
+export function clipTimeMs(videoSeconds: number, leadSeconds = 0): number {
+  return (videoSeconds - leadSeconds) * 1000;
+}

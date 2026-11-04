@@ -1,5 +1,5 @@
 import type { CaptionStyle } from "./clips";
-import { keywordAtTime, defaultCaptionFontFamily, type CaptionCue } from "./captions";
+import { keywordAtTime, keywordWeights, defaultCaptionFontFamily, type CaptionCue } from "./captions";
 import { ensureCaptionFonts } from "./caption-fonts";
 import { CAPTION_HEX, type CaptionOptions } from "./editor-captions";
 import { captionMotion } from "./caption-template-motion";
@@ -82,7 +82,7 @@ export function drawCaptionPreview(
   ctx.strokeStyle = "black";
   ctx.fillStyle = color;
   paintCaptionLine(ctx, text, width / 2, y + motion.yOffset * scale, width - 20, style,
-    keywordAtTime(tSeconds * 1000 - cue.startMs, cue.endMs - cue.startMs, text.trim().split(/\s+/).length),
+    keywordAtTime(tSeconds * 1000 - cue.startMs, cue.endMs - cue.startMs, text.trim().split(/\s+/).length, keywordWeights(text)),
     0, style === "FIRE" ? emojiForText(text) : null);
   ctx.restore();
 }

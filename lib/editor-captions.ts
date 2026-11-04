@@ -2,14 +2,14 @@ import type { ClipEditDraftV2, ClipEditDraftV3 } from "./clip-edit-draft.ts";
 import type { SavedClip } from "./clip-ui.ts";
 import type { CaptionStyle } from "./clips.ts";
 import { isOneWordStyle } from "./caption-looks.ts";
-import { buildCaptionCues, hookDurationMs, normalizeTimedCues } from "./captions.ts";
+import { buildCaptionCues, CUE_MAX_WORDS, hookDurationMs, normalizeTimedCues } from "./captions.ts";
 import { outputSpansForSourceCue, outputDuration, type CaptionCue } from "./editor-timeline.ts";
 export { captionAppearance } from "./captions.ts";
 
 function automaticCaptionCues(draft: ClipEditDraftV3, clip: SavedClip, style: CaptionStyle): CaptionCue[] {
  const words = draft.words ?? clip.words ?? [];
  return buildCaptionCues(words, clip.start_seconds * 1000, clip.end_seconds * 1000,
-  isOneWordStyle(style) ? 1 : 4)
+  isOneWordStyle(style) ? 1 : CUE_MAX_WORDS)
   .map((cue, index) => ({ id: `auto-${index}`, text: cue.text,
    start_ms: cue.startMs + clip.start_seconds * 1000,
    end_ms: cue.endMs + clip.start_seconds * 1000 }));
@@ -32,7 +32,7 @@ export function changeCaptionTemplate(draft: ClipEditDraftV3, clip: SavedClip, s
 
 /** Source anchors remain in the draft; only this resolved view uses edited time. */
 export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip): CaptionCue[] {
- const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, isOneWordStyle(draft.caption_style) ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
+ const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, isOneWordStyle(draft.caption_style) ? 1 : CUE_MAX_WORDS).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
  const usedIds = new Set(source.map(cue => cue.id));
  return normalizeTimedCues(source.flatMap(cue => {
   const spans = outputSpansForSourceCue(draft.segments, cue, draft.version===3?draft.inserts:undefined);
