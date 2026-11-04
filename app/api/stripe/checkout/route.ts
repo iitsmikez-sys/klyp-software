@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/dashboard?upgraded=1`,
       cancel_url: `${origin}/dashboard`,
     });
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url: session.url, first_month: couponId !== null });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to start checkout." },

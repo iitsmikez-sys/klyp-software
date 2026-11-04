@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
 import { createClient } from "@/lib/supabase/client";
+import { CLAIM_NEXT_COOKIE, safeClaimNext } from "@/lib/claim-next";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,11 +19,20 @@ export default function LoginPage() {
 
   const supabase = createClient();
 
+  // Coming from the email's "Claim $17" button: after signing in, go back to /claim (nowhere else is allowed).
+  const claimNext = () => safeClaimNext(new URLSearchParams(window.location.search).get("next"));
+  const nextAfterLogin = () => claimNext() ?? "/dashboard";
+  const rememberClaimNext = () => {
+    const n = claimNext();
+    if (n) document.cookie = `${CLAIM_NEXT_COOKIE}=${encodeURIComponent(n)}; path=/; max-age=900; samesite=lax`;
+  };
+
   // The Twitch button stays hidden until Twitch sign-in is set up in Supabase and this is set to "1".
   const twitchLoginEnabled = process.env.NEXT_PUBLIC_TWITCH_LOGIN === "1";
 
   const handleOAuth = async (provider: "google" | "discord" | "twitch") => {
     setOauthLoading(provider);
+    rememberClaimNext();
     setError(null);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -59,7 +69,7 @@ export default function LoginPage() {
         setError(error.message);
         setLoading(false);
       } else {
-        router.push("/dashboard");
+        router.push(nextAfterLogin());
         router.refresh();
       }
     } else {
@@ -73,7 +83,7 @@ export default function LoginPage() {
         setLoading(false);
       } else if (data.session) {
         // Auto-confirm is on — we're already signed in, go straight to the app.
-        router.push("/dashboard");
+        router.push(nextAfterLogin());
         router.refresh();
       } else {
         setMessage("Check your email for a confirmation link.");
