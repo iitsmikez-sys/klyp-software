@@ -12,13 +12,16 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<"google" | "discord" | null>(null);
+  const [oauthLoading, setOauthLoading] = useState<"google" | "discord" | "twitch" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const supabase = createClient();
 
-  const handleOAuth = async (provider: "google" | "discord") => {
+  // The Twitch button stays hidden until Twitch sign-in is set up in Supabase and this is set to "1".
+  const twitchLoginEnabled = process.env.NEXT_PUBLIC_TWITCH_LOGIN === "1";
+
+  const handleOAuth = async (provider: "google" | "discord" | "twitch") => {
     setOauthLoading(provider);
     setError(null);
     try {
@@ -42,6 +45,7 @@ export default function LoginPage() {
 
   const handleGoogle = () => handleOAuth("google");
   const handleDiscord = () => handleOAuth("discord");
+  const handleTwitch = () => handleOAuth("twitch");
 
   const handleEmail = async (e: FormEvent) => {
     e.preventDefault();
@@ -90,6 +94,23 @@ export default function LoginPage() {
           <p className="text-sm text-foreground-muted mb-6">Sign in to your Klyp account.</p>
 
           <div className="space-y-3 mb-6">
+            {twitchLoginEnabled && (
+              <button
+                onClick={handleTwitch}
+                disabled={oauthLoading !== null || loading}
+                className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg bg-[#9146FF] text-sm font-medium text-white hover:bg-[#7d36e6] transition-colors disabled:opacity-60"
+              >
+                {oauthLoading === "twitch" ? (
+                  <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.43l-3 3v-3H6.857V1.714h13.714Z" />
+                  </svg>
+                )}
+                Continue with Twitch
+              </button>
+            )}
+
             <button
               onClick={handleGoogle}
               disabled={oauthLoading !== null || loading}
