@@ -6,7 +6,6 @@ import PricingSection from "@/components/PricingSection";
 import Hero3D from "@/components/Hero3D";
 import Stars from "@/components/Stars";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
-import Waitlist from "@/components/Waitlist";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
 
@@ -277,12 +276,12 @@ export default function LandingPage() {
               >
                 Start clipping for free
               </Link>
-              <Link
-                href="/dashboard"
+              <a
+                href="#how-it-works"
                 className="px-7 py-3.5 rounded-xl bg-surface-2/90 backdrop-blur-sm border border-border text-foreground text-base font-medium hover:border-subtle transition-colors"
               >
-                View demo dashboard →
-              </Link>
+                See how it works ↓
+              </a>
             </div>
           </FadeIn>
 
@@ -423,9 +422,6 @@ export default function LandingPage() {
           </FadeIn>
         </div>
       </section>
-
-      {/* ── Waitlist ── */}
-      <Waitlist />
 
       {/* ── Final CTA ── */}
       <section className="px-6 py-32 relative overflow-hidden">
