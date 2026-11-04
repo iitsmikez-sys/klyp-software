@@ -10,3 +10,9 @@ export const CLAIM_NEXT_PATTERN = /^\/claim(\?[A-Za-z0-9=&._%-]{0,200})?$/;
 export function safeClaimNext(value: string | null | undefined): string | null {
   return typeof value === "string" && CLAIM_NEXT_PATTERN.test(value) ? value : null;
 }
+
+/** Where the sign-in callback may send someone afterwards: /claim, or the new-password page after a reset email. */
+export const AFTER_AUTH_PATTERN = /^\/(claim(\?[A-Za-z0-9=&._%-]{0,200})?|reset-password)$/;
+export const RESET_PATH = "/reset-password";
+/** Remembers which /claim page to go back to after a password reset. */
+export const CLAIM_AFTER_RESET_COOKIE = "klyp_claim";
