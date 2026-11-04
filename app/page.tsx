@@ -276,12 +276,12 @@ export default function LandingPage() {
               >
                 Start clipping for free
               </Link>
-              <Link
-                href="/dashboard"
+              <a
+                href="#how-it-works"
                 className="px-7 py-3.5 rounded-xl bg-surface-2/90 backdrop-blur-sm border border-border text-foreground text-base font-medium hover:border-subtle transition-colors"
               >
-                View demo dashboard →
-              </Link>
+                See how it works ↓
+              </a>
             </div>
           </FadeIn>
 
