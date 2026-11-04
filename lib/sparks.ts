@@ -47,11 +47,11 @@ export function estimateSparks(durationSeconds: number): number {
 
 /**
  * What an analysis charges once its result is known: the full video price when at least one clip
- * came back, half (rounded up) when the video was analyzed but nothing cleared the quality floor.
+ * came back, nothing when the video was analyzed but nothing cleared the quality floor (same as manual runs).
  */
 export function analysisCharge(durationSeconds: number, clipsReturned: number): number {
   const full = estimateSparks(durationSeconds);
-  return clipsReturned > 0 ? full : Math.ceil(full / 2);
+  return clipsReturned > 0 ? full : 0;
 }
 
 /**

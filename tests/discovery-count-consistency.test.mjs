@@ -104,12 +104,12 @@ test('requests of 1, 2, 3, 5, and 10 use the same complete discovery pool', asyn
   assert.ok(calls.prompts[0].messages[0].content.includes('quiet joke'));
 });
 
-test('the charge is per video with clips included; nothing found costs half', () => {
+test('the charge is per video with clips included; nothing found costs nothing', () => {
   assert.equal(estimateSparks(3600), 50);
   assert.equal(analysisCharge(3600, 6), 50);
   assert.equal(analysisCharge(3600, 1), 50);
-  assert.equal(analysisCharge(3600, 0), 25);
-  assert.equal(analysisCharge(20 * 60, 0), 10);
+  assert.equal(analysisCharge(3600, 0), 0);
+  assert.equal(analysisCharge(20 * 60, 0), 0);
   assert.equal(clipCharge(10, 6), 0);
 });
 
