@@ -23,8 +23,8 @@ type Props = {
 const SPREAD_PX = 84;
 
 /**
- * A fanned stack of vertical clips. The front clip plays on a loop with no sound; swipe it (or click a side clip,
- * or use the dots) to bring the next one forward. It moves on its own every few seconds and pauses on hover.
+ * A fanned stack of vertical clips. Every clip plays on a loop with no sound; swipe the front one (or click a side
+ * clip, or use the dots) to bring the next one forward. It moves on its own every few seconds and pauses on hover.
  */
 export default function ClipStack({ clips, autoAdvanceMs = 6500 }: Props) {
   const calm = useReducedMotion();
@@ -35,18 +35,18 @@ export default function ClipStack({ clips, autoAdvanceMs = 6500 }: Props) {
 
   const go = (step: number) => setActive((value) => (value + step + count) % count);
 
-  // Only the front clip plays. The others wait on their first frame, which keeps the page light.
+  // All three clips loop at once (they are tiny and silent). People who turn motion off see the still first frames.
   useEffect(() => {
-    videos.current.forEach((video, index) => {
-      if (!video) return;
-      if (index === active && !calm) {
-        video.currentTime = 0;
-        video.play().catch(() => {});
-      } else {
-        video.pause();
-      }
-    });
-  }, [active, calm]);
+    const play = () => videos.current.forEach((video) => { if (video && video.paused) video.play().catch(() => {}); });
+    if (calm) {
+      videos.current.forEach((video) => video?.pause());
+      return;
+    }
+    play();
+    const resume = () => { if (document.visibilityState === "visible") play(); };
+    document.addEventListener("visibilitychange", resume);
+    return () => document.removeEventListener("visibilitychange", resume);
+  }, [calm]);
 
   useEffect(() => {
     if (calm || hovering || count < 2 || !autoAdvanceMs) return;
@@ -88,7 +88,9 @@ export default function ClipStack({ clips, autoAdvanceMs = 6500 }: Props) {
                 muted
                 loop
                 playsInline
-                preload={front ? "auto" : "metadata"}
+                autoPlay={!calm}
+                preload="auto"
+                onCanPlay={(event) => { if (!calm) event.currentTarget.play().catch(() => {}); }}
                 aria-hidden="true"
                 tabIndex={-1}
                 draggable={false}
