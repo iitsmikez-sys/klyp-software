@@ -59,7 +59,8 @@ test('a frame over the 300KB guard still cannot be priced', () => {
 
 test('transcription is reserved from the rate card, 25% above the priciest model', () => {
   // Pins the price: if the rate card changes, this fails and the reservation is reviewed on purpose.
-  assert.deepEqual(AUDIO_USD_PER_HOUR, { 'universal-3-5-pro': 0.21, 'universal-2': 0.15 });
+  // Groq's Whisper is cheaper, so the priciest model (and every reservation) is still AssemblyAI's.
+  assert.deepEqual(AUDIO_USD_PER_HOUR, { 'universal-3-5-pro': 0.21, 'universal-2': 0.15, 'whisper-large-v3-turbo': 0.04 });
   assert.equal(ASSEMBLYAI_MAX_LIST_MICRO_USD_PER_HOUR, 210_000);
   assert.equal(DEFAULT_TRANSCRIPTION_RESERVE_FACTOR, 1.25);
   assert.equal(quoteTranscription(7200), 525_000);

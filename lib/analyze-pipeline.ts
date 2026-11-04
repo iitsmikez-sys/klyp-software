@@ -181,14 +181,47 @@ async function transcribeWindows(paths: string[], windows: AudioWindow[], costRu
 /** Up to this long a full pass always fits the standard $3 run budget, so no lookup is needed. */
 const STANDARD_BUDGET_SAFE_SECONDS = 4 * 3600;
 
+/**
+ * Groq's Whisper is about a fifth of the price. It never stands in the way of an analysis: if it fails, is rate-limited
+ * for too long, or hears no speech at all, the same audio goes to AssemblyAI exactly as before.
+ */
+async function transcribeWithGroq(audioPath: string, measured: number, costRunId?: string): Promise<{ words: TimedWord[]; durationSeconds: number } | null> {
+  try {
+    const { groqTranscribe, GROQ_MODEL } = await import("@/lib/groq-transcribe");
+    const dir = path.dirname(audioPath);
+    const result = await groqTranscribe(measured, {
+      apiKey: process.env.GROQ_API_KEY!,
+      makeChunk: (start, length, target) => run(resolveBin("ffmpeg"), ["-y", "-ss", String(start), "-t", String(length), "-i", audioPath,
+        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "48k", target], { stallTimeoutMs: 60_000, maxRunMs: 10 * 60_000 }).then(() => undefined),
+      readFile: (file) => readFile(file),
+      removeFile: (file) => import("fs/promises").then((fs) => fs.rm(file, { force: true })),
+      tempPath: (name) => path.join(dir, `${costRunId ?? "run"}-${name}`),
+    });
+    if (costRunId) recordProviderUsage({ runId: costRunId, stage: "transcribe", provider: "groq", model: GROQ_MODEL, audioSeconds: measured });
+    if (result.words.length === 0) {
+      console.log("[transcribe] Groq heard no speech; asking AssemblyAI to be sure");
+      return null;
+    }
+    console.log(`[transcribe] Groq: ${result.words.length} words in ${Math.round(measured / 60)} min${result.language ? ` (${result.language})` : ""}`);
+    return { words: result.words, durationSeconds: Math.round(measured) };
+  } catch (error) {
+    console.log(`[transcribe] Groq failed, using AssemblyAI: ${error instanceof Error ? error.message : error}`);
+    return null;
+  }
+}
+
 export async function transcribe(
-  audioPath: string, costRunId?: string, fullPass = false,
+  audioPath: string, costRunId?: string, fullPass = false, transcriber: "assemblyai" | "groq" = "assemblyai",
 ): Promise<{ words: TimedWord[]; durationSeconds: number }> {
   const aai = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! });
 
   // Probe the exact submitted file, then reserve before the SDK uploads it.
   const measured = Number((await runCapture(resolveBin('ffprobe'), ['-v', 'error', '-show_entries', 'format=duration',
     '-of', 'default=noprint_wrappers=1:nokey=1', audioPath], { maxRunMs: 20_000 })).trim());
+  if (transcriber === "groq" && process.env.GROQ_API_KEY && Number.isFinite(measured) && measured > 0) {
+    const viaGroq = await transcribeWithGroq(audioPath, measured, costRunId);
+    if (viaGroq) return viaGroq;
+  }
   // Only ONE full-transcript pass over a long video is given the larger run budget (fixed by this
   // first reservation); sampled windows and everything up to about 6 hours keep the standard $3.
   const runLimit = fullPass && measured > STANDARD_BUDGET_SAFE_SECONDS ? runLimitForSeconds(measured) ?? undefined : undefined;
@@ -694,6 +727,8 @@ export async function runAnalysisPipeline(opts: {
   onAnalysis?: (result: PipelineResult) => Promise<void>;
   /** Claude model for the moment-picking step (Free and Pro can differ). Defaults to Pro's model. */
   model?: string;
+  /** Which service transcribes the audio. Defaults to AssemblyAI; see transcriberFor in lib/plan-limits.ts. */
+  transcriber?: "assemblyai" | "groq";
 }): Promise<PipelineResult> {
   // Check before downloading or transcribing, both of which can incur costs.
   anthropicCreditGate.assertAvailable();
@@ -770,7 +805,7 @@ export async function runAnalysisPipeline(opts: {
     }
 
     progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
-    const result = await withMem("transcribe", () => transcribe(audioPath, opts.costRunId, true));
+    const result = await withMem("transcribe", () => transcribe(audioPath, opts.costRunId, true, opts.transcriber));
     words = result.words;
     durationSeconds = result.durationSeconds;
   }
