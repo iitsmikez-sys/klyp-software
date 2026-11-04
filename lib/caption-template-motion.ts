@@ -5,12 +5,21 @@ import type { CaptionPosition } from "./editor-captions";
 export const CLEAN_RISE_PX = 28;
 export const CLEAN_RISE_MS = 350;
 
+/** Bold captions pop in like CapCut's default: from 85% up to 106% in 100ms, then settle to full size by 200ms. */
+export const BOLD_POP = { fromScale: 0.85, peakScale: 1.06, riseMs: 100, settleMs: 100, fadeMs: 60 } as const;
+
 export type CaptionMotion = { scale: number; yOffset: number; alpha: number };
 const progress = (elapsedMs: number, durationMs: number) =>
   Math.max(0, Math.min(1, elapsedMs / durationMs));
 
 /** Values shared by live canvas preview and the ASS export keyframes. */
 export function captionMotion(style: CaptionStyle, elapsedMs: number): CaptionMotion {
+  if (style === "BOLD") return {
+    scale: elapsedMs < BOLD_POP.riseMs
+      ? BOLD_POP.fromScale + (BOLD_POP.peakScale - BOLD_POP.fromScale) * progress(elapsedMs, BOLD_POP.riseMs)
+      : BOLD_POP.peakScale - (BOLD_POP.peakScale - 1) * progress(elapsedMs - BOLD_POP.riseMs, BOLD_POP.settleMs),
+    yOffset: 0, alpha: progress(elapsedMs, BOLD_POP.fadeMs),
+  };
   if (style === "COMIC") return {
     scale: elapsedMs < 100 ? 0.72 + 0.36 * progress(elapsedMs, 100) : 1.08 - 0.08 * progress(elapsedMs - 100, 200),
     yOffset: 0, alpha: progress(elapsedMs, 55),
@@ -49,6 +58,7 @@ export function captionMotion(style: CaptionStyle, elapsedMs: number): CaptionMo
 export function captionAssMotion(
   style: CaptionStyle, width: number, height: number, position: CaptionPosition, bottomInset = 0,
 ): string {
+  if (style === "BOLD") return "{\\fscx85\\fscy85\\t(0,100,\\fscx106\\fscy106)\\t(100,200,\\fscx100\\fscy100)\\fad(60,0)}";
   if (style === "COMIC") return "{\\fscx72\\fscy72\\t(0,100,\\fscx108\\fscy108)\\t(100,300,\\fscx100\\fscy100)\\fad(55,0)}";
   if (style === "PULSE") return "{\\fscx72\\fscy72\\t(0,180,\\fscx100\\fscy100)\\fad(80,0)}";
   if (style === "BOUNCE") return "{\\fscx58\\fscy58\\t(0,110,\\fscx110\\fscy110)\\t(110,250,\\fscx100\\fscy100)\\fad(65,0)}";

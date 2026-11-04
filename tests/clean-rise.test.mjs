@@ -37,7 +37,8 @@ test("the rise ends where the caption sits when the video leaves room at the bot
 });
 
 test("other captions are unchanged", () => {
-  assert.equal(captionAssMotion("BOLD", 1080, 1920, "BOTTOM"), "");
-  assert.equal(captionMotion("BOLD", 0).alpha, 1);
+  // Bold now pops in (see bold-pop.test.mjs); styles without a motion stay still.
+  assert.equal(captionAssMotion("KLYP", 1080, 1920, "BOTTOM"), "");
+  assert.equal(captionMotion("KLYP", 0).alpha, 1);
   assert.equal(captionAssMotion("SLIDE", 1080, 1920, "BOTTOM"), `{${bs}move(540,1895,540,1840,0,220)${bs}fad(180,0)}`);
 });
