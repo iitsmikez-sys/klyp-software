@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ensureCaptionFonts } from "@/lib/caption-fonts";
 import { planClipComposition, previewDimensions, visibleFrameRect, type VerticalLayoutV1 } from "@/lib/vertical-layout";
-import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, keywordAtTime, keywordWeights, type HookStyle } from "@/lib/captions";
+import { buildCaptionCues, CUE_MAX_WORDS, wrapCaptionText, layoutTimedCaption, keywordAtTime, keywordWeights, type HookStyle } from "@/lib/captions";
 import { paintCaptionLine } from "@/lib/caption-preview";
 import { emojiForText, isHighlightStyle } from "@/lib/caption-looks";
 import { drawHookPreview } from "@/lib/hook-preview";
@@ -129,7 +129,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
             const clipTime = video.currentTime - text.videoTrimStart;
             if (text.hook && clipTime >= 0) drawHookPreview(ctx, clipTime, text.hook, text.hookStyle, canvas.width, canvas.height);
             if (text.words?.length) {
-              const cues = buildCaptionCues(text.words, text.vodStart * 1000, text.vodEnd * 1000, text.captionStyle === "KLYP" ? 1 : 4);
+              const cues = buildCaptionCues(text.words, text.vodStart * 1000, text.vodEnd * 1000, text.captionStyle === "KLYP" ? 1 : CUE_MAX_WORDS);
               const active = cues.find((cue) => clipTime * 1000 >= cue.startMs && clipTime * 1000 < cue.endMs);
               if (active) {
                 const safeBottom = plan.textSafe.y + plan.textSafe.h;

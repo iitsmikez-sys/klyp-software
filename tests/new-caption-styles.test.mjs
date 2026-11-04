@@ -40,7 +40,10 @@ test("Fire: neon green word, plus an emoji that matches the words", () => {
   assert.equal(emojiForText("he is dead").char, "💀");
   assert.equal(emojiForText("the quick brown"), null);
   const out = lines(generateAss(words, 0, 1500, "FIRE", res));
-  assert.ok(out.every((l) => l.includes("{\\fnNoto Emoji") && l.includes("🔥")), "emoji on every step of the phrase");
+  // Captions are two words long now, so only the caption that says "fire" ("BROWN FIRE") gets the emoji, on both its steps.
+  const withEmoji = out.filter((l) => l.includes("{\\fnNoto Emoji") && l.includes("🔥"));
+  assert.equal(withEmoji.length, 2, "emoji on every step of the caption that matches");
+  assert.ok(out.slice(0, 2).every((l) => !l.includes("Noto Emoji")), "no emoji on the caption that doesn't match");
   assert.ok(out[0].includes("{\\c&H003AFF39&}THE"), out[0]);
   const plain = lines(generateAss(words.slice(0, 3), 0, 1500, "FIRE", res));
   assert.ok(plain.every((l) => !l.includes("Noto Emoji")), "no emoji when nothing matches");

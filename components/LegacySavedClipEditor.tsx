@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CAPTION_STYLES, EXPORT_FORMATS, FORMAT_LABELS, canUseExportFormat, resolveExportFormat, type CaptionStyle, type ExportFormat, type TimedWord } from "@/lib/clips";
-import { buildCaptionCues, HOOK_STYLES, type HookStyle } from "@/lib/captions";
+import { buildCaptionCues, CUE_MAX_WORDS, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import { hasFixedPalette } from "@/lib/caption-looks";
 import { ProStyleNote, StyleDiamond } from "./ProDiamond";
 import { drawHookPreview } from "@/lib/hook-preview";
@@ -172,7 +172,7 @@ export default function LegacySavedClipEditor({
     return words;
   }, [captionWords, clip.start_seconds, hasWords, segments, media]);
   const liveCaptionCues = useMemo(() => buildCaptionCues(outputCaptionWords, 0, editedDuration * 1000,
-    captionStyle === "KLYP" ? 1 : 4), [outputCaptionWords, editedDuration, captionStyle]);
+    captionStyle === "KLYP" ? 1 : CUE_MAX_WORDS), [outputCaptionWords, editedDuration, captionStyle]);
 
   const seekOutput = (seconds: number, autoPlay = false) => {
     const target = Math.max(0, Math.min(seconds, editedDuration));

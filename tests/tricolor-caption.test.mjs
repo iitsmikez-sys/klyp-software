@@ -30,9 +30,10 @@ test("the export shows one colored word at a time, all the same size, on one lin
   const ass = generateAss(words, 0, 1600, "TRICOLOR", res);
   const out = lines(ass);
   assert.equal(out.length, 4);
-  assert.equal(body(out[0]), `{${bs}c${GREEN}}A{${bs}c${WHITE}} IF YOU JOIN`);
-  assert.equal(body(out[1]), `A {${bs}c${RED}}IF{${bs}c${WHITE}} YOU JOIN`);
-  assert.equal(body(out[2]), `A IF {${bs}c${GREEN}}YOU{${bs}c${WHITE}} JOIN`);
+  // Two words per caption: "A IF", then "YOU JOIN", each colored word by word.
+  assert.equal(body(out[0]), `{${bs}c${GREEN}}A{${bs}c${WHITE}} IF`);
+  assert.equal(body(out[1]), `A {${bs}c${RED}}IF{${bs}c${WHITE}}`);
+  assert.equal(body(out[2]), `{${bs}c${GREEN}}YOU{${bs}c${WHITE}} JOIN`);
   assert.ok(!ass.includes("fscx") && !ass.includes("Noto Emoji"), "no size jump, no emoji");
   assert.match(ass, /Style: Default,Poppins ExtraBold,60,&H00FFFFFF,/);
 });

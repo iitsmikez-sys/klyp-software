@@ -24,8 +24,8 @@ const DEFAULT_RES: PlayRes = { w: 1080, h: 1920 };
  * Shared by the ASS burn (generateAss) and the preview canvas overlay
  * (ClipPreview) so what you see is exactly what gets burned. */
 
-/** Max words per cue — small groups, TikTok/CapCut style. */
-export const CUE_MAX_WORDS = 4;
+/** Max words per cue. Two words keep each caption within about 0.05s of the speech (4 words showed the last word ~0.3s early). */
+export const CUE_MAX_WORDS = 2;
 export const HOOK_TOP_MARGIN_REF = 260;
 /** A cue stays on screen this long after its last word has been said, so the text doesn't hang around after the speech stops. */
 export const CUE_TAIL_MS = 250;

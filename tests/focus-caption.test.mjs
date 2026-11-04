@@ -30,8 +30,11 @@ test("the export draws the active word neon green and 25% larger, then resets", 
   const ass = generateAss(words, 0, 1600, "FOCUS", res, 0, true);
   const out = lines(ass);
   assert.equal(out.length, 4);
-  assert.equal(body(out[0]), `{${bs}c${GREEN}${bs}fscx125${bs}fscy125}HAVE{${bs}c${WHITE}${bs}fscx100${bs}fscy100} BEEN${bs}NPOSSIBLE UNLESS`);
-  assert.equal(body(out[2]), `HAVE BEEN${bs}N{${bs}c${GREEN}${bs}fscx125${bs}fscy125}POSSIBLE{${bs}c${WHITE}${bs}fscx100${bs}fscy100} UNLESS`);
+  // Two words per caption: "HAVE BEEN", then "POSSIBLE UNLESS", each highlighted word by word.
+  assert.equal(body(out[0]), `{${bs}c${GREEN}${bs}fscx125${bs}fscy125}HAVE{${bs}c${WHITE}${bs}fscx100${bs}fscy100} BEEN`);
+  assert.equal(body(out[1]), `HAVE {${bs}c${GREEN}${bs}fscx125${bs}fscy125}BEEN{${bs}c${WHITE}${bs}fscx100${bs}fscy100}`);
+  assert.equal(body(out[2]), `{${bs}c${GREEN}${bs}fscx125${bs}fscy125}POSSIBLE{${bs}c${WHITE}${bs}fscx100${bs}fscy100} UNLESS`);
+  assert.equal(body(out[3]), `POSSIBLE {${bs}c${GREEN}${bs}fscx125${bs}fscy125}UNLESS{${bs}c${WHITE}${bs}fscx100${bs}fscy100}`);
   assert.match(ass, /Style: Default,Poppins ExtraBold,62,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,6,3,/);
   assert.ok(!ass.includes("Noto Emoji"));
 });
