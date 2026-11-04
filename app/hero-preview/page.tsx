@@ -9,11 +9,14 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/** The scores are Klyp's real ones for these clips (not rounded up). */
+/**
+ * PLACEHOLDER scores for this design preview only (82, 92, 78). Klyp's own scores for these moments were 66, 69 and 65.
+ * Before this goes on the live site, show scores Klyp really gave these clips, or find clips that really score this high.
+ */
 const CLIPS: HeroClip[] = [
-  { src: "/hero/clip-2.mp4", poster: "/hero/clip-2.jpg", label: "FUNNY", score: 66 },
-  { src: "/hero/clip-1.mp4", poster: "/hero/clip-1.jpg", label: "RAGE", score: 69 },
-  { src: "/hero/clip-3.mp4", poster: "/hero/clip-3.jpg", label: "FUNNY", score: 65 },
+  { src: "/hero/clip-2.mp4", poster: "/hero/clip-2.jpg", label: "FUNNY", score: 82 },
+  { src: "/hero/clip-1.mp4", poster: "/hero/clip-1.jpg", label: "RAGE", score: 92 },
+  { src: "/hero/clip-3.mp4", poster: "/hero/clip-3.jpg", label: "FUNNY", score: 78 },
 ];
 
 export default function HeroPreviewPage() {
