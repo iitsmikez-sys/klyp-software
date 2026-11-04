@@ -27,12 +27,16 @@ const DEFAULT_RES: PlayRes = { w: 1080, h: 1920 };
 /** Max words per cue — small groups, TikTok/CapCut style. */
 export const CUE_MAX_WORDS = 4;
 export const HOOK_TOP_MARGIN_REF = 260;
-/** A cue disappears this long after it appears (unless the next cue starts first). */
-export const CUE_HOLD_MS = 1500;
+/** A cue stays on screen this long after its last word has been said, so the text doesn't hang around after the speech stops. */
+export const CUE_TAIL_MS = 250;
+/** Even a very quick word is shown this long so it can be read (unless the next cue starts first). */
+export const CUE_MIN_SHOW_MS = 500;
+/** A cue never stays up longer than this, even if the transcript says a word lasted that long. */
+export const CUE_MAX_SHOW_MS = 4000;
 /** Show cues slightly early to compensate for perception delay. */
 export const CUE_LEAD_MS = 50;
-/** A silence gap longer than this starts a new cue, so words never appear before they're spoken. */
-const CUE_GAP_SPLIT_MS = 800;
+/** A pause longer than this starts a new cue, so words never appear long before they're spoken. */
+export const CUE_GAP_SPLIT_MS = 450;
 
 export type CaptionCue = { text: string; startMs: number; endMs: number };
 
@@ -42,10 +46,11 @@ export type CaptionCue = { text: string; startMs: number; endMs: number };
  *
  * Rules:
  *  - a cue is triggered by its first word's start_time (minus CUE_LEAD_MS)
- *  - max `maxWords` words per cue; a >800ms silence gap also splits, so a
- *    group never shows words long before they're actually said
- *  - a cue ends after CUE_HOLD_MS, when the next cue starts, or at the clip
- *    end — whichever comes first
+ *  - max `maxWords` words per cue; a pause longer than CUE_GAP_SPLIT_MS also
+ *    splits, so a group never shows words long before they're actually said
+ *  - a cue ends CUE_TAIL_MS after its last word is said (shown for at least
+ *    CUE_MIN_SHOW_MS and at most CUE_MAX_SHOW_MS), or when the next cue
+ *    starts, or at the clip end — whichever comes first
  */
 export function buildCaptionCues(
   words: TimedWord[],
@@ -76,7 +81,9 @@ export function buildCaptionCues(
   }));
   cues.forEach((cue, i) => {
     const nextStart = i + 1 < cues.length ? cues[i + 1].startMs : Infinity;
-    cue.endMs = Math.min(cue.startMs + CUE_HOLD_MS, nextStart, clipLenMs);
+    const lastWordEnd = groups[i][groups[i].length - 1].end - clipStartMs;
+    const wanted = Math.min(CUE_MAX_SHOW_MS, Math.max(CUE_MIN_SHOW_MS, lastWordEnd + CUE_TAIL_MS - cue.startMs));
+    cue.endMs = Math.min(cue.startMs + wanted, nextStart, clipLenMs);
   });
   // Rapid or overlapping words can create cues shorter than the editor's
   // 100 ms minimum. Keep their text by folding them into a neighbor instead
@@ -222,9 +229,34 @@ function dialogue(startMs: number, endMs: number, text: string, style = "Default
 }
 
 /** The same step timing selects the green word in canvas and ASS export. */
-export function keywordAtTime(elapsedMs: number, durationMs: number, wordCount: number): number {
+export function keywordAtTime(elapsedMs: number, durationMs: number, wordCount: number, weights?: number[]): number {
   if (wordCount < 1) return -1;
+  if (weights && weights.length === wordCount) {
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const position = Math.max(0, elapsedMs) / Math.max(1, durationMs) * total;
+    let cumulative = 0;
+    for (let i = 0; i < wordCount; i++) {
+      cumulative += weights[i];
+      if (position < cumulative) return i;
+    }
+    return wordCount - 1;
+  }
   return Math.min(wordCount - 1, Math.max(0, Math.floor(Math.max(0, elapsedMs) * wordCount / Math.max(1, durationMs))));
+}
+
+/**
+ * How long each word of a caption takes to say, relative to the others: longer words take longer. The highlighted
+ * word follows these weights instead of stepping evenly, so it stays closer to the audio. Canvas and ASS both use it.
+ */
+export function keywordWeights(text: string): number[] {
+  return text.trim().split(/\s+/).filter(Boolean).map((word) => 1 + (word.match(/[\p{L}\p{N}]/gu)?.length ?? 0));
+}
+
+/** The moment each highlighted word starts, as a share of the caption's time, using the same weights as keywordAtTime. */
+function keywordBoundaries(weights: number[]): number[] {
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  let cumulative = 0;
+  return [0, ...weights.map((weight) => (cumulative += weight) / total)];
 }
 
 /** Fire's emoji: a flat icon after the last word, tinted per emoji, in the bundled emoji font. */
@@ -251,9 +283,10 @@ function keywordDialogues(startMs: number, endMs: number, lines: string[], style
   if (!count) return [];
   const events: string[] = [];
   const emoji = style === "FIRE" ? emojiForText(lines.join(" ")) : null;
+  const bounds = keywordBoundaries(keywordWeights(lines.join(" ")));
   for (let index = 0; index < count; index++) {
-    const start = Math.round(startMs + (endMs - startMs) * index / count);
-    const end = Math.round(startMs + (endMs - startMs) * (index + 1) / count);
+    const start = Math.round(startMs + (endMs - startMs) * bounds[index]);
+    const end = Math.round(startMs + (endMs - startMs) * bounds[index + 1]);
     if (end > start) events.push(dialogue(start, end, keywordAssText(lines, index, style, emoji)));
   }
   return events;
@@ -475,9 +508,10 @@ export function generateTimedCueAss(
   if (isHighlightStyle(style)) {
    const emoji = style === "FIRE" ? emojiForText(layout.lines.map(line => line.text).join(" ")) : null;
    const count = layout.lines.map(line => line.text.split(/\s+/).filter(Boolean).length).reduce((sum, n) => sum + n, 0);
+   const bounds = keywordBoundaries(keywordWeights(layout.lines.map(line => line.text).join(" ")));
    for (let index = 0; index < count; index++) {
-    const start = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * index / count);
-    const end = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * (index + 1) / count);
+    const start = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * bounds[index]);
+    const end = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * bounds[index + 1]);
     if (end <= start) continue;
     let offset = 0;
     for (const line of layout.lines) {

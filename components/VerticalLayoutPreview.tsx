@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ensureCaptionFonts } from "@/lib/caption-fonts";
 import { planClipComposition, previewDimensions, visibleFrameRect, type VerticalLayoutV1 } from "@/lib/vertical-layout";
-import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, keywordAtTime, type HookStyle } from "@/lib/captions";
+import { buildCaptionCues, wrapCaptionText, layoutTimedCaption, keywordAtTime, keywordWeights, type HookStyle } from "@/lib/captions";
 import { paintCaptionLine } from "@/lib/caption-preview";
 import { emojiForText, isHighlightStyle } from "@/lib/caption-looks";
 import { drawHookPreview } from "@/lib/hook-preview";
@@ -111,7 +111,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
               ctx.fillStyle = style === "COMIC" ? "#FFDF00" : isHighlightStyle(style) ? "#FFFFFF" : appearance.color;
               const emoji = style === "FIRE" ? emojiForText(activeCaption.text) : null;
               const keyword = keywordAtTime(outputTime * 1000 - activeCaption.start_ms,
-                activeCaption.end_ms - activeCaption.start_ms, activeCaption.text.trim().split(/\s+/).length);
+                activeCaption.end_ms - activeCaption.start_ms, activeCaption.text.trim().split(/\s+/).length, keywordWeights(activeCaption.text));
               let wordOffset = 0;
               for (const line of caption.lines) {
                 ctx.save();
@@ -142,7 +142,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
                 const caption = text.captionStyle === "KLYP" ? active.text.toUpperCase() : active.text;
                 const lines = wrapCaptionText(caption, text.captionStyle);
                 const keyword = keywordAtTime(clipTime * 1000 - active.startMs, active.endMs - active.startMs,
-                  caption.trim().split(/\s+/).length);
+                  caption.trim().split(/\s+/).length, keywordWeights(caption));
                 let wordOffset = 0;
                 lines.forEach((line, index) => {
                   const lineY = y - (lines.length - index - 1) * 48 * scaleK;
