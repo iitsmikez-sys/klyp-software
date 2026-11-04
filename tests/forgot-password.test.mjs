@@ -43,3 +43,10 @@ test("the reset page needs a signed-in link, checks the two passwords, and goes 
   assert.match(page, /router\.push\(claim \?\? "\/dashboard"\)/);
   assert.match(page, /safeClaimNext\(readCookie\(CLAIM_AFTER_RESET_COOKIE\)\)/);
 });
+
+test("the login page never reads the browser address while it is being built on the server", () => {
+  const login = read("app/login/page.tsx");
+  assert.match(login, /useEffect\(\(\) => \{ setClaimPath\(claimNext\(\)\); \}, \[\]\);/);
+  assert.match(login, /typeof window === "undefined" \? null/);
+  assert.ok(!login.includes("claimNext()!"));
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
@@ -26,7 +26,10 @@ export default function LoginPage() {
   const supabase = createClient();
 
   // Coming from the email's "Claim $17" button: after signing in, go back to /claim (nowhere else is allowed).
-  const claimNext = () => safeClaimNext(new URLSearchParams(window.location.search).get("next"));
+  const claimNext = () => (typeof window === "undefined" ? null : safeClaimNext(new URLSearchParams(window.location.search).get("next")));
+  // Read in an effect (not while rendering) so the page builds the same on the server and in the browser.
+  const [claimPath, setClaimPath] = useState<string | null>(null);
+  useEffect(() => { setClaimPath(claimNext()); }, []);
   const nextAfterLogin = () => claimNext() ?? "/dashboard";
   const rememberClaimNext = () => {
     const n = claimNext();
@@ -204,7 +207,7 @@ export default function LoginPage() {
 
               <div className="text-right -mt-2">
 
-                <Link href={`/forgot-password${claimNext() ? `?next=${encodeURIComponent(claimNext()!)}` : ""}`} className="text-xs text-accent hover:underline">
+                <Link href={`/forgot-password${claimPath ? `?next=${encodeURIComponent(claimPath)}` : ""}`} className="text-xs text-accent hover:underline">
 
                   Forgot password?
 
