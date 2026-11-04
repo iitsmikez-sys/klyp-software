@@ -157,6 +157,6 @@ test("the analysis falls back to AssemblyAI if Groq fails or hears nothing, and 
   assert.match(pipeline, /Groq heard no speech; asking AssemblyAI to be sure/);
   assert.match(pipeline, /transcribe\(audioPath, opts\.costRunId, true, opts\.transcriber\)/);
   assert.match(read("app/api/analyze/route.ts"), /transcriber: transcriberFor\(plan === "pro"\)/);
-  // The auto-clip worker (Pro) does not pass a transcriber, so it keeps using AssemblyAI.
-  assert.doesNotMatch(read("lib/vod-poll.ts"), /transcriber/);
+  // The auto-clip worker (Pro) follows the same switch.
+  assert.match(read("lib/vod-poll.ts"), /transcriber: transcriberFor\(true\)/);
 });
