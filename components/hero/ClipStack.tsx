@@ -116,7 +116,7 @@ export default function ClipStack({ clips, autoAdvanceMs = 6500 }: Props) {
         ))}
       </div>
       <div className="mt-3 flex justify-center">
-        <span className="rounded-full border border-accent/40 bg-accent-glow px-4 py-1.5 text-sm text-accent">After: {count} clips, swipe</span>
+        <span className="rounded-full border border-accent/40 bg-accent-glow px-4 py-1.5 text-sm text-accent">After</span>
       </div>
     </div>
   );

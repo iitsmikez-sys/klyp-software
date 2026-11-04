@@ -6,15 +6,13 @@ import { motion, useReducedMotion } from "framer-motion";
 type Props = {
   /** The length of the stream, shown like a YouTube thumbnail badge. */
   durationLabel?: string;
-  /** Where the best moments sit on the stream, as a share of its length (0 to 1). */
-  markers?: number[];
 };
 
 /**
- * The "before" side of the hero: a still frame from a long gaming stream, its length, and the moments Klyp found.
+ * The "before" side of the hero: a still frame from a long gaming stream and its length.
  * The green boxes mark where the AI is looking. Nothing here plays video or makes sound.
  */
-export default function VodBeforeCard({ durationLabel = "1:40:41", markers = [0.086, 0.34, 0.71] }: Props) {
+export default function VodBeforeCard({ durationLabel = "1:40:41" }: Props) {
   const calm = useReducedMotion();
   return (
     <div className="w-full max-w-[560px]">
@@ -58,24 +56,12 @@ export default function VodBeforeCard({ durationLabel = "1:40:41", markers = [0.
         {/* How long the stream is, in the corner like a YouTube thumbnail. */}
         <span className="absolute bottom-14 right-3 rounded-md bg-black/80 px-2 py-1 text-xs font-semibold tabular-nums text-white">{durationLabel}</span>
 
-        {/* The stream's timeline with the best moments marked. */}
+        {/* The stream's timeline. */}
         <div className="absolute inset-x-0 bottom-0 px-4 pb-3 pt-8">
           <div className="relative h-1.5 rounded-full bg-white/15">
-            {markers.map((share, index) => (
-              <motion.span
-                key={index}
-                aria-hidden="true"
-                className="absolute top-1/2 h-3.5 w-1.5 -translate-y-1/2 rounded-sm bg-accent"
-                style={{ left: `${Math.min(97, Math.max(1, share * 100))}%` }}
-                initial={calm ? false : { opacity: 0, scaleY: 0 }}
-                animate={{ opacity: 1, scaleY: 1 }}
-                transition={{ delay: 1.1 + index * 0.25, duration: 0.3 }}
-              />
-            ))}
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-white/70">
+          <div className="mt-2 text-[11px] text-white/70">
             <span>Full stream</span>
-            <span className="font-medium text-accent">{markers.length} moments found</span>
           </div>
         </div>
       </div>
