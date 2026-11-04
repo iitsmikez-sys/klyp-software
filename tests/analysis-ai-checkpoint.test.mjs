@@ -24,6 +24,7 @@ test("saved AI checkpoint bypasses all providers and commits through accounting 
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "fs/promises": { mkdtemp: async () => "/fake/job-dir", rm: async () => {} },
     "@anthropic-ai/sdk": class { static AuthenticationError = class {}; static RateLimitError = class {}; },
+    "@/lib/language-hint": { isMostlyEnglish: () => true, languageSection: () => '' },
     "@/lib/loud-moments": { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     "@/lib/clips": { CONTENT_TYPES: ["gaming", "irl"], DEFAULT_CONTENT_TYPE: "gaming" },
     "@/lib/video-cache": { findUploadedVideo: async () => null },

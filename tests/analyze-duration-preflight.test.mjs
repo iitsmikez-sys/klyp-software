@@ -21,6 +21,7 @@ function routeHarness({ duration = '7200', sparks = 20 } = {}) {
     os: { tmpdir: () => 'fixture-tmp' },
     path: { default: { join: (...parts) => parts.join('/') }, join: (...parts) => parts.join('/') },
     '@anthropic-ai/sdk': { default: class Anthropic {} },
+    '@/lib/language-hint': { isMostlyEnglish: () => true, languageSection: () => '' },
     '@/lib/loud-moments': { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     '@/lib/clips': { CONTENT_TYPES: ['gaming', 'irl'], DEFAULT_CONTENT_TYPE: 'gaming' },
     '@/lib/video-cache': { findUploadedVideo: async () => null },

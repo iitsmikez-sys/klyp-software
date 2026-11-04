@@ -30,6 +30,7 @@ function harness({ plan = "free", url = YT, uploadId, seconds = 600, sparks = 50
     os: { tmpdir: () => "fixture-tmp" },
     path: { default: { join: (...p) => p.join("/") }, join: (...p) => p.join("/") },
     "@anthropic-ai/sdk": { default: class Anthropic {} },
+    "@/lib/language-hint": { isMostlyEnglish: () => true, languageSection: () => '' },
     "@/lib/loud-moments": { detectLoudMoments: async () => [], formatLoudMomentsForPrompt: () => '', isQuietStream: () => false },
     "@/lib/clips": { CONTENT_TYPES: ["gaming", "irl"], DEFAULT_CONTENT_TYPE: "gaming" },
     "@/lib/video-cache": { findUploadedVideo: async () => { state.uploadLookups++; return "/fixture/upload.mp4"; } },
