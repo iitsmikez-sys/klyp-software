@@ -12,11 +12,11 @@ export default function PrivacyPage() {
         <Link href="/" className="text-accent hover:underline">← Klyp home</Link>
         <header>
           <h1 className="font-syne text-3xl font-bold text-foreground">Privacy Policy</h1>
-          <p>Effective October 31, 2026</p>
+          <p>Effective November 4, 2026</p>
         </header>
         <section>
           <h2 className="text-lg font-semibold text-foreground">Information Klyp handles</h2>
-          <p>Klyp uses account information to sign you in and provide your subscription. When you submit a video link or upload a file, Klyp processes the video, audio, transcript, clip choices, and edits to find, save, and export clips. We also keep records needed to show your clips, usage, and account status.</p>
+          <p>Klyp uses account information to sign you in and provide your subscription. When you submit a video link or upload a file, Klyp processes the video, audio, transcript, clip choices, and edits to find, save, and export clips. We also keep records needed to show your clips, usage, and account status. To understand how people find Klyp, we save a short label for where a visit came from (for example the site or link name) in a cookie for up to 90 days and store it on your account when you sign up. It contains no personal information.</p>
         </section>
         <section>
           <h2 className="text-lg font-semibold text-foreground">YouTube connection and publishing</h2>
