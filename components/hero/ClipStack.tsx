@@ -21,6 +21,8 @@ type Props = {
 };
 
 const SPREAD_PX = 84;
+/** The two clips behind the front one are blurred; they sharpen as they move to the front. */
+const SIDE_BLUR_PX = 6;
 
 /**
  * A fanned stack of vertical clips. Every clip plays on a loop with no sound; swipe the front one (or click a side
@@ -72,7 +74,7 @@ export default function ClipStack({ clips, autoAdvanceMs = 6500 }: Props) {
               key={clip.src}
               className={`absolute left-1/2 top-0 -ml-[85px] h-[302px] w-[170px] overflow-hidden rounded-2xl border bg-surface ${front ? "cursor-grab border-accent shadow-accent-glow active:cursor-grabbing" : "cursor-pointer border-border"}`}
               style={{ zIndex: front ? 3 : 1, touchAction: "pan-y" }}
-              animate={front ? { x: 0, y: 0, rotate: 0, scale: 1, opacity: 1 } : { x: side * SPREAD_PX, y: 22, rotate: side * 8, scale: 0.86, opacity: 0.85 }}
+              animate={front ? { x: 0, y: 0, rotate: 0, scale: 1, opacity: 1, filter: "blur(0px)" } : { x: side * SPREAD_PX, y: 22, rotate: side * 8, scale: 0.86, opacity: 0.85, filter: `blur(${SIDE_BLUR_PX}px)` }}
               transition={calm ? { duration: 0 } : { type: "spring", stiffness: 230, damping: 26 }}
               drag={front ? "x" : false}
               dragConstraints={{ left: 0, right: 0 }}
