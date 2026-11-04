@@ -454,7 +454,7 @@ export default function ClipPreviewModal({
             )}
             {finishedLook && (
               <FinishedOverlays hook={clip.hooks?.[0]} words={clip.words} startSeconds={clip.start_seconds}
-                endSeconds={clip.end_seconds} videoRef={videoRef} />
+                endSeconds={clip.end_seconds} videoRef={videoRef} leadSeconds={trimStart} />
             )}
           </div>
         </div>
