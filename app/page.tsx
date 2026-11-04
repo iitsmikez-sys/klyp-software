@@ -6,7 +6,6 @@ import PricingSection from "@/components/PricingSection";
 import Hero3D from "@/components/Hero3D";
 import Stars from "@/components/Stars";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
-import Waitlist from "@/components/Waitlist";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
 
@@ -423,9 +422,6 @@ export default function LandingPage() {
           </FadeIn>
         </div>
       </section>
-
-      {/* ── Waitlist ── */}
-      <Waitlist />
 
       {/* ── Final CTA ── */}
       <section className="px-6 py-32 relative overflow-hidden">
