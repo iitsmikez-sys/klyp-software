@@ -127,7 +127,7 @@ export const ClipAnalysisSchema = z.object({
   also_consider: z
     .array(ClipSchema)
     .max(3)
-    .describe("Up to 3 near-miss moments scoring 55-64, only when the main list is short and at least one moment cleared 65. Empty otherwise."),
+    .describe("Up to 3 near-miss moments scoring 55-64 when the main list is short and at least one moment cleared 65; or, when nothing cleared 65, up to 3 of the best real moments scoring 45-64 (best of this stream). Empty otherwise."),
 });
 
 export type Clip = z.infer<typeof ClipSchema>;
@@ -157,7 +157,7 @@ export function clipAnalysisSchemaForContentType(contentType: ContentType) {
     also_consider: z
       .array(clipSchemaForContentType(contentType))
       .max(3)
-      .describe("Up to 3 near-miss moments scoring 55-64, only when the main list is short and at least one moment cleared 65. Empty otherwise."),
+      .describe("Up to 3 near-miss moments scoring 55-64 when the main list is short and at least one moment cleared 65; or, when nothing cleared 65, up to 3 of the best real moments scoring 45-64 (best of this stream). Empty otherwise."),
   });
 }
 
