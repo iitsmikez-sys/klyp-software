@@ -186,6 +186,8 @@ export type AnalyzeEvent =
       /** Sparks deducted for this analysis and the balance after (server-authoritative). */
       sparksSpent: number;
       sparksBalance: number;
+      /** The streamer talks very little, so few clips may be found. */
+      quiet?: boolean;
     }
   | { type: "error"; stage: AnalyzeStage | "validate"; error: string };
 

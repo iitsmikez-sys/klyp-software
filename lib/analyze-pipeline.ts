@@ -7,10 +7,11 @@
  * Auth, Sparks charging, SSE streaming, and Supabase persistence are each
  * caller's responsibility — this module only runs the actual pipeline.
  */
-import { readdir } from "fs/promises";
+import { readdir, readFile } from "fs/promises";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { detectLoudMoments, formatLoudMomentsForPrompt, isQuietStream, type LoudMoment } from "@/lib/loud-moments";
 import { logAnthropicRateLimits } from "@/lib/anthropic-rate-limits";
 import { AssemblyAI } from "assemblyai";
 import {
@@ -339,7 +340,11 @@ export async function findClips(
   costRunId?: string,
   observedWindows?: AudioWindow[],
   /** Which Claude model picks the moments. Pro keeps Opus 4.8; see analysisModelFor in lib/plan-limits.ts. */
-  model: string = "claude-opus-4-8"
+  model: string = "claude-opus-4-8",
+  /** Loud stretches of the audio (Gaming only), a free signal for streamers who say little. */
+  loudMoments: LoudMoment[] = [],
+  /** The streamer talks very little, so loud moments and chat carry more weight. */
+  quietStream = false
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -366,6 +371,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     : "";
 
   const keywordSection = keyword?.trim() ? formatKeywordSection(keyword.trim(), keywordMatchSeconds) : "";
+  const loudSection = contentType === "gaming" ? formatLoudMomentsForPrompt(loudMoments, quietStream) : "";
   const priorSection = priorWindows.length
     ? `\n\n## MOMENTS ALREADY DELIVERED TO THIS USER\n\nThese time ranges were already sold from this VOD. Find the next best genuinely different moments outside these ranges. Do not return a clip within 60 seconds of any listed start or overlapping a listed range. If no other moment clears the quality floor, return an empty clips array.\n${priorWindows.map((w) => `- ${Math.round(w.start_seconds)}s to ${Math.round(w.end_seconds)}s`).join("\n")}`
     : "";
@@ -476,7 +482,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## ALSO CONSIDER (near-misses, separate list)
 
-After your main list, fill "also_consider" with up to 3 more moments that scored 55-64, just below the quality floor. Do this ONLY when your main list has fewer than ${clipCount} clips AND at least one moment cleared 65; otherwise return an empty list. At most the smaller of 3 and (${clipCount} minus your main list length). Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${keywordSection}`,
+After your main list, fill "also_consider" with up to 3 more moments that scored 55-64, just below the quality floor. Do this ONLY when your main list has fewer than ${clipCount} clips AND at least one moment cleared 65; otherwise return an empty list. At most the smaller of 3 and (${clipCount} minus your main list length). Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${keywordSection}`,
     messages: [
       {
         role: "user",
@@ -614,6 +620,8 @@ export type PipelineResult = {
   /** Full VOD-level word transcript — returned so the caller can persist it
    *  (see lib/transcripts.ts). Not scoped to any single clip. */
   words: TimedWord[];
+  /** The streamer talks very little (under about 40 words a minute). */
+  quiet?: boolean;
 };
 
 /**
@@ -708,6 +716,7 @@ export async function runAnalysisPipeline(opts: {
   if (!cachedTranscript) progress("download", "running", durationHint ? Math.max(10, Math.round(durationHint / 60)) : undefined);
   let words: TimedWord[];
   let durationSeconds: number;
+  let loudMoments: LoudMoment[] = [];
 
   if (cachedTranscript) {
     words = cachedTranscript.words;
@@ -747,12 +756,22 @@ export async function runAnalysisPipeline(opts: {
       uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir, !!durationHint && durationHint >= SEGMENT_MIN_VOD_S)
     );
     progress("download", "done");
+    // Gaming streamers can play well and say little, so measure the audio's loud moments too. It runs on this
+    // server for free, and a failure here only means no hints.
+    if (contentType === "gaming") {
+      loudMoments = await withMem("loud-moments", () => detectLoudMoments(audioPath, {
+        run, readText: (p) => readFile(p, "utf8"), ffmpeg: resolveBin("ffmpeg"), outPath: path.join(workDir, "loudness.txt"),
+      }));
+      console.log(`[analyze] loud moments: ${loudMoments.length}`);
+    }
 
     progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
     const result = await withMem("transcribe", () => transcribe(audioPath, opts.costRunId, true));
     words = result.words;
     durationSeconds = result.durationSeconds;
   }
+  const quietStream = isQuietStream(words.length, durationSeconds);
+  if (quietStream) console.log(`[analyze] quiet stream: ${words.length} words in ${Math.round(durationSeconds / 60)} min`);
   const coverageMode = cachedTranscript?.coverageMode ?? (windows.length ? "chat-sampled" : "full");
   if (!cachedTranscript) await opts.onTranscript?.({ words, durationSeconds, coverageMode });
   if (opts.costRunId) console.log(`[analysis-usage] ${JSON.stringify({ runId: opts.costRunId, vodSeconds: durationSeconds, mode: coverageMode })}`);
@@ -783,7 +802,9 @@ export async function runAnalysisPipeline(opts: {
   const poolSize = discoveryPoolSize(clipCount);
   const cacheInput = { sourceKey: opts.sourceKey ?? "", durationSeconds, contentType,
     keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
-    windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model };
+    windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
+    // Results found with loud-moment hints are kept apart from older ones.
+    signals: loudMoments.length ? "loud-v1" : undefined };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
@@ -791,7 +812,7 @@ export async function runAnalysisPipeline(opts: {
   if (judged === null) {
     const selected = await withMem("find-clips", () =>
       findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model));
+        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream));
     judged = selected.clips;
     skipped = selected.skipped;
     await cache?.save(judged);
@@ -817,7 +838,7 @@ export async function runAnalysisPipeline(opts: {
     if (nextJudged === null) {
       const next = await withMem("find-clips-more", () =>
         findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model));
+          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream));
       nextJudged = next.clips;
       skipped += next.skipped;
       await nextCache.save(nextJudged);
@@ -845,7 +866,7 @@ export async function runAnalysisPipeline(opts: {
   memSnapshot("pipeline end");
 
   const result = { clips: clipsWithWords, skipped, durationSeconds, transcriptChars: transcriptText.length, words,
-    boundaryReview: flagged };
+    boundaryReview: flagged, quiet: quietStream };
   await opts.onAnalysis?.(result);
   progress("analyze", "done");
   return result;
