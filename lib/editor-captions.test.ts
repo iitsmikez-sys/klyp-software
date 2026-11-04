@@ -23,7 +23,8 @@ test("derived cues retain corrected text while export retains source data for se
  const draft = base(); draft.words![0].text = "fixed";
  assert.equal(resolveEditorCues(draft, clip)[0].text, "fixed");
  assert.equal(toClipExportPayload(clip, draft).caption_cues, null);
- assert.deepEqual(resolveEditorCues(draft, clip), [{ id: "auto-0", start_ms: 950, end_ms: 2450, text: "fixed" }]);
+ // The word ends at 1500ms, and the caption stays up 250ms after the last word (it used to hang for a fixed 1.5 seconds).
+ assert.deepEqual(resolveEditorCues(draft, clip), [{ id: "auto-0", start_ms: 950, end_ms: 1750, text: "fixed" }]);
 });
 test("hook follows first three output seconds and captions use output time", () => {
  const draft = { ...base(), hook: "HOOK", segments: [{ id: "last", start_seconds: 105, end_seconds: 110 }] };
