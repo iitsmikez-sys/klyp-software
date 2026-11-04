@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
 import { createClient } from "@/lib/supabase/client";
 import { CLAIM_NEXT_COOKIE, safeClaimNext } from "@/lib/claim-next";
+
+// Supabase's wording is blunt. Say what to try next (people who joined with Google have no password).
+const friendlyLoginError = (message: string) =>
+  /invalid login credentials/i.test(message)
+    ? "Wrong email or password. Signed up with Google or Discord? Use that button above. Or tap Forgot password."
+    : message;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,7 +26,10 @@ export default function LoginPage() {
   const supabase = createClient();
 
   // Coming from the email's "Claim $17" button: after signing in, go back to /claim (nowhere else is allowed).
-  const claimNext = () => safeClaimNext(new URLSearchParams(window.location.search).get("next"));
+  const claimNext = () => (typeof window === "undefined" ? null : safeClaimNext(new URLSearchParams(window.location.search).get("next")));
+  // Read in an effect (not while rendering) so the page builds the same on the server and in the browser.
+  const [claimPath, setClaimPath] = useState<string | null>(null);
+  useEffect(() => { setClaimPath(claimNext()); }, []);
   const nextAfterLogin = () => claimNext() ?? "/dashboard";
   const rememberClaimNext = () => {
     const n = claimNext();
@@ -66,7 +75,7 @@ export default function LoginPage() {
     if (mode === "signin") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        setError(error.message);
+        setError(friendlyLoginError(error.message));
         setLoading(false);
       } else {
         router.push(nextAfterLogin());
@@ -193,6 +202,21 @@ export default function LoginPage() {
                 className="w-full px-3.5 py-2.5 rounded-lg bg-surface-2 border border-border text-sm text-foreground placeholder:text-subtle focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
               />
             </div>
+
+            {mode === "signin" && (
+
+              <div className="text-right -mt-2">
+
+                <Link href={`/forgot-password${claimPath ? `?next=${encodeURIComponent(claimPath)}` : ""}`} className="text-xs text-accent hover:underline">
+
+                  Forgot password?
+
+                </Link>
+
+              </div>
+
+            )}
+
 
             {error && (
               <div className="px-3.5 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import * as offer from "../lib/offer-cookie.ts";
-import { CLAIM_NEXT_PATTERN, safeClaimNext } from "../lib/claim-next.ts";
+import { AFTER_AUTH_PATTERN, safeClaimNext } from "../lib/claim-next.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 const transpile = (p) => ts.transpileModule(read(p), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
@@ -91,7 +91,7 @@ test("only /claim return paths are accepted after sign-in", () => {
 
 test("the sign-in callback uses the same rule and goes back to /claim, wiring is in place", () => {
   const callback = read("app/auth/callback/route.ts");
-  assert.ok(callback.includes(CLAIM_NEXT_PATTERN.source.replaceAll("/", "\\/")) || callback.includes(String(CLAIM_NEXT_PATTERN).slice(1, -1)), "callback has the same pattern as lib/claim-next.ts");
+  assert.ok(callback.includes(AFTER_AUTH_PATTERN.source), "callback has the same pattern as lib/claim-next.ts");
   assert.match(callback, /cookieStore\.get\?\.\("klyp_next"\)/);
   const login = read("app/login/page.tsx");
   assert.match(login, /rememberClaimNext\(\);/);

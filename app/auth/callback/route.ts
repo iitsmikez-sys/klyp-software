@@ -7,11 +7,12 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   if (code) {
     const cookieStore = await cookies();
-    // The login page saves "come back to /claim" in a cookie (only /claim paths are accepted).
+    // The login page saves "come back to /claim" (and the forgot-password page "go to /reset-password") in a
+    // cookie. Only those two paths are accepted.
     const savedRaw = cookieStore.get?.("klyp_next")?.value;
     let saved: string | null = null;
     try { saved = savedRaw ? decodeURIComponent(savedRaw) : null; } catch { saved = null; }
-    const savedNext = saved && /^\/claim(\?[A-Za-z0-9=&._%-]{0,200})?$/.test(saved) ? saved : null;
+    const savedNext = saved && /^\/(claim(\?[A-Za-z0-9=&._%-]{0,200})?|reset-password)$/.test(saved) ? saved : null;
     const next = searchParams.get("next") ?? savedNext ?? "/dashboard";
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
