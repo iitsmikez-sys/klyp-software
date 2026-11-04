@@ -102,9 +102,9 @@ test("Spark pricing: per video with clips included, allowances unchanged", () =>
   assert.deepEqual(SPARKS_ALLOWANCE, { free: 60, pro: 500 });
 });
 
-test("clips add no charge; a run that finds none costs half", () => {
+test("clips add no charge; a run that finds none costs nothing", () => {
   assert.equal(clipCharge(10, 4), 0);
   assert.equal(clipCharge(10, 10), 0);
-  assert.equal(analysisCharge(45 * 60, 0), 18);
+  assert.equal(analysisCharge(45 * 60, 0), 0);
   assert.equal(analysisCharge(45 * 60, 3), 35);
 });

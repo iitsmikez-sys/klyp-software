@@ -1199,7 +1199,7 @@ export default function AnalyzePanel() {
                 <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">Included</p>
               </div>
             </div>
-            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Priced by video length, with up to {shownClips} clip{shownClips === 1 ? "" : "s"} included. If no moment clears the quality bar you pay half.</p>
+            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Priced by video length, with up to {shownClips} clip{shownClips === 1 ? "" : "s"} included. If no moment clears the quality bar, you aren't charged any Sparks.</p>
             {cantAfford && (
               <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
                 <p className="text-sm font-semibold text-foreground">This video needs {totalEstimate} Sparks</p>
