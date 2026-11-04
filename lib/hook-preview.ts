@@ -4,7 +4,7 @@
  * user sees in the player matches what FFmpeg burns on export: top-center,
  * uppercase, visible for the first HOOK_DURATION_MS of the clip.
  */
-import { HOOK_DURATION_MS, HOOK_TOP_MARGIN_REF, hookTextLayout, whiteBoxCardGeometry, wrapCaptionText, type HookStyle } from "./captions.ts";
+import { hookDurationMs, HOOK_TOP_MARGIN_REF, hookTextLayout, whiteBoxCardGeometry, wrapCaptionText, type HookStyle } from "./captions.ts";
 import type { TextPlacement } from "./text-placement.ts";
 
 type PreviewParams = {
@@ -58,8 +58,9 @@ export function drawHookPreview(
   W: number,
   H: number,
   placement?: TextPlacement,
+  durationMs?: number | null,
 ) {
-  if (tSeconds * 1000 > HOOK_DURATION_MS) return;
+  if (tSeconds * 1000 > hookDurationMs(durationMs)) return;
   const text = hook.toUpperCase().trim();
   if (!text) return;
 

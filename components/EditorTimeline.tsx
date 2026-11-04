@@ -18,9 +18,12 @@ export type EditorTimelineProps = {
  /** Drag a handle on an inserted section or overlay to make it longer or shorter. The clamp functions keep the preview inside what is allowed. */
  clampInsert?: (id:string,lengthMs:number)=>number; onResizeInsert?: (id:string,lengthMs:number)=>void;
  clampCutaway?: (id:string,startMs:number,endMs:number)=>{startMs:number;endMs:number}; onResizeCutaway?: (id:string,startMs:number,endMs:number)=>void;
+ /** How long the hook stays on screen, in seconds (3 by default). Drag the handle on its right edge to stretch it, up to the whole clip. */
+ hookSeconds?: number; clampHook?: (lengthMs:number)=>number; onResizeHook?: (lengthMs:number)=>void;
 };
 const MAX_ZOOM=8;
-export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],inserts=[],focusSpans=[],selection,onSelect,onSeek,onTrim,clampInsert,onResizeInsert,clampCutaway,onResizeCutaway}:EditorTimelineProps) {
+export default function EditorTimeline({segments,captions,hook,outputTime,thumbnails,peaks,mediaLoading,sourceStart=0,sourceEnd=Infinity,cutaways=[],inserts=[],focusSpans=[],selection,onSelect,onSeek,onTrim,clampInsert,onResizeInsert,clampCutaway,onResizeCutaway,hookSeconds=3,clampHook,onResizeHook}:EditorTimelineProps) {
+ const [hookDrag,setHookDrag]=useState<number|null>(null);
  const [resize,setResize]=useState<{kind:'insert'|'cutaway';id:string;startMs:number;endMs:number}|null>(null);
  const [snapAt,setSnapAt]=useState<number|null>(null);
  const shown=(kind:'insert'|'cutaway',id:string,startMs:number,endMs:number)=>resize&&resize.kind===kind&&resize.id===id?{startMs:resize.startMs,endMs:resize.endMs}:{startMs,endMs};
@@ -102,6 +105,26 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
   const next=clampCutaway?clampCutaway(id,edge==='start'?startMs+delta:startMs,edge==='end'?endMs+delta:endMs):null;
   if(next&&(next.startMs!==startMs||next.endMs!==endMs))onResizeCutaway?.(id,next.startMs,next.endMs);
  };
+ /** Drag the handle on the hook's right edge: it clicks into the playhead or a nearby cut, and stops at the end of the clip. */
+ const shownHookMs=Math.min(hookDrag??Math.round(hookSeconds*1000),Math.round(duration*1000));
+ const startHookResize=(event:React.PointerEvent<HTMLElement>)=>{
+  event.stopPropagation();event.preventDefault();cancelTrim.current?.();
+  const element=event.currentTarget;element.setPointerCapture(event.pointerId);
+  const initialX=event.clientX,startMs=shownHookMs;let latest=startMs;
+  const compute=(clientX:number)=>{const wanted=snap((startMs+((clientX-initialX)/scale)*1000)/1000);const ms=Math.round(wanted.value*1000);const clamped=clampHook?clampHook(ms):ms;
+   setSnapAt(wanted.hit&&Math.abs(clamped-wanted.value*1000)<1?wanted.value:null);return clamped;};
+  const move=(e:PointerEvent)=>{latest=compute(e.clientX);setHookDrag(latest);};
+  const cleanup=()=>{element.removeEventListener('pointermove',move);element.removeEventListener('pointerup',finish);element.removeEventListener('pointercancel',cleanup);element.removeEventListener('lostpointercapture',cleanup);setHookDrag(null);setSnapAt(null);cancelTrim.current=null;};
+  const finish=(e:PointerEvent)=>{latest=compute(e.clientX);cleanup();if(latest!==startMs)onResizeHook?.(latest);};
+  cancelTrim.current=cleanup;setHookDrag(startMs);
+  element.addEventListener('pointermove',move);element.addEventListener('pointerup',finish,{once:true});
+  element.addEventListener('pointercancel',cleanup,{once:true});element.addEventListener('lostpointercapture',cleanup,{once:true});
+ };
+ const hookKey=(event:React.KeyboardEvent<HTMLElement>)=>{
+  if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;event.preventDefault();event.stopPropagation();
+  const wanted=shownHookMs+(event.key==='ArrowRight'?100:-100);const next=clampHook?clampHook(wanted):wanted;
+  if(next!==shownHookMs)onResizeHook?.(next);
+ };
  const handleKey=(event:React.KeyboardEvent<HTMLButtonElement>,s:SourceSegment,edge:'start'|'end')=>{
   if(event.key!=='ArrowLeft' && event.key!=='ArrowRight')return;event.preventDefault();event.stopPropagation();
   const delta=event.key==='ArrowRight'?.1:-.1; const index=segments.findIndex(item=>item.id===s.id); const lower=index?segments[index-1].end_seconds:sourceStart; const upper=segments[index+1]?.start_seconds ?? sourceEnd;
@@ -110,7 +133,7 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
  return <section aria-label="Clip timeline" className="editor-timeline" data-collapsed={collapsed} style={{height:collapsed?44:height}}>
   <button type="button" className="editor-timeline-resize" aria-label="Resize timeline" title="Drag or use arrow keys to resize timeline" onPointerDown={e=>{if(collapsed)return;drag.current={y:e.clientY,height};e.currentTarget.setPointerCapture(e.pointerId);}} onPointerMove={e=>{if(drag.current)setHeight(clampHeight(drag.current.height+drag.current.y-e.clientY));}} onPointerUp={e=>{drag.current=null;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}} onLostPointerCapture={()=>{drag.current=null;}} onKeyDown={e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();setHeight(h=>clampHeight(h+(e.key==='ArrowUp'?16:-16)));setCollapsed(false);}}}/>
   <div className="editor-timeline-topline">{collapsed&&<strong>Timeline</strong>}<button type="button" aria-label={collapsed?'Expand timeline':'Collapse timeline'} onClick={()=>setCollapsed(value=>!value)}>{collapsed?'Expand':'Collapse'}</button></div>
-  <div className="editor-timeline-feedback" role="status">{activeTrim ? `Trimming ${activeTrim.edge}: ${activeTrim.start.toFixed(1)}s to ${activeTrim.end.toFixed(1)}s · ${(activeTrim.end-activeTrim.start).toFixed(1)}s selected` : `Playhead ${outputTime.toFixed(1)}s · ${duration.toFixed(1)}s clip. Drag the mint handles to trim; arrow keys adjust by 0.1s.`}</div>
+  <div className="editor-timeline-feedback" role="status">{hookDrag!==null ? `Hook on screen for ${(shownHookMs/1000).toFixed(1)}s of the ${duration.toFixed(1)}s clip` : activeTrim ? `Trimming ${activeTrim.edge}: ${activeTrim.start.toFixed(1)}s to ${activeTrim.end.toFixed(1)}s · ${(activeTrim.end-activeTrim.start).toFixed(1)}s selected` : `Playhead ${outputTime.toFixed(1)}s · ${duration.toFixed(1)}s clip. Drag the mint handles to trim; arrow keys adjust by 0.1s.`}</div>
   <div className="editor-timeline-heading"><span>Timeline <small>{duration.toFixed(1)}s</small></span>
    {coveredSegments.length>0&&<details className="editor-source-controls"><summary>Edit underlying source</summary><div role="group" aria-label="Underlying source clips">
     {coveredSegments.map(({segment:s,index})=><fieldset key={s.id}><legend>Source clip {index+1} · {(s.end_seconds-s.start_seconds).toFixed(1)}s</legend>
@@ -160,7 +183,10 @@ export default function EditorTimeline({segments,captions,hook,outputTime,thumbn
     </div>
     {captionGroups.length>0&&<div aria-label="Caption lane" className="editor-lane editor-caption-lane">{captionGroups.map((group,index)=><button key={group.id} type="button" style={blockStyle(group.start_ms/1000,group.end_ms/1000)} className="editor-caption-group" aria-label={`Open caption phrase ${index+1}: ${group.text}`} title={group.text} aria-pressed={selectedCaptionGroup?.id===group.id} onClick={()=>{onSelect({type:'caption',id:group.cues[0].id});onSeek(group.start_ms/1000);}}><span>{group.text}</span></button>)}</div>}
     {(!!peaks?.length||mediaLoading)&&<div aria-label="Audio lane" className="editor-lane editor-audio-lane">{peaks?.length?<svg width={width} height="26" role="img" aria-label="Source audio waveform" preserveAspectRatio="none" viewBox={`0 0 ${peaks.length} 2`}><path className="editor-waveform-center" d={`M0 1 H${peaks.length}`}/><path className="editor-waveform-envelope" d={`M0 1 ${peaks.map((p,i)=>`L${i+.5} ${(1-p*.28).toFixed(3)}`).join(' ')} L${peaks.length} 1 ${peaks.map((_,i)=>`L${peaks.length-i-.5} ${(1+peaks[peaks.length-i-1]*.28).toFixed(3)}`).join(' ')} Z`}/></svg>:<span>{mediaLoading?'Loading audio…':'Waveform unavailable'}</span>}</div>}
-    {!!hook&&<div aria-label="Hook lane" className="editor-lane">{hook && <div className="editor-hook-block" style={blockStyle(0,Math.min(3,duration))}>{hook}</div>}</div>}
+    {!!hook&&<div aria-label="Hook lane" className="editor-lane"><div className="editor-resizable-wrap" style={blockStyle(0,Math.min(shownHookMs/1000,duration))} data-selected="true">
+     <div className="editor-hook-block" style={{width:'100%',height:'100%',boxSizing:'border-box'}} title={`Hook on screen for ${(shownHookMs/1000).toFixed(1)}s`}>{hook}<small style={{marginLeft:6,opacity:.75}}>{(shownHookMs/1000).toFixed(1)}s</small></div>
+     <button type="button" className="editor-resize-handle end" aria-label="Change how long the hook stays on screen" title="Drag, or use the arrow keys, to make the hook longer or shorter" onPointerDown={startHookResize} onKeyDown={hookKey}/>
+    </div></div>}
     {snapAt!==null&&<div aria-hidden="true" className="editor-snap-line" style={{left:snapAt*scale}}/>}
     <div aria-hidden="true" className="editor-playhead" style={{left:outputTime*scale}}><span style={{transform:outputTime*scale<24?'none':outputTime*scale>width-24?'translateX(-100%)':'translateX(-50%)'}}>{Math.floor(outputTime/60).toString().padStart(2,'0')}:{Math.floor(outputTime%60).toString().padStart(2,'0')}</span></div>
    </div></div>

@@ -2,7 +2,7 @@ import type { ClipEditDraftV2, ClipEditDraftV3 } from "./clip-edit-draft.ts";
 import type { SavedClip } from "./clip-ui.ts";
 import type { CaptionStyle } from "./clips.ts";
 import { isOneWordStyle } from "./caption-looks.ts";
-import { buildCaptionCues, HOOK_DURATION_MS, normalizeTimedCues } from "./captions.ts";
+import { buildCaptionCues, hookDurationMs, normalizeTimedCues } from "./captions.ts";
 import { outputSpansForSourceCue, outputDuration, type CaptionCue } from "./editor-timeline.ts";
 export { captionAppearance } from "./captions.ts";
 
@@ -51,7 +51,7 @@ export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip
 /** The preview player passes edited output seconds, including after source skips. */
 export function editorOverlayAtTime(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip, seconds: number) {
  const within = Number.isFinite(seconds) && seconds >= 0 && seconds < outputDuration(draft.segments)+(draft.version===3?(draft.inserts??[]).reduce((sum,item)=>sum+item.duration_ms/1000,0):0);
- return { hook: within && seconds * 1000 < HOOK_DURATION_MS && draft.hook ? draft.hook : null,
+ return { hook: within && seconds * 1000 < hookDurationMs(draft.hook_duration_ms) && draft.hook ? draft.hook : null,
  caption: within ? resolveEditorCues(draft, clip).find(cue => seconds * 1000 >= cue.start_ms && seconds * 1000 < cue.end_ms) ?? null : null };
 }
 

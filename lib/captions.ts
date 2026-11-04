@@ -296,8 +296,18 @@ export function generateAss(
   return sections.join("\n");
 }
 
-/** How long the hook title stays on screen at the start of a clip. */
+/** How long the hook title stays on screen at the start of a clip, unless the editor stretched it. */
 export const HOOK_DURATION_MS = 3000;
+/** The shortest and longest hook the editor allows. A hook can run as long as the clip, which is capped at 3 minutes. */
+export const HOOK_MIN_MS = 500;
+export const HOOK_MAX_MS = 180_000;
+
+/** How long to show a hook: the editor's chosen length, or the 3 second default. */
+export function hookDurationMs(requestedMs?: number | null): number {
+  return typeof requestedMs === "number" && Number.isFinite(requestedMs)
+    ? Math.min(HOOK_MAX_MS, Math.max(HOOK_MIN_MS, Math.round(requestedMs)))
+    : HOOK_DURATION_MS;
+}
 
 /** Hook text style presets — CapCut-style looks. Fonts must exist on the server. */
 export const HOOK_STYLES = ["CLASSIC", "IMPACT", "YELLOW", "BOXED", "NEON", "WHITE_BOX"] as const;
@@ -394,7 +404,9 @@ export function generateHookAss(
   res: PlayRes = DEFAULT_RES,
   style: HookStyle = "CLASSIC",
   placement?: TextPlacement,
+  durationMs?: number | null,
 ): string {
+  const showMs = hookDurationMs(durationMs);
   const p = HOOK_STYLE_PARAMS[style];
   const scale = res.h / DEFAULT_RES.h;
   const custom=placement?hookTextLayout(hook,res,style,placement):null;
@@ -414,7 +426,7 @@ export function generateHookAss(
     ? whiteBoxCardGeometry(lines, size, custom?.lineHeight ?? Math.round(size * 1.25), custom?.x ?? res.w / 2, custom?.firstY ?? marginV, res)
     : null;
   const cardEvent = card
-    ? dialogue(0, HOOK_DURATION_MS, `{\\an7\\pos(${card.x},${card.y})\\p1\\1c&H00FFFFFF&\\bord0\\shad0}${roundedCardPath(card.width,card.height,card.radius)}`, "Hook", 0)
+    ? dialogue(0, showMs, `{\\an7\\pos(${card.x},${card.y})\\p1\\1c&H00FFFFFF&\\bord0\\shad0}${roundedCardPath(card.width,card.height,card.radius)}`, "Hook", 0)
     : null;
   return [
     assHeader(res),
@@ -423,7 +435,7 @@ export function generateHookAss(
     "",
     EVENTS_HEADER,
     ...(cardEvent ? [cardEvent] : []),
-    dialogue(0, HOOK_DURATION_MS, `${custom ? `{\\an5\\pos(${custom.x},${custom.y})}` : ''}${custom ? custom.lines.map(sanitizeAssText).join('\\N') : whiteBoxLines ? whiteBoxLines.map(sanitizeAssText).join('\\N') : sanitizeAssText(hook).toUpperCase()}`, "Hook", cardEvent ? 1 : 0),
+    dialogue(0, showMs, `${custom ? `{\\an5\\pos(${custom.x},${custom.y})}` : ''}${custom ? custom.lines.map(sanitizeAssText).join('\\N') : whiteBoxLines ? whiteBoxLines.map(sanitizeAssText).join('\\N') : sanitizeAssText(hook).toUpperCase()}`, "Hook", cardEvent ? 1 : 0),
   ].join("\n");
 }
 

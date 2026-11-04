@@ -1,7 +1,7 @@
 import { resolveEditorCues } from "./editor-captions.ts";
 import { validateSegments, type SourceSegment, type CaptionCue } from "./editor-timeline.ts";
 import { CAPTION_STYLES, EXPORT_FORMATS, type CaptionStyle, type ExportFormat, type TimedWord } from "./clips.ts";
-import { HOOK_STYLES, type HookStyle } from "./captions.ts";
+import { HOOK_STYLES, HOOK_MIN_MS, HOOK_MAX_MS, type HookStyle } from "./captions.ts";
 import type { SavedClip } from "./clip-ui.ts";
 import { validateVerticalLayout, type VerticalLayoutV1 } from "./vertical-layout.ts";
 import { validateFocusEvents, type FocusEvent } from "./editor-focus.ts";
@@ -20,6 +20,8 @@ export type ClipEditDraftV1 = {
   vertical_layout?: VerticalLayoutV1 | null;
   hook_placement?: TextPlacement;
   caption_placement?: TextPlacement;
+  /** How long the hook stays on screen, in output milliseconds. Left out means the 3 second default. */
+  hook_duration_ms?: number;
 };
 
 export type ClipEditDraftV2 = Omit<ClipEditDraftV1, "version"> & {
@@ -107,6 +109,10 @@ export function validateClipEditDraft(input: unknown, clip: ClipSource): ClipEdi
       !(EXPORT_FORMATS as readonly unknown[]).includes(draft.aspect_ratio)) {
     throw new ClipEditDraftError("Unknown caption, hook, or export style.");
   }
+  if (draft.hook_duration_ms !== undefined &&
+      (!Number.isInteger(draft.hook_duration_ms) || (draft.hook_duration_ms as number) < HOOK_MIN_MS || (draft.hook_duration_ms as number) > HOOK_MAX_MS)) {
+    throw new ClipEditDraftError("Hook length must be between half a second and the length of the clip.");
+  }
 
   const originalWords = clip.words?.length ? clip.words : null;
   let verticalLayout: VerticalLayoutV1 | null | undefined;
@@ -153,6 +159,7 @@ export function validateClipEditDraft(input: unknown, clip: ClipSource): ClipEdi
     ...(verticalLayout !== undefined ? { vertical_layout: verticalLayout } : {}),
     ...(hookPlacement ? { hook_placement: hookPlacement } : {}),
     ...(captionPlacement ? { caption_placement: captionPlacement } : {}),
+    ...(draft.hook_duration_ms !== undefined ? { hook_duration_ms: draft.hook_duration_ms as number } : {}),
   };
 }
 
