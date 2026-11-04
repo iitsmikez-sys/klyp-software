@@ -1,4 +1,5 @@
--- Analyses that find no clips are free (they used to cost half). Safe to run again (create or replace).
+-- Analyses that find nothing worth paying for are free (they used to cost half): no clips at all, or only
+-- "best of this stream" moments that scored below the quality bar of 65. Safe to run again (create or replace).
 -- The function is the same as migration 039 except for the price rule below.
 begin;
 
@@ -19,6 +20,7 @@ declare
   v_vod_cost integer;
   v_cost integer;
   v_prior_count integer;
+  v_top_pick boolean := false;
 begin
   if v_user_id is null then raise exception 'not authenticated'; end if;
   if p_source_key is null or p_source_key !~ '^(youtube:[A-Za-z0-9_-]{11}|twitch:[0-9]+|upload:[A-Za-z0-9_-]{1,100})$'
@@ -54,6 +56,8 @@ begin
       insert into public.analysis_clip_history (user_id, source_key, start_seconds, end_seconds)
       values (v_user_id, p_source_key, v_start, v_end);
       v_accepted := array_append(v_accepted, v_index);
+      -- A clip with no score counts as a top pick, so older callers are charged as before.
+      if coalesce((p_clips->v_index->>'viral_score')::numeric, 100) >= 65 then v_top_pick := true; end if;
     end if;
   end loop;
 
@@ -64,9 +68,10 @@ begin
     when p_duration_seconds <= 14400 then 65
     when p_duration_seconds <= 21600 then 80
     else 80 + 20 * ceil((p_duration_seconds - 21600) / 3600.0)::integer end;
-  -- Nothing to sell, nothing to charge: an analysis that finds no new clips is free, whether it is the first
-  -- one for this video or a repeat. Only a result with at least one new clip costs the video price.
-  v_cost := case when cardinality(v_accepted) > 0 then v_vod_cost else 0 end;
+  -- Nothing worth paying for, nothing to charge: no new clips, or only below-bar "best of this stream" moments,
+  -- is free, whether it is the first analysis of this video or a repeat. Only a result with at least one new
+  -- clip that cleared the quality bar costs the video price.
+  v_cost := case when v_top_pick then v_vod_cost else 0 end;
   -- v_prior_count is still read above; it no longer changes the price.
   if v_balance < v_cost then raise exception 'insufficient sparks: need %, have %', v_cost, v_balance; end if;
 

@@ -56,8 +56,25 @@ test("a result with at least one new clip still costs the video price, and an ex
   } finally { await db.close(); }
 });
 
+test("best-of results (only clips below the quality bar) are free, and extras on top of a real pick are not charged twice", async () => {
+  const db = await database();
+  try {
+    const weak = (start, score) => ({ start_seconds: start, end_seconds: start + 30, viral_score: score });
+    // Best of this stream: three moments scoring 50-60, none above the bar. They are delivered and free.
+    assert.deepEqual(await run(db, [weak(100, 60), weak(300, 52), weak(500, 47)], "twitch:2917690402", 20 * 60),
+      { accepted_indices: [0, 1, 2], sparks_spent: 0, sparks_balance: 60 });
+    // Asking again finds nothing new: still free.
+    assert.deepEqual(await run(db, [weak(100, 60)], "twitch:2917690402", 20 * 60), { accepted_indices: [], sparks_spent: 0, sparks_balance: 60 });
+    // A real top pick plus a near-miss costs the video price once.
+    assert.deepEqual(await run(db, [weak(100, 78), weak(300, 60)], "twitch:2915437291", 51 * 60),
+      { accepted_indices: [0, 1], sparks_spent: 35, sparks_balance: 25 });
+    // A clip with no score is treated as a top pick (older callers).
+    assert.equal((await run(db, [clip(700)], "twitch:111", 20 * 60)).sparks_spent, 20);
+  } finally { await db.close(); }
+});
+
 test("the migration changes only the price rule: the old half-price line is gone", async () => {
   const sql = await readFile(new URL("../supabase/migrations/043_no_charge_without_clips.sql", import.meta.url), "utf8");
   assert.ok(!sql.includes("ceil(v_vod_cost / 2.0)"));
-  assert.ok(sql.includes("v_cost := case when cardinality(v_accepted) > 0 then v_vod_cost else 0 end;"));
+  assert.ok(sql.includes("v_cost := case when v_top_pick then v_vod_cost else 0 end;"));
 });

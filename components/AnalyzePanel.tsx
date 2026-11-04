@@ -19,6 +19,7 @@ import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import { resultsChargeMessage } from "@/lib/results-summary";
 import resultsStyles from "./ClipResults.module.css";
 import ProGateModal from "./ProGateModal";
+import { isBestOfResult } from "@/lib/clip-extras";
 import { createClient } from "@/lib/supabase/client";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
@@ -483,7 +484,9 @@ export default function AnalyzePanel() {
       const quietNote = event.quiet ? " This streamer talks very little, so there were few moments to go on." : "";
       setAnalysisNote(event.clips.length === 0
         ? `No new moments cleared the quality floor.${quietNote} ${charge} Try another VOD or adjust your topic.`
-        : `${charge}${quietNote}`);
+        : isBestOfResult(event.clips)
+          ? `No moment cleared our usual quality bar, so these are the best moments we found in this stream.${quietNote} They're weaker than usual but worth a look. ${charge}`
+          : `${charge}${quietNote}`);
       setAnalyzedUrl(recoveringSource.current ?? sourceRef);
       recoveringSource.current = null;
       // The server already deducted — mirror its authoritative balance.
