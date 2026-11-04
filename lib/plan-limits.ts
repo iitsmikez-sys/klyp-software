@@ -103,3 +103,20 @@ export function analysisModelFor(isPro: boolean, env: Record<string, string | un
   if (override && (ANALYSIS_MODELS as readonly string[]).includes(override)) return override;
   return isPro ? PRO_ANALYSIS_MODEL : FREE_ANALYSIS_MODEL;
 }
+
+export type Transcriber = "assemblyai" | "groq";
+
+/**
+ * Which service turns a VOD's audio into text. TRANSCRIPTION_PROVIDER decides:
+ *   "assemblyai" (or unset)  everyone uses AssemblyAI, as before
+ *   "groq-free"              Free accounts use Groq's Whisper (about a fifth of the price), Pro stays on AssemblyAI
+ *   "groq"                   everyone uses Groq
+ * Groq is only chosen when GROQ_API_KEY is set; otherwise it stays on AssemblyAI.
+ */
+export function transcriberFor(isPro: boolean, env: Record<string, string | undefined> = process.env): Transcriber {
+  const setting = (env.TRANSCRIPTION_PROVIDER ?? "assemblyai").trim().toLowerCase();
+  if (!env.GROQ_API_KEY?.trim()) return "assemblyai";
+  if (setting === "groq") return "groq";
+  if (setting === "groq-free") return isPro ? "assemblyai" : "groq";
+  return "assemblyai";
+}

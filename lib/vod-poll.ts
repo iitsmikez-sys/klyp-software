@@ -29,7 +29,7 @@ import { runQueued } from "@/lib/job-queue";
 import { isTopPick } from "@/lib/clip-extras";
 import { estimateSparks, analysisCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
 import type { Profile } from "@/lib/tier";
-import { PLAN_LIMITS, analysisModelFor } from "@/lib/plan-limits";
+import { PLAN_LIMITS, analysisModelFor, transcriberFor } from "@/lib/plan-limits";
 import { ensureAutoClipEntitled } from "@/lib/auto-clip-entitlement";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -151,6 +151,7 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
       creatorPreferences,
       // Automatic clipping is a Pro feature, so it uses the Pro model.
       model: analysisModelFor(true),
+      transcriber: transcriberFor(true),
     };
     const result = await runQueued(`auto-vod:${job.id}`, () =>
       process.env.KLYP_DISCOVERY_V2 === "1"
