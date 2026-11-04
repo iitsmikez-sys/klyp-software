@@ -1,6 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav";
 import { SparksProvider } from "@/components/SparksProvider";
+import AttributionClaim from "@/components/AttributionClaim";
 
 export default function DashboardLayout({
   children,
@@ -9,6 +10,7 @@ export default function DashboardLayout({
 }) {
   return (
     <SparksProvider>
+      <AttributionClaim />
       <div className="flex min-h-screen bg-background">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0">
