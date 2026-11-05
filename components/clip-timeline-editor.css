@@ -238,8 +238,10 @@
 .caption-template-card[data-style=tricolor] .caption-template-sample i { font-style:normal; color:#fff }
 .caption-template-card[data-style=tricolor] .caption-template-sample i.tri-g { color:#1fff3a }
 .caption-template-card[data-style=tricolor] .caption-template-sample i.tri-r { color:#ff1f2a }
-.caption-template-card[data-style=focus] .caption-template-sample b { font-size:12px; line-height:1.15; text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 0 #000 }
-.caption-template-card[data-style=focus] .caption-template-sample em { color:#39ff14; font-style:normal; font-size:1.25em }
+.caption-template-card[data-style=focus] .caption-template-sample b { font-size:14px; line-height:1.15; text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 0 #000 }
+.caption-template-card[data-style=focus] .caption-template-sample em { color:#39ff14; font-style:normal; font-size:1.6em }
+.caption-template-card[data-style=duo] .caption-template-sample b { font-size:14px; line-height:1.15; text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 0 #000 }
+.caption-template-card[data-style=duo] .caption-template-sample em { color:#ff1f2a; font-style:normal; font-size:1.6em }
 .caption-template-card[data-style=pop] .caption-template-sample b { color:#ffe94a; font-size:26px; text-shadow:-3px -3px 0 #000,3px -3px 0 #000,-3px 3px 0 #000,3px 3px 0 #000,0 5px 0 #000 }
 .editor-fixed-palette { padding:8px 10px; border:1px solid #365449; border-radius:7px; background:#14271f; color:#bcebd4!important }
 .caption-template-meta { display:flex; align-items:center; justify-content:space-between; gap:4px; width:100%; padding:9px 10px; color:#e6f5f2 }

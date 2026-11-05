@@ -119,7 +119,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
                 if (style === "GLOW") { ctx.shadowColor = "#FF99FF"; ctx.shadowBlur = 10 * canvas.height / 960; }
                 ctx.translate(line.x, line.y + motion.yOffset * canvas.height / 1920);
                 ctx.scale(motion.scale, motion.scale);
-                paintCaptionLine(ctx, line.text, 0, 0, safe.w - 20, style, keyword, wordOffset, line === caption.lines[caption.lines.length - 1] ? emoji : null);
+                paintCaptionLine(ctx, line.text, 0, 0, safe.w - 20, style, keyword, wordOffset, line === caption.lines[caption.lines.length - 1] ? emoji : null, activeCaption.start_ms);
                 wordOffset += line.text.split(/\s+/).filter(Boolean).length;
                 ctx.restore();
               }
@@ -146,7 +146,7 @@ export default function VerticalLayoutPreview({ video, layout, text, editor, pic
                 let wordOffset = 0;
                 lines.forEach((line, index) => {
                   const lineY = y - (lines.length - index - 1) * 48 * scaleK;
-                  paintCaptionLine(ctx, line, canvas.width / 2, lineY, canvas.width - 20, text.captionStyle, keyword, wordOffset);
+                  paintCaptionLine(ctx, line, canvas.width / 2, lineY, canvas.width - 20, text.captionStyle, keyword, wordOffset, null, active.startMs);
                   wordOffset += line.split(/\s+/).filter(Boolean).length;
                 });
               }
