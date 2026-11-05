@@ -48,3 +48,27 @@ test('Glow export uses a soft luminous outline, not only plain pink text', () =>
   assert.match(ass, /\\blur\d+/);
   assert.match(ass, /\\3c&H00FF99FF&/);
 });
+
+test('a clip saved with phrase captions shows one word at a time once its style is a one-word style (Focus, Duo)', async () => {
+  const { resolveEditorCues } = await import('./editor-captions.ts');
+  for (const style of ['FOCUS', 'DUO', 'KLYP'] as const) {
+    const draft = { ...freshTimelineDraft(clip), caption_style: style, caption_cues: automatic(4) };
+    assert.deepEqual(resolveEditorCues(draft, clip).map(cue => cue.text), ['That', 'was', 'really', 'wild'], style);
+  }
+  // Phrase styles keep their phrases.
+  const bold = { ...freshTimelineDraft(clip), caption_style: 'BOLD' as const, caption_cues: automatic(4) };
+  assert.deepEqual(resolveEditorCues(bold, clip).map(cue => cue.text), ['That was really wild']);
+});
+
+test('hand-edited captions stay as typed, even in a one-word style', async () => {
+  const { resolveEditorCues } = await import('./editor-captions.ts');
+  const edited = { ...freshTimelineDraft(clip), caption_style: 'DUO' as const, caption_cues: [{ ...automatic(4)[0], text: 'Custom punchline' }] };
+  assert.deepEqual(resolveEditorCues(edited, clip).map(cue => cue.text), ['Custom punchline']);
+});
+
+test('switching from Focus to Duo regroups captions that were saved as phrases', () => {
+  const draft = { ...freshTimelineDraft(clip), caption_style: 'FOCUS' as const, caption_cues: automatic(4) };
+  assert.deepEqual(changeCaptionTemplate(draft, clip, 'DUO').caption_cues, automatic(1));
+  const words = { ...freshTimelineDraft(clip), caption_style: 'DUO' as const, caption_cues: automatic(1) };
+  assert.deepEqual(changeCaptionTemplate(words, clip, 'BOLD').caption_cues, automatic(4));
+});
