@@ -19,7 +19,8 @@ function TextHandle({kind,placement,onPreview,onCommit}: {
   onPreview:(change:PlacementChange|null)=>void;
   onCommit:(change:PlacementChange)=>void;
 }) {
-  const [selected,setSelected]=useState(false);
+  // True only while a finger or the mouse is held down on the box (moving or resizing it).
+  const [dragging,setDragging]=useState(false);
   const pointers=useRef(new Map<number,Point>());
   const origin=useRef<{first:Point;distance:number;placement:TextPlacement;resize:boolean}|null>(null);
   const live=useRef<TextPlacement|null>(null);
@@ -31,7 +32,7 @@ function TextHandle({kind,placement,onPreview,onCommit}: {
   };
   const preview=(next:TextPlacement)=>{live.current=next;onPreview({[key]:next});};
   const down=(e:ReactPointerEvent<HTMLDivElement>)=>{
-    e.stopPropagation();setSelected(true);e.currentTarget.focus();
+    e.stopPropagation();setDragging(true);e.currentTarget.focus();
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId,{x:e.clientX,y:e.clientY});
     start((e.target as HTMLElement).closest('[data-text-resize]')!==null);
@@ -51,6 +52,7 @@ function TextHandle({kind,placement,onPreview,onCommit}: {
     pointers.current.delete(e.pointerId);
     if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
     if(pointers.current.size){start();return;}
+    setDragging(false);
     if(live.current){onCommit({[key]:live.current});onPreview(null);live.current=null;}
     origin.current=null;
   };
@@ -62,7 +64,7 @@ function TextHandle({kind,placement,onPreview,onCommit}: {
     else if(e.key.startsWith('Arrow'))next=moveTextPlacement(placement,e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0,e.key==='ArrowDown'?step:e.key==='ArrowUp'?-step:0);
     if(next){e.preventDefault();onCommit({[key]:next});}
   };
-  return <div className={`editor-text-handle ${selected?'is-selected':''}`} data-text-kind={kind} style={{left:`${placement.x*100}%`,top:`${placement.y*100}%`,width:`${Math.max(18,Math.min(72,2*Math.min(placement.x,1-placement.x)*100-4))}%`,height:`${Math.max(38,40*placement.scale)}px`}} tabIndex={0} role="button" aria-label={`Move or resize ${kind}. Drag to move, drag corner or pinch to resize, arrow keys to move, plus or minus to resize.`} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onKeyDown={keyboard}>
+  return <div className={`editor-text-handle ${dragging?'is-dragging':''}`} data-text-kind={kind} style={{left:`${placement.x*100}%`,top:`${placement.y*100}%`,width:`${Math.max(18,Math.min(72,2*Math.min(placement.x,1-placement.x)*100-4))}%`,height:`${Math.max(38,40*placement.scale)}px`}} tabIndex={0} role="button" aria-label={`Move or resize ${kind}. Drag to move, drag corner or pinch to resize, arrow keys to move, plus or minus to resize.`} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onKeyDown={keyboard}>
     <span className="editor-text-handle-label">{kind==='hook'?'Hook':'Captions'}</span><span className="editor-text-resize-handle" data-text-resize aria-hidden="true">↘</span>
   </div>;
 }
