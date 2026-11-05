@@ -6,10 +6,10 @@ test('Free export types the credit, holds, then leaves a static wordmark', () =>
   const ass = generateWatermarkAss({ w: 1080, h: 1920 }, 8);
   assert.match(ass, /PlayResX: 1080\nPlayResY: 1920/);
   assert.match(ass, /\\pos\(234,673\)\\frz270/);
-  assert.match(ass, /Created with klyp/);
+  assert.match(ass, /Created by klyp\.world/);
   assert.match(ass, /0:00:03\.10,0:00:03\.80/);
   assert.match(ass, /0:00:03\.45,0:00:08\.00,Mark[^\n]*\\pos\(188,664\)[^\n]*\}klyp/);
-  assert.doesNotMatch(ass, /klyp\.world/);
+  assert.doesNotMatch(ass, /Created with/);
   assert.match(watermarkFilter('/tmp/klyp-ass/watermark.ass'), /subtitles='\/tmp\/klyp-ass\/watermark\.ass'/);
 });
 

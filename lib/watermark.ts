@@ -1,6 +1,6 @@
 /** Free-export watermark shared by the ASS burn and canvas previews. */
 
-const TEXT = "Created with klyp";
+const TEXT = "Created by klyp.world";
 const STATIC = "klyp";
 const FONT_AT_1080 = 54;
 const X_FRACTION = 82 / 470;
