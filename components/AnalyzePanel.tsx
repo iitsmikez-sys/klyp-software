@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import type { AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
 import { CAPTION_STYLES, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, resolveExportFormat } from "@/lib/clips";
 import {
@@ -27,6 +28,9 @@ import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
 import { UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import { expectedClipCeiling, upToClipsText } from "@/lib/clip-expectation";
+import { resultsKeptDays } from "@/lib/results-retention";
+import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
+import UnsavedClipsDialog from "./UnsavedClipsDialog";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
 
 const VOD_URL_PATTERN =
@@ -863,8 +867,82 @@ export default function AnalyzePanel() {
     }
   };
 
+  // ── Leaving before saving, and bringing the last analysis back ──
+  const router = useRouter();
+  const [lastJob, setLastJob] = useState<(LastAnalysis & { result: AnalyzeEvent }) | null>(null);
+  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const keptDays = resultsKeptDays(tier === "pro");
+  const unsavedCount = clips ? clips.filter((_, i) => clipStatus[i] === "unsaved").length : 0;
+
+  // Ask the server for the last finished analysis (kept 5 days on Free, 30 on Pro). The banner is optional, so any failure is silent.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await processingFetch("/api/analyze/last");
+        if (!res.ok) return;
+        const body = (await res.json()) as { job: (LastAnalysis & { result: AnalyzeEvent }) | null };
+        if (cancelled || !body.job) return;
+        let dismissed: string | null = null;
+        try { dismissed = localStorage.getItem("klyp-last-analysis-dismissed"); } catch { /* storage is optional */ }
+        if (dismissed !== body.job.id) setLastJob(body.job);
+      } catch { /* no banner */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // While clips are unsaved: the browser warns on close or refresh, and a click on a link to another Klyp page
+  // (Settings, Library...) opens our own "save your clips" box first.
+  useEffect(() => {
+    if (unsavedCount === 0) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = (event.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+      const to = new URL(link.href, window.location.href);
+      if (to.origin !== window.location.origin) return;
+      if (to.pathname === window.location.pathname && to.search === window.location.search) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaveTarget(to.pathname + to.search + to.hash);
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [unsavedCount]);
+
+  const viewLastAnalysis = () => {
+    if (!lastJob) return;
+    setAnalyzedUrl(lastJob.url);
+    handleEvent(lastJob.result);
+    setLastJob(null);
+  };
+  const dismissLastAnalysis = () => {
+    if (lastJob) { try { localStorage.setItem("klyp-last-analysis-dismissed", lastJob.id); } catch { /* storage is optional */ } }
+    setLastJob(null);
+  };
+  const leaveNow = () => {
+    const target = leaveTarget;
+    setLeaveTarget(null);
+    if (target) router.push(target);
+  };
+  const saveAllThenLeave = async () => {
+    if (!clips) return;
+    const ids = await keepIndices(clips.flatMap((_, index) => (clipStatus[index] === "unsaved" ? [index] : [])));
+    if (ids) leaveNow();
+  };
+
   return (
     <section>
+      {!clips && !loading && lastJob && <LastAnalysisBanner job={lastJob} onView={viewLastAnalysis} onDismiss={dismissLastAnalysis} />}
+      {leaveTarget && (
+        <UnsavedClipsDialog count={unsavedCount} keptDays={keptDays} isPro={tier === "pro"} saving={saving !== null}
+          onStay={() => setLeaveTarget(null)} onLeave={leaveNow} onSaveAll={saveAllThenLeave} />
+      )}
       {/* ── Full-screen pipeline progress overlay ── */}
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
