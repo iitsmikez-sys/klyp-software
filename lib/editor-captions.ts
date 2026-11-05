@@ -6,7 +6,13 @@ import { buildCaptionCues, hookDurationMs, normalizeTimedCues } from "./captions
 import { outputSpansForSourceCue, outputDuration, type CaptionCue } from "./editor-timeline.ts";
 export { captionAppearance } from "./captions.ts";
 
-function automaticCaptionCues(draft: ClipEditDraftV3, clip: SavedClip, style: CaptionStyle): CaptionCue[] {
+/** Same cues, same times? Used to tell automatically generated captions from hand-edited ones. */
+function sameCues(a: readonly CaptionCue[] | null | undefined, b: readonly CaptionCue[]): boolean {
+ return !!a?.length && a.length === b.length && a.every((cue, index) => cue.id === b[index].id && cue.text === b[index].text &&
+  cue.start_ms === b[index].start_ms && cue.end_ms === b[index].end_ms);
+}
+
+function automaticCaptionCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip, style: CaptionStyle): CaptionCue[] {
  const words = draft.words ?? clip.words ?? [];
  return buildCaptionCues(words, clip.start_seconds * 1000, clip.end_seconds * 1000,
   isOneWordStyle(style) ? 1 : 4)
@@ -19,10 +25,10 @@ function automaticCaptionCues(draft: ClipEditDraftV3, clip: SavedClip, style: Ca
 export function changeCaptionTemplate(draft: ClipEditDraftV3, clip: SavedClip, style: CaptionStyle): ClipEditDraftV3 {
  if (style === draft.caption_style) return draft;
  const current = draft.caption_cues;
- const generated = automaticCaptionCues(draft, clip, draft.caption_style);
- const untouched = current?.length && current.length === generated.length &&
-  current.every((cue, index) => cue.id === generated[index].id && cue.text === generated[index].text &&
-   cue.start_ms === generated[index].start_ms && cue.end_ms === generated[index].end_ms);
+ // Untouched means the cues are the automatic ones in either grouping (one word each, or phrases), because a
+ // clip saved before a style became a one-word style still holds phrase cues.
+ const untouched = sameCues(current, automaticCaptionCues(draft, clip, draft.caption_style)) ||
+  sameCues(current, automaticCaptionCues(draft, clip, "BOLD")) || sameCues(current, automaticCaptionCues(draft, clip, "KLYP"));
  const caption_color = style === "KLYP" || style === "SPARK" || style === "KEYWORD" || style === "FIRE" ? "green"
   : style === "PULSE" || style === "BOUNCE" || style === "COMIC" || style === "POP" ? "yellow"
   : style === "GLOW" ? "pink" : "white";
@@ -32,7 +38,11 @@ export function changeCaptionTemplate(draft: ClipEditDraftV3, clip: SavedClip, s
 
 /** Source anchors remain in the draft; only this resolved view uses edited time. */
 export function resolveEditorCues(draft: ClipEditDraftV2 | ClipEditDraftV3, clip: SavedClip): CaptionCue[] {
- const source = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, isOneWordStyle(draft.caption_style) ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
+ const savedOrAutomatic = draft.caption_cues ?? buildCaptionCues(draft.words ?? clip.words ?? [], clip.start_seconds * 1000, clip.end_seconds * 1000, isOneWordStyle(draft.caption_style) ? 1 : 4).map((cue, index) => ({ id: `auto-${index}`, text: cue.text, start_ms: cue.startMs + clip.start_seconds * 1000, end_ms: cue.endMs + clip.start_seconds * 1000 }));
+ // A one-word style (Klyp, Spark, Pop, Focus, Duo) shows one word at a time. Clips saved earlier still hold the
+ // automatic phrase cues, so give them the one-word cues instead. Hand-edited captions are left alone.
+ const source = draft.caption_cues && isOneWordStyle(draft.caption_style) && sameCues(draft.caption_cues, automaticCaptionCues(draft, clip, "BOLD"))
+  ? automaticCaptionCues(draft, clip, draft.caption_style) : savedOrAutomatic;
  const usedIds = new Set(source.map(cue => cue.id));
  return normalizeTimedCues(source.flatMap(cue => {
   const spans = outputSpansForSourceCue(draft.segments, cue, draft.version===3?draft.inserts:undefined);
