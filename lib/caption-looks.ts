@@ -19,6 +19,8 @@ const HIGHLIGHT: Partial<Record<CaptionStyle, { css: string; ass: string }>> = {
   FOCUS: highlight("#39FF14"),
   // Duo: one word at a time, flashing bright green or red (see duoColorIndex).
   DUO: highlight("#1FFF3A"),
+  // Marker: the whole phrase stays white and a purple box sits behind the word being said (drawn separately).
+  MARKER: highlight("#FFFFFF"),
 };
 
 /** Tri-color's active word alternates bright green, bright red as the phrase is spoken. */
@@ -46,6 +48,9 @@ export const highlightColor = (style: CaptionStyle) => HIGHLIGHT[style] ?? HIGHL
 export const isOneWordStyle = (style: CaptionStyle) => style === "KLYP" || style === "SPARK" || style === "POP" || style === "FOCUS" || style === "DUO";
 /** Styles with their own colors, so the color picker does not apply. */
 export const hasFixedPalette = (style: CaptionStyle) => style === "COMIC" || isHighlightStyle(style);
+
+/** The purple box behind the word in the Marker style. */
+export const MARKER_BOX = { css: "#7C4DFF", ass: "&H00FF4D7C&" } as const;
 
 export const EMOJI_FONT = "Noto Emoji";
 const EMOJIS: { char: string; color: string; words: string[] }[] = [

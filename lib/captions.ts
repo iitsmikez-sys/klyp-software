@@ -14,7 +14,8 @@ import type { CaptionOptions } from "./editor-captions";
 import type { CaptionFont } from "./clip-edit-draft.ts";
 import type { TextPlacement } from "./text-placement.ts";
 import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
-import { isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, wordLook, activeWordScale, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
+import { captionTextWidthPx } from "./caption-text-metrics.ts";
+import { MARKER_BOX, isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, wordLook, activeWordScale, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
@@ -156,6 +157,8 @@ const STYLE_PARAMS: Record<
   FOCUS: { fontSize: 62, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
   // One big word at a time, flashing bright green or red.
   DUO: { fontSize: 62, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
+  // White phrase with a purple box behind the word being said.
+  MARKER: { fontSize: 82, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 0 },
 };
 
 /**
@@ -261,6 +264,25 @@ function keywordDialogues(startMs: number, endMs: number, lines: string[], style
   return events;
 }
 
+/** Rounded rectangle as an ASS drawing (w by h, corner radius r). */
+function roundedRectDrawing(w: number, h: number, r: number): string {
+  return `m ${r} 0 l ${w - r} 0 b ${w} 0 ${w} 0 ${w} ${r} l ${w} ${h - r} b ${w} ${h} ${w} ${h} ${w - r} ${h} l ${r} ${h} b 0 ${h} 0 ${h} 0 ${h - r} l 0 ${r} b 0 0 0 0 ${r} 0`;
+}
+
+/**
+ * The Marker style's purple box: sits behind word `index` of a line drawn centered at (line.x, line.y).
+ * Word positions come from the font's real letter widths (caption-text-metrics.ts), so the box lines up with the text.
+ * It is drawn on layer 0 and the text on layer 1.
+ */
+function markerBoxEvent(startMs: number, endMs: number, line: { text: string; x: number; y: number }, words: string[], index: number, fontSize: number, font: CaptionFont): string {
+  const before = words.slice(0, index).join(" ") + (index > 0 ? " " : "");
+  const padX = fontSize * 0.12, above = fontSize * 0.4, boxHeight = fontSize * 0.82, radius = Math.max(2, Math.round(fontSize * 0.06));
+  const left = Math.round(line.x - captionTextWidthPx(line.text, fontSize, font) / 2 + captionTextWidthPx(before, fontSize, font) - padX);
+  const top = Math.round(line.y - above);
+  const w = Math.round(captionTextWidthPx(words[index], fontSize, font) + 2 * padX), h = Math.round(boxHeight);
+  return dialogue(startMs, endMs, `{\\an7\\pos(${left},${top})\\p1\\bord0\\shad0\\1c${MARKER_BOX.ass}}${roundedRectDrawing(w, h, radius)}{\\p0}`, "Default", 0);
+}
+
 /**
  * Generate an ASS subtitle file content string for one clip.
  *
@@ -282,6 +304,13 @@ export function generateAss(
 ): string {
   const bottomInset = typeof bottomInsetOrOptions === 'number' ? bottomInsetOrOptions : 0;
   const options = typeof bottomInsetOrOptions === 'number' ? captionOptions : bottomInsetOrOptions;
+  // Marker needs exact word positions for its box, so it is laid out like the editor export.
+  if (style === "MARKER") {
+    const position = options?.position ?? "BOTTOM";
+    const timed = buildCaptionCues(words, clipStartMs, clipEndMs, CUE_MAX_WORDS).map((cue) => ({ start_ms: cue.startMs, end_ms: cue.endMs, text: cue.text }));
+    return generateTimedCueAss(timed, style, captionAppearance({ caption_color: "white", caption_position: position === "TOP" ? "top" : position === "CENTER" ? "center" : "bottom" }),
+      res, { x: 0, y: 0, w: res.w, h: res.h - bottomInset });
+  }
   const sections = [assHeader(res), "", styleBlock(style, res, bottomInset, options), "", EVENTS_HEADER];
 
   // KLYP, SPARK and POP show one word at a time; other styles show small word groups.
@@ -485,7 +514,8 @@ export function generateTimedCueAss(
     for (const line of layout.lines) {
      const words = line.text.split(/\s+/).filter(Boolean);
      const last = line === layout.lines[layout.lines.length - 1];
-     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset, style, last ? emoji : null, cue.start_ms)}`));
+     if (style === "MARKER" && index - offset >= 0 && index - offset < words.length) sections.push(markerBoxEvent(start, end, line, words, index - offset, layout.fontSize, font));
+     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset, style, last ? emoji : null, cue.start_ms)}`, "Default", style === "MARKER" ? 1 : 0));
      offset += words.length;
     }
    }
