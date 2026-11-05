@@ -215,7 +215,7 @@
 .editor-section-heading>span { color:#99baaF; font-size:10px; white-space:nowrap; padding-top:2px }
 .caption-template-section { padding:14px 0 18px; border-top:1px solid #24343e; border-bottom:1px solid #24343e; margin:18px 0!important }
 .caption-template-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px }
-.clip-editor .caption-template-card { display:flex; flex-direction:column; padding:0; overflow:hidden; min-height:116px; border:1px solid var(--editor-border); border-radius:8px; text-align:left; background:#131d22 }
+.clip-editor .caption-template-card { position:relative; display:flex; flex-direction:column; padding:0; overflow:hidden; min-height:116px; border:1px solid var(--editor-border); border-radius:8px; text-align:left; background:#131d22 }
 .clip-editor .caption-template-card:hover:not(:disabled) { border-color:#799589; background:#172831; transform:translateY(-1px) }
 .clip-editor .caption-template-card[aria-pressed=true] { border-color:var(--editor-mint); box-shadow:inset 0 0 0 1px var(--editor-mint) }
 .caption-template-sample { display:grid; place-items:center; flex:1; min-height:72px; width:100%; padding:9px; overflow:hidden; text-align:center; background:#1b2930; position:relative }
