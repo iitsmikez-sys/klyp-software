@@ -18,11 +18,15 @@ test("the clip Details show a simple star-and-number AI score, for top picks onl
   assert.ok(modal.lastIndexOf("detailsOpen && (", at) > 0);
 });
 
-test("no score badge anywhere else: not on the clip cards, not in the clip header", async () => {
+test("the score shows in Details and as a small pill on the clip cards, but not in the preview's header", async () => {
   const card = await read("components/FoundClipCard.tsx");
   const compact = await read("components/CompactClipCard.tsx");
   const modal = await read("components/ClipPreviewModal.tsx");
-  for (const src of [card, compact]) assert.doesNotMatch(src, /viral_score|ScoreBadge/);
+  // The cards show it only through the shared pill (top picks only), never as a raw number of their own.
+  for (const src of [card, compact]) {
+    assert.ok(src.includes("<ScoreBadge score={clip.viral_score} />"));
+    assert.equal((src.match(/viral_score/g) ?? []).length, 1);
+  }
   assert.equal((modal.match(/viral_score/g) ?? []).length, 2); // the guard and the number, only in Details
   assert.doesNotMatch(modal, /ScoreBadge|ScoreBreakdown/);
 });

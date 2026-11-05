@@ -1,5 +1,6 @@
 "use client";
 import ClipThumbnail from './ClipThumbnail';
+import ScoreBadge from './ScoreBadge';
 import type { SavedClip } from '@/lib/clip-ui';
 import { fmtTime, platformName } from '@/lib/clip-ui';
 import { backupState } from '@/lib/clip-backup-state';
@@ -16,6 +17,7 @@ export default function FoundClipCard({ clip, topPick = false, kept, busy, expor
     <div className="relative">
       <ClipThumbnail clip={clip} onPlay={onPreview} />
       {topPick && <span className="pointer-events-none absolute left-2 top-2 rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-background">Top pick</span>}
+      <ScoreBadge score={clip.viral_score} />
     </div>
     <h4 className="mt-3 line-clamp-2 text-base font-semibold leading-6 text-foreground" title={clip.title}>{clip.title}</h4>
     <p className="mt-1 text-xs text-foreground-muted">{platformName(clip.url)} · VOD {fmtTime(clip.start_seconds)} · {clip.clip_type.replaceAll('_', ' ')}</p>
