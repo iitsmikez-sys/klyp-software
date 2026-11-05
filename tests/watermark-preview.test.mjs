@@ -3,31 +3,40 @@ import assert from 'node:assert/strict';
 import { drawWatermarkPreview, generateWatermarkAss, watermarkFilter } from '../lib/watermark.ts';
 
 const bs = String.fromCharCode(92);
+const rowsOf = (ass) => ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
 
-test('Free export slides the credit in, holds, then slides in a small logo word', () => {
+test('Free export types the credit, holds, then folds into a small logo word (kl white, yp green)', () => {
   const ass = generateWatermarkAss({ w: 1080, h: 1920 }, 8);
   assert.match(ass, /PlayResX: 1080\nPlayResY: 1920/);
-  const rows = ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
-  assert.equal(rows.length, 2, 'one credit and one small mark, no typing');
-  // The credit: rotated, slides from off the left edge to its place in 0.45s, fades out at 3.5s.
-  assert.match(rows[0], /^Dialogue: 0,0:00:00\.00,0:00:03\.50,Mark/);
-  assert.match(rows[0], /\\frz270\\move\(-65,673,234,673,0,450\)\\fad\(300,400\)/);
-  assert.ok(rows[0].includes('Created by '));
+  const rows = rowsOf(ass);
+  // 21 typed letters + the fold + the small mark.
+  assert.equal(rows.length, 23);
+  assert.match(rows[0], /^Dialogue: 0,0:00:00\.00,0:00:00\.09,Mark[^\n]*\\pos\(234,673\)\\frz270\}\{\\1c&HFFFFFF&\}C$/);
+  assert.ok(rows[20].includes('Created by '));
+  assert.match(rows[20], /^Dialogue: 0,0:00:01\.82,0:00:03\.10,Mark/);
   // Logo colors: "kl" white, "yp" green (#00E5A0), the rest white.
-  assert.ok(rows[0].includes(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HA0E500&}yp{${bs}1c&HFFFFFF&}.world`));
+  assert.ok(rows[20].includes(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HA0E500&}yp{${bs}1c&HFFFFFF&}.world`));
   assert.doesNotMatch(ass, /Created with/);
-  // The small mark slides in from the left while the credit is leaving, and stays to the end.
-  assert.match(rows[1], /^Dialogue: 0,0:00:03\.30,0:00:08\.00,Mark/);
-  assert.match(rows[1], /\\move\(150,664,188,664,0,350\)\\fad\(350,0\)/);
-  assert.ok(rows[1].includes(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HA0E500&}yp`));
+  // The fold and the small mark keep the original timing.
+  assert.match(ass, /0:00:03\.10,0:00:03\.80/);
+  assert.ok(rows[21].includes(`${bs}fscx8${bs}alpha&HFF&`));
+  assert.match(rows[22], /^Dialogue: 0,0:00:03\.45,0:00:08\.00,Mark[^\n]*\\pos\(188,664\)\\fad\(350,0\)\}\{\\1c&HFFFFFF&\}kl\{\\1c&HA0E500&\}yp$/);
+  // No sliding: nothing uses \move.
+  assert.ok(!ass.includes(`${bs}move`));
   assert.match(watermarkFilter('/tmp/klyp-ass/watermark.ass'), /subtitles='\/tmp\/klyp-ass\/watermark\.ass'/);
+});
+
+test('letters appear one at a time, each part keeping its color', () => {
+  const rows = rowsOf(generateWatermarkAss({ w: 1080, h: 1920 }, 8));
+  // The 13th letter is the "l" of "kl"; the 14th is the first green letter.
+  assert.ok(rows[13].endsWith(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HA0E500&}y`), rows[13]);
+  assert.ok(rows[14].endsWith(`{${bs}1c&HA0E500&}yp`), rows[14]);
 });
 
 test('short exports have no invalid subtitle intervals', () => {
   const ass = generateWatermarkAss({ w: 1080, h: 1920 }, 1.2);
   assert.doesNotMatch(ass, /0:00:03/);
   assert.doesNotMatch(ass, /0:00:01\.20,0:00:01\.20/);
-  assert.equal(ass.split('\n').filter((l) => l.startsWith('Dialogue:')).length, 1);
 });
 
 function fakeCtx() {
@@ -42,18 +51,17 @@ function fakeCtx() {
   return ctx;
 }
 
-test('preview slides the credit in with the logo colors, then shows the small logo word in the same place', () => {
-  const ctx = fakeCtx();
-  drawWatermarkPreview(ctx, 1, 1080, 1920);
-  const credit = ctx.calls.filter((c) => c[0] === 'text');
-  assert.deepEqual(credit.map((c) => c[3]), ['Created by ', 'kl', 'yp', '.world']);
-  assert.deepEqual(credit.map((c) => c[1]), ['#FFFFFF', '#FFFFFF', '#00E5A0', '#FFFFFF']);
-  // After the slide the credit sits at its home spot.
-  assert.ok(ctx.calls.some((c) => c[0] === 'translate' && c[1] === 233.9 && c[2] === 673));
-  // Before it finishes sliding it is further left.
-  const early = fakeCtx();
-  drawWatermarkPreview(early, 0.1, 1080, 1920);
-  assert.ok(early.calls.find((c) => c[0] === 'translate')[1] < 233.9);
+test('preview types in the logo colors, then draws the small logo word in the same place', () => {
+  const typing = fakeCtx();
+  drawWatermarkPreview(typing, 1.2, 1080, 1920);
+  const typed = typing.calls.filter((c) => c[0] === 'text');
+  assert.equal(typed.map((c) => c[3]).join(''), 'Created by kly');
+  assert.deepEqual(typed.map((c) => c[1]), ['#FFFFFF', '#FFFFFF', '#00E5A0']);
+  assert.ok(typing.calls.some((c) => c[0] === 'translate' && c[1] === 233.9 && c[2] === 673));
+
+  const done = fakeCtx();
+  drawWatermarkPreview(done, 2.5, 1080, 1920);
+  assert.deepEqual(done.calls.filter((c) => c[0] === 'text').map((c) => c[3]), ['Created by ', 'kl', 'yp', '.world']);
 
   const late = fakeCtx();
   drawWatermarkPreview(late, 4, 1080, 1920);
@@ -63,9 +71,10 @@ test('preview slides the credit in with the logo colors, then shows the small lo
   assert.ok(late.calls.some((c) => c[0] === 'translate' && c[1] === 188 && c[2] === 663.82));
 });
 
-test('the credit is gone and the small mark is solid after the hand-off', () => {
+test('during the fold the credit shrinks away while the small logo word fades in', () => {
   const ctx = fakeCtx();
-  drawWatermarkPreview(ctx, 5, 1080, 1920);
-  assert.ok(!ctx.calls.some((c) => c[0] === 'text' && c[3] === 'Created by '));
-  assert.ok(ctx.calls.filter((c) => c[0] === 'text').every((c) => Math.abs(c[2] - .92) < 1e-9));
+  drawWatermarkPreview(ctx, 3.5, 1080, 1920);
+  const texts = ctx.calls.filter((c) => c[0] === 'text');
+  assert.ok(texts.some((c) => c[3] === 'Created by '));
+  assert.ok(texts.some((c) => c[3] === 'kl' && c[2] > 0 && c[2] < .92));
 });
