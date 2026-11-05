@@ -42,11 +42,12 @@ test("a VOD card is grey with time, amber in the last 2 days, red once every cli
 const accessCode = ts.transpileModule(read("lib/clip-access.ts"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
 const core = await import("../lib/clip-access-core.ts");
 const expiry = await import("../lib/clip-expiry.ts");
+const retention = await import("../lib/results-retention.ts");
 const sourceOf = (url) => (url.match(/(?:v=|youtu\.be\/)([\w-]{11})/) ?? [])[1] ? `youtube:${(url.match(/(?:v=|youtu\.be\/)([\w-]{11})/))[1]}` : null;
 
-function access({ clips = [], history = [], r2 = "1", now = new Date().toISOString() } = {}) {
+function access({ clips = [], history = [], r2 = "1", now = new Date().toISOString(), tier = "free" } = {}) {
   const builder = (table) => {
-    let rows = table === "clips" ? clips : history; const filters = [];
+    let rows = table === "clips" ? clips : table === "profiles" ? [{ id: "u1", tier }] : history; const filters = [];
     const api = {
       select() { return api; },
       eq(col, val) { filters.push((r) => r[col] === val); return api; },
@@ -64,6 +65,7 @@ function access({ clips = [], history = [], r2 = "1", now = new Date().toISOStri
     "@/lib/vod-source": { vodSourceKey: (url) => sourceOf(url) },
     "@/lib/clip-access-core": { ...core, acquireUserProcessingSlot: () => () => {} },
     "@/lib/clip-expiry": expiry,
+    "@/lib/results-retention": retention,
   };
   const exports = {};
   vm.runInNewContext(accessCode, { exports, require: (n) => modules[n], process: { env: { R2_ENABLED: r2 } }, Date, Error, Promise, Math, Number });
@@ -72,7 +74,8 @@ function access({ clips = [], history = [], r2 = "1", now = new Date().toISOStri
 const URL1 = "https://www.youtube.com/watch?v=AAAAAAAAAAA";
 const clip = (over = {}) => ({ id: "c1", user_id: "u1", url: URL1, start_seconds: 100, end_seconds: 160, archive_status: "stored", media_expires_at: inDays(3 + (Date.now() - NOW) / DAY), ...over });
 const past = new Date(Date.now() - 3600_000).toISOString();
-const history = [{ user_id: "u1", source_key: "youtube:AAAAAAAAAAA", start_seconds: 100, end_seconds: 160 }];
+const agoDays = (n) => new Date(Date.now() - n * DAY).toISOString();
+const history = [{ user_id: "u1", source_key: "youtube:AAAAAAAAAAA", start_seconds: 100, end_seconds: 160, created_at: agoDays(1) }];
 
 test("a saved clip within its dates can be previewed and exported", async () => {
   const a = access({ clips: [clip()], history });
@@ -97,11 +100,24 @@ test("leaving out the clip id does not get around it: the same moment is still b
 });
 
 test("another moment from the same video, or someone else's expired clip, is not affected", async () => {
-  const other = [...history, { user_id: "u1", source_key: "youtube:AAAAAAAAAAA", start_seconds: 900, end_seconds: 960 }];
+  const other = [...history, { user_id: "u1", source_key: "youtube:AAAAAAAAAAA", start_seconds: 900, end_seconds: 960, created_at: agoDays(1) }];
   const a = access({ clips: [clip({ media_expires_at: past })], history: other });
   assert.equal(await a.canProcessClip("u1", "", URL1, 900, 960), true);
   const b = access({ clips: [clip({ media_expires_at: past, user_id: "someone-else" })], history });
   assert.equal(await b.canProcessClip("u1", "", URL1, 100, 160), true);
+});
+
+test("an analysis result nobody saved can be used for 5 days on Free and 30 on Pro, then it is blocked", async () => {
+  const at = (days) => [{ user_id: "u1", source_key: "youtube:AAAAAAAAAAA", start_seconds: 100, end_seconds: 160, created_at: agoDays(days) }];
+  assert.equal(await access({ history: at(4.5) }).canProcessClip("u1", "", URL1, 100, 160), true);
+  assert.equal(await access({ history: at(5.5) }).canProcessClip("u1", "", URL1, 100, 160), false);
+  assert.equal(await access({ tier: "pro", history: at(5.5) }).canProcessClip("u1", "", URL1, 100, 160), true);
+  assert.equal(await access({ tier: "pro", history: at(29) }).canProcessClip("u1", "", URL1, 100, 160), true);
+  assert.equal(await access({ tier: "pro", history: at(31) }).canProcessClip("u1", "", URL1, 100, 160), false);
+  // The raw download of an unsaved moment follows the same window.
+  assert.equal(await access({ history: at(4) }).canDownloadRawMoment("u1", URL1, 100, 160), true);
+  assert.equal(await access({ history: at(6) }).canDownloadRawMoment("u1", URL1, 100, 160), false);
+  assert.equal(await access({ tier: "pro", history: at(6) }).canDownloadRawMoment("u1", URL1, 100, 160), true);
 });
 
 test("without the retention migration the check still works from the status alone", async () => {
