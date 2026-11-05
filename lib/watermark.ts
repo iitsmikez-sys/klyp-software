@@ -1,12 +1,28 @@
 /** Free-export watermark shared by the ASS burn and canvas previews. */
 
-const TEXT = "Created by klyp.world";
-const STATIC = "klyp";
+/** The credit, in the logo's colors: "kl" white, "yp" green, the rest white. */
+const WHITE = { css: "#FFFFFF", ass: "&HFFFFFF&" };
+const GREEN = { css: "#00E5A0", ass: "&HA0E500&" };
+const PARTS: readonly { text: string; color: typeof WHITE }[] = [
+  { text: "Created by ", color: WHITE },
+  { text: "kl", color: WHITE },
+  { text: "yp", color: GREEN },
+  { text: ".world", color: WHITE },
+];
+/** The small mark that stays after the credit has left: just the logo word. */
+const STATIC_PARTS: readonly { text: string; color: typeof WHITE }[] = [
+  { text: "kl", color: WHITE },
+  { text: "yp", color: GREEN },
+];
 const FONT_AT_1080 = 54;
 const X_FRACTION = 82 / 470;
 const Y_FRACTION = 293 / 836;
+/** The credit slides in from the left edge, stays, then fades out as the small mark slides in. */
+const SLIDE_IN = 0.45;
 const HOLD_END = 3.1;
-const TRANSITION_END = 3.8;
+const CREDIT_END = 3.5;
+const STATIC_START = 3.3;
+const STATIC_SLIDE = 0.35;
 
 type Size = { w: number; h: number };
 
@@ -27,13 +43,17 @@ function assTime(seconds: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(hundredths % 100).padStart(2, "0")}`;
 }
 
-/** ASS gives the exported clip a true rotated typewriter and a static wordmark. */
+/** ASS text with a color change for each part. */
+const coloredAss = (parts: typeof PARTS) => parts.map((p) => `{\\1c${p.color.ass}}${p.text}`).join("");
+
+/** ASS gives the exported clip a rotated credit that slides in, then a small logo word. */
 export function generateWatermarkAss(size: Size, durationSeconds: number): string {
   const { x, y, fontSize } = layout(size);
   // libass rotates around the alignment anchor, moving glyphs left by roughly
   // one font height; offset the rotated anchor so both states share a left edge.
   const verticalX = x + Math.round(fontSize * .85);
   const staticY = y - Math.round(fontSize * .17);
+  const fromX = -Math.round(fontSize * 1.2);
   const duration = Math.max(0, durationSeconds);
   const events: string[] = [];
   const add = (start: number, end: number, text: string) => {
@@ -41,16 +61,12 @@ export function generateWatermarkAss(size: Size, durationSeconds: number): strin
       events.push(`Dialogue: 0,${assTime(start)},${assTime(Math.min(end, duration))},Mark,,0,0,0,,${text}`);
     }
   };
-  for (let i = 1; i <= TEXT.length; i++) {
-    const start = (i - 1) / 11;
-    const end = i === TEXT.length ? HOLD_END : i / 11;
-    add(start, end, `{\\an7\\pos(${verticalX},${y})\\frz270}${TEXT.slice(0, i)}`);
-  }
-  const transitionMs = Math.round((TRANSITION_END - HOLD_END) * 1000);
-  add(HOLD_END, TRANSITION_END,
-    `{\\an7\\pos(${verticalX},${y})\\frz270\\t(0,${transitionMs},\\fscx8\\alpha&HFF&)}${TEXT}`);
-  add(HOLD_END + 0.35, duration,
-    `{\\an7\\pos(${x},${staticY})\\fad(350,0)}${STATIC}`);
+  const slideMs = Math.round(SLIDE_IN * 1000);
+  add(0, CREDIT_END,
+    `{\\an7\\frz270\\move(${fromX},${y},${verticalX},${y},0,${slideMs})\\fad(300,${Math.round((CREDIT_END - HOLD_END) * 1000)})}${coloredAss(PARTS)}`);
+  const staticMs = Math.round(STATIC_SLIDE * 1000);
+  add(STATIC_START, duration,
+    `{\\an7\\move(${x - Math.round(fontSize * .7)},${staticY},${x},${staticY},0,${staticMs})\\fad(${staticMs},0)}${coloredAss(STATIC_PARTS as typeof PARTS)}`);
   return `[Script Info]\nScriptType: v4.00+\nPlayResX: ${size.w}\nPlayResY: ${size.h}\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n` +
     `[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n` +
     `Style: Mark,Arial,${fontSize},&H00FFFFFF,&H00FFFFFF,&H80000000,&H80000000,-1,0,0,0,100,100,0,0,1,1,1,7,0,0,0,1\n\n` +
@@ -61,6 +77,18 @@ export function generateWatermarkAss(size: Size, durationSeconds: number): strin
 export function watermarkFilter(assPath: string): string {
   const escaped = assPath.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "$1\\:");
   return `subtitles='${escaped}'`;
+}
+
+const ease = (p: number) => { const c = Math.max(0, Math.min(1, p)); return c * c * (3 - 2 * c); };
+
+/** Draw colored parts one after another starting at the current origin. */
+function fillParts(ctx: CanvasRenderingContext2D, parts: typeof PARTS): void {
+  let offset = 0;
+  for (const part of parts) {
+    ctx.fillStyle = part.color.css;
+    ctx.fillText(part.text, offset, 0);
+    offset += ctx.measureText(part.text).width;
+  }
 }
 
 export function drawWatermarkPreview(
@@ -74,32 +102,26 @@ export function drawWatermarkPreview(
   ctx.font = `bold ${fontSize}px Arial`;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillStyle = "white";
   ctx.shadowColor = "rgba(0,0,0,.65)";
   ctx.shadowBlur = Math.max(2, fontSize * .08);
-  if (time < HOLD_END) {
-    const count = Math.min(TEXT.length, Math.max(0, Math.floor(time * 11) + 1));
-    ctx.globalAlpha = .92;
-    ctx.translate(x + fontSize * .85, y);
-    ctx.rotate(Math.PI / 2);
-    ctx.fillText(TEXT.slice(0, count), 0, 0);
-  } else if (time < TRANSITION_END) {
-    const progress = (time - HOLD_END) / (TRANSITION_END - HOLD_END);
-    const ease = progress * progress * (3 - 2 * progress);
-    const fold = Math.min(1, ease / .55);
-    const reveal = Math.max(0, Math.min(1, (ease - .45) / .55));
+  if (time < CREDIT_END) {
+    // The credit slides in from the left edge, then fades out at the end.
+    const slide = (1 - ease(time / SLIDE_IN)) * (x + fontSize * .85 + fontSize * 1.2);
+    const fadeIn = Math.min(1, time / .3), fadeOut = time > HOLD_END ? 1 - (time - HOLD_END) / (CREDIT_END - HOLD_END) : 1;
+    ctx.globalAlpha = .92 * fadeIn * Math.max(0, fadeOut);
     ctx.save();
-    ctx.globalAlpha = .92 * (1 - fold);
-    ctx.translate(x + fontSize * .85, y);
+    ctx.translate(x + fontSize * .85 - slide, y);
     ctx.rotate(Math.PI / 2);
-    ctx.scale(1 - .92 * fold, 1);
-    ctx.fillText(TEXT, 0, 0);
+    fillParts(ctx, PARTS);
     ctx.restore();
-    ctx.globalAlpha = .92 * reveal;
-    ctx.fillText(STATIC, x, y - fontSize * .17);
-  } else {
-    ctx.globalAlpha = .92;
-    ctx.fillText(STATIC, x, y - fontSize * .17);
+  }
+  if (time >= STATIC_START) {
+    const p = (time - STATIC_START) / STATIC_SLIDE;
+    ctx.globalAlpha = .92 * Math.min(1, p);
+    ctx.save();
+    ctx.translate(x - (1 - ease(p)) * fontSize * .7, y - fontSize * .17);
+    fillParts(ctx, STATIC_PARTS as typeof PARTS);
+    ctx.restore();
   }
   ctx.restore();
 }
