@@ -25,12 +25,18 @@ const TRANSITION_END = 3.8;
 
 type Size = { w: number; h: number };
 
+/** The small "klyp" mark sits a little to the right of the sideways credit's left edge (0.7 of a font height). */
+const STATIC_SHIFT = 0.7;
+
 function layout({ w, h }: Size) {
   const fit = Math.min(w / 1080, h / 1920);
+  const x = Math.round(w * X_FRACTION);
+  const fontSize = Math.max(14, Math.round(FONT_AT_1080 * fit));
   return {
-    x: Math.round(w * X_FRACTION),
+    x,
     y: Math.round(h * Y_FRACTION),
-    fontSize: Math.max(14, Math.round(FONT_AT_1080 * fit)),
+    fontSize,
+    staticX: x + Math.round(fontSize * STATIC_SHIFT),
   };
 }
 
@@ -59,7 +65,7 @@ const coloredAss = (parts: readonly Part[]) => parts.map((p) => `{\\1c${p.color.
 
 /** ASS gives the exported clip a true rotated typewriter and a static wordmark. */
 export function generateWatermarkAss(size: Size, durationSeconds: number): string {
-  const { x, y, fontSize } = layout(size);
+  const { x, y, fontSize, staticX } = layout(size);
   // libass rotates around the alignment anchor, moving glyphs left by roughly
   // one font height; offset the rotated anchor so both states share a left edge.
   const verticalX = x + Math.round(fontSize * .85);
@@ -80,7 +86,7 @@ export function generateWatermarkAss(size: Size, durationSeconds: number): strin
   add(HOLD_END, TRANSITION_END,
     `{\\an7\\pos(${verticalX},${y})\\frz270\\t(0,${transitionMs},\\fscx8\\alpha&HFF&)}${coloredAss(PARTS)}`);
   add(HOLD_END + 0.35, duration,
-    `{\\an7\\pos(${x},${staticY})\\fad(350,0)}${coloredAss(STATIC_PARTS)}`);
+    `{\\an7\\pos(${staticX},${staticY})\\fad(350,0)}${coloredAss(STATIC_PARTS)}`);
   return `[Script Info]\nScriptType: v4.00+\nPlayResX: ${size.w}\nPlayResY: ${size.h}\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n` +
     `[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n` +
     `Style: Mark,Arial,${fontSize},&H00FFFFFF,&H00FFFFFF,&H80000000,&H80000000,-1,0,0,0,100,100,0,0,1,1,1,7,0,0,0,1\n\n` +
@@ -108,7 +114,7 @@ export function drawWatermarkPreview(
   width: number, height: number, outputWidth = width, outputHeight = height
 ): void {
   if (width <= 0 || height <= 0 || time < 0) return;
-  const { x, y, fontSize } = layout({ w: outputWidth, h: outputHeight });
+  const { x, y, fontSize, staticX } = layout({ w: outputWidth, h: outputHeight });
   ctx.save();
   ctx.scale(width / outputWidth, height / outputHeight);
   ctx.font = `bold ${fontSize}px Arial`;
@@ -119,7 +125,7 @@ export function drawWatermarkPreview(
   const staticAt = (alpha: number) => {
     ctx.globalAlpha = alpha;
     ctx.save();
-    ctx.translate(x, y - fontSize * .17);
+    ctx.translate(staticX, y - fontSize * .17);
     fillParts(ctx, STATIC_PARTS);
     ctx.restore();
   };

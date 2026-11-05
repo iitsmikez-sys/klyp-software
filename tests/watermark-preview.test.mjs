@@ -21,7 +21,7 @@ test('Free export types the white credit, holds, then folds into a small logo wo
   // The fold and the small mark keep the original timing.
   assert.match(ass, /0:00:03\.10,0:00:03\.80/);
   assert.ok(rows[21].includes(`${bs}fscx8${bs}alpha&HFF&`));
-  assert.match(rows[22], /^Dialogue: 0,0:00:03\.45,0:00:08\.00,Mark[^\n]*\\pos\(188,664\)\\fad\(350,0\)\}\{\\1c&HFFFFFF&\}kl\{\\1c&HA0E500&\}yp$/);
+  assert.match(rows[22], /^Dialogue: 0,0:00:03\.45,0:00:08\.00,Mark[^\n]*\\pos\(226,664\)\\fad\(350,0\)\}\{\\1c&HFFFFFF&\}kl\{\\1c&HA0E500&\}yp$/);
   // No sliding: nothing uses \move.
   assert.ok(!ass.includes(`${bs}move`));
   assert.match(watermarkFilter('/tmp/klyp-ass/watermark.ass'), /subtitles='\/tmp\/klyp-ass\/watermark\.ass'/);
@@ -68,7 +68,7 @@ test('preview types in the logo colors, then draws the small logo word in the sa
   const mark = late.calls.filter((c) => c[0] === 'text');
   assert.deepEqual(mark.map((c) => c[3]), ['kl', 'yp']);
   assert.deepEqual(mark.map((c) => c[1]), ['#FFFFFF', '#00E5A0']);
-  assert.ok(late.calls.some((c) => c[0] === 'translate' && c[1] === 188 && c[2] === 663.82));
+  assert.ok(late.calls.some((c) => c[0] === 'translate' && c[1] === 226 && c[2] === 663.82));
 });
 
 test('during the fold the credit shrinks away while the small logo word fades in', () => {
