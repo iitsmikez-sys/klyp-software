@@ -585,14 +585,14 @@ export default function StreamsPage() {
               return (
                 <div
                   key={vod.url}
-                  className={`bg-surface border rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-4 transition-colors ${expiry.kind === "expired" ? "border-red-500/40" : expiry.kind === "soon" ? "border-amber-400/50" : "border-border hover:border-accent/30"}`}
+                  className={`relative overflow-hidden bg-surface border rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-4 transition-colors ${expiry.kind === "expired" ? "border-red-500/40" : expiry.kind === "soon" ? "border-amber-400/50" : "border-border hover:border-accent/30"}`}
                 >
                   {/* Frame from the VOD's best clip — Klyp has no VOD-level still. */}
-                  <div className={`w-full sm:w-40 flex-shrink-0 ${expiry.kind === "expired" ? "grayscale opacity-60" : ""}`}>
+                  <div className={`w-full sm:w-40 flex-shrink-0 ${expiry.kind === "expired" ? "pointer-events-none blur-[6px] grayscale opacity-60" : ""}`}>
                     <ClipThumbnail clip={top} onPlay={() => { window.location.href = `/dashboard/clips?vod=${encodeURIComponent(vod.url)}`; }} />
                   </div>
 
-                  <div className="flex-1 min-w-0">
+                  <div className={`flex-1 min-w-0 ${expiry.kind === "expired" ? "opacity-55" : ""}`}>
                     <p className="text-[17px] font-bold text-white truncate">
                       {meta?.title ?? (vod.videoId ? `Twitch VOD ${vod.videoId}` : vod.platform === "Upload" ? "Uploaded video" : vod.url)}
                     </p>
@@ -630,15 +630,9 @@ export default function StreamsPage() {
                         {!isPro && <Link href="/dashboard/upgrade" className="underline underline-offset-2 hover:text-amber-200">Keep 30 days with Pro</Link>}
                       </p>
                     )}
-                    {expiry.kind === "expired" && (
-                      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-red-300" data-expiry="expired">
-                        <span className="rounded-md bg-red-500/10 px-2 py-0.5">VOD expired · footage deleted</span>
-                        {!isPro && <Link href="/dashboard/upgrade" className="underline underline-offset-2 hover:text-red-200">Upgrade to keep clips next time</Link>}
-                      </p>
-                    )}
                   </div>
 
-                  <div className="flex items-center gap-5 sm:gap-6 flex-shrink-0">
+                  <div className={`flex items-center gap-5 sm:gap-6 flex-shrink-0 ${expiry.kind === "expired" ? "opacity-55" : ""}`}>
                     <div className="text-center">
                       <p className="font-geist text-xl font-bold text-white tabular-nums">{vod.count}</p>
                       <p className="text-[12px] text-foreground-muted">Clips</p>
@@ -655,13 +649,22 @@ export default function StreamsPage() {
 
                   <Link
                     href={`/dashboard/clips?vod=${encodeURIComponent(vod.url)}`}
-                    className="flex-shrink-0 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-accent/40 text-accent text-[15px] font-bold hover:bg-accent-glow transition-colors"
+                    className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-accent/40 text-accent text-[15px] font-bold hover:bg-accent-glow transition-colors ${expiry.kind === "expired" ? "opacity-60" : ""}`}
                   >
                     {expiry.kind === "expired" ? "Details" : "View clips"}
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
                     </svg>
                   </Link>
+                  {expiry.kind === "expired" && (
+                    <>
+                      <span className="sr-only" data-expiry="expired">VOD expired · footage deleted</span>
+                      {/* Red rubber stamp across the middle. It ignores clicks so the Details button still works. */}
+                      <div aria-hidden="true" data-expired-stamp className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-[8deg] rounded-xl border-4 border-red-500 bg-red-950/55 px-6 py-1.5 font-syne text-3xl font-bold tracking-[0.16em] text-red-500 shadow-[0_0_18px_rgba(255,60,60,0.3)] sm:text-4xl">
+                        EXPIRED
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}
