@@ -21,10 +21,10 @@ test('Free export types the white credit, holds, then folds into a small logo wo
   // The fold and the small mark keep the original timing.
   assert.match(ass, /0:00:03\.10,0:00:03\.80/);
   assert.ok(rows[21].includes(`${bs}fscx8${bs}alpha&HFF&`));
-  assert.match(rows[22], /^Dialogue: 0,0:00:03\.45,0:00:08\.00,Mark[^\n]*\\pos\(226,664\)\\fad\(350,0\)\}\{\\1c&HFFFFFF&\}kl\{\\1c&HA0E500&\}yp\{\\1c&HFFFFFF&\\fs40\\1a&H4F&\}\.world$/);
-  // The small mark's address is smaller (74% of the size) and a little see-through (69% solid) than "klyp".
-  assert.equal(rows[22].split(`${bs}fs`).length - 1, 1, 'only ".world" changes size');
-  assert.ok(rows[22].indexOf(`${bs}fs40`) > rows[22].indexOf('yp'), '"klyp" stays full size');
+  assert.match(rows[22], /^Dialogue: 0,0:00:03\.45,0:00:08\.00,Mark[^\n]*\\pos\(226,664\)\\fad\(350,0\)\}\{\\1c&HFFFFFF&\}kl\{\\1c&HA0E500&\}yp\{\\1c&HFFFFFF&\}\.world$/);
+  // The small mark reads "klyp.world": all one size and fully solid, with only "yp" in green.
+  assert.ok(!rows[22].includes(`${bs}fs`), 'no part changes size');
+  assert.ok(!rows[22].includes(`${bs}1a`), 'no part is see-through');
   // No sliding: nothing uses \move.
   assert.ok(!ass.includes(`${bs}move`));
   assert.match(watermarkFilter('/tmp/klyp-ass/watermark.ass'), /subtitles='\/tmp\/klyp-ass\/watermark\.ass'/);
@@ -71,10 +71,9 @@ test('preview types in the logo colors, then draws the small logo word in the sa
   const mark = late.calls.filter((c) => c[0] === 'text');
   assert.deepEqual(mark.map((c) => c[3]), ['kl', 'yp', '.world']);
   assert.deepEqual(mark.map((c) => c[1]), ['#FFFFFF', '#00E5A0', '#FFFFFF']);
-  // ".world" is a little see-through and sits lower so its baseline lines up with the bigger "klyp".
-  assert.ok(Math.abs(mark[0][2] - .92) < 1e-9 && Math.abs(mark[2][2] - .92 * .69) < 1e-9);
-  assert.equal(mark[0][5], 0);
-  assert.ok(mark[2][5] > 0);
+  // All three parts are the same size and fully solid, on the same line.
+  assert.ok(mark.every((c) => Math.abs(c[2] - .92) < 1e-9), 'no part is see-through');
+  assert.ok(mark.every((c) => c[5] === 0), 'no part is moved off the line');
   assert.ok(late.calls.some((c) => c[0] === 'translate' && c[1] === 226 && c[2] === 663.82));
 });
 

@@ -12,11 +12,11 @@ const PARTS: readonly Part[] = [
   { text: "yp", color: WHITE },
   { text: ".world", color: WHITE },
 ];
-/** The small mark that stays after the credit has folded away: the logo word, then the address a bit smaller and softer. */
+/** The small mark that stays after the credit has folded away: "kl" white, "yp" green, ".world" white, all the same size and solid. */
 const STATIC_PARTS: readonly Part[] = [
   { text: "kl", color: WHITE },
   { text: "yp", color: GREEN },
-  { text: ".world", color: WHITE, scale: 0.74, opacity: 0.69 },
+  { text: ".world", color: WHITE },
 ];
 const TEXT_LENGTH = PARTS.reduce((sum, p) => sum + p.text.length, 0);
 const FONT_AT_1080 = 54;
