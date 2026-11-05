@@ -338,7 +338,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     }
   }
   try {
-    if (raw ? (!clipId && !await canDownloadRawMoment(profile.id, url, start, end)) : !await canProcessClip(profile.id, clipId, url, start, end)) {
+    // A raw download of a saved clip goes through the same check as an export (ownership, window, not expired).
+    if (raw && !clipId ? !await canDownloadRawMoment(profile.id, url, start, end) : !await canProcessClip(profile.id, clipId, url, start, end)) {
       return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
     }
   } catch (err) {

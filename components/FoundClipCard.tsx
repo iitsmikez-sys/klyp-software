@@ -3,6 +3,7 @@ import ClipThumbnail from './ClipThumbnail';
 import type { SavedClip } from '@/lib/clip-ui';
 import { fmtTime, platformName } from '@/lib/clip-ui';
 import { backupState } from '@/lib/clip-backup-state';
+import { isMediaExpired } from '@/lib/clip-expiry';
 
 export default function FoundClipCard({ clip, topPick = false, kept, busy, exporting, saving, rawSeconds, exportKind = 'raw', onPreview, onCustomize, onRawExport, onReadyExport, onKeep, onDiscard }: {
   clip: SavedClip; topPick?: boolean; kept: boolean; busy: boolean; exporting: boolean; saving: boolean; rawSeconds: number;
@@ -10,7 +11,7 @@ export default function FoundClipCard({ clip, topPick = false, kept, busy, expor
   onPreview: () => void; onCustomize: () => void; onRawExport: () => void; onReadyExport: () => void;
   onKeep: () => void; onDiscard: () => void;
 }) {
-  const backup = backupState(clip.archive_status, clip.url);
+  const backup = backupState(isMediaExpired(clip) ? 'expired' : clip.archive_status, clip.url);
   return <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface p-4">
     <div className="relative">
       <ClipThumbnail clip={clip} onPlay={onPreview} />
