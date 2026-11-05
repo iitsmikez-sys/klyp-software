@@ -15,7 +15,7 @@ const HIGHLIGHT: Partial<Record<CaptionStyle, { css: string; ass: string }>> = {
   FIRE: highlight("#39FF3A"),
   // Tri-color: the active word alternates bright green and red (see wordLook).
   TRICOLOR: highlight("#1FFF3A"),
-  // Focus: neon green word, a clean two-line phrase, and the active word drawn larger.
+  // Focus: one big neon green word at a time (the word being said, drawn larger).
   FOCUS: highlight("#39FF14"),
 };
 
@@ -23,7 +23,7 @@ const HIGHLIGHT: Partial<Record<CaptionStyle, { css: string; ass: string }>> = {
 const TRICOLOR_ACTIVE = [highlight("#1FFF3A"), highlight("#FF1F2A")];
 const WHITE_WORD = highlight("#FFFFFF");
 
-/** Focus draws the active word 25% larger than the rest of the phrase. */
+/** Focus draws its word 25% larger. */
 export const activeWordScale = (style: CaptionStyle) => (style === "FOCUS" ? 1.25 : 1);
 
 /** Color of one word: the phrase is white and the word being said lights up (Tri-color alternates green and red). */
@@ -36,7 +36,7 @@ export function wordLook(style: CaptionStyle, index: number, active: boolean): {
 export const isHighlightStyle = (style: CaptionStyle) => style in HIGHLIGHT;
 export const highlightColor = (style: CaptionStyle) => HIGHLIGHT[style] ?? HIGHLIGHT.KEYWORD!;
 /** Styles that show a single word per caption. */
-export const isOneWordStyle = (style: CaptionStyle) => style === "KLYP" || style === "SPARK" || style === "POP";
+export const isOneWordStyle = (style: CaptionStyle) => style === "KLYP" || style === "SPARK" || style === "POP" || style === "FOCUS";
 /** Styles with their own colors, so the color picker does not apply. */
 export const hasFixedPalette = (style: CaptionStyle) => style === "COMIC" || isHighlightStyle(style);
 
@@ -70,4 +70,4 @@ export function emojiForText(text: string): { char: string; color: string } | nu
 export const assColorOf = (css: string) => "&H00" + css.slice(5, 7) + css.slice(3, 5) + css.slice(1, 3) + "&";
 
 /** Styles whose captions are drawn in capitals (the one-word styles plus Hype and Fire). */
-export const isUppercaseStyle = (style: CaptionStyle) => isOneWordStyle(style) || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "FOCUS";
+export const isUppercaseStyle = (style: CaptionStyle) => isOneWordStyle(style) || style === "HYPE" || style === "FIRE" || style === "TRICOLOR";
