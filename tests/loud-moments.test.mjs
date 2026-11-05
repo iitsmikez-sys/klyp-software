@@ -55,8 +55,9 @@ test("measuring never fails an analysis, and Windows paths are escaped for the f
 
 test("the pipeline measures Gaming audio, flags quiet streams, and gives the result back to the screen", () => {
   const pipeline = read("lib/analyze-pipeline.ts");
-  assert.ok(pipeline.includes('if (contentType === "gaming") {') && pipeline.includes("detectLoudMoments(audioPath"));
-  assert.ok(pipeline.includes("loudMoments, quietStream, nonEnglish));") && pipeline.includes("quiet: quietStream"));
+  // The audio is measured for Gaming and IRL (the emotion curve uses it too), but only Gaming uses the loud stretches as hints.
+  assert.ok(pipeline.includes('if (contentType === "gaming") {') && pipeline.includes("detectLoudMoments(audioPath") && pipeline.includes("loudMoments = measured;"));
+  assert.ok(pipeline.includes("loudMoments, quietStream, nonEnglish, emotionSection));") && pipeline.includes("quiet: quietStream"));
   assert.ok(pipeline.includes('contentType === "gaming" ? formatLoudMomentsForPrompt(loudMoments, quietStream)'));
   assert.ok(read("app/api/analyze/route.ts").includes("quiet: pipelineResult.quiet === true"));
   assert.ok(read("components/AnalyzePanel.tsx").includes("This streamer talks very little"));

@@ -12,7 +12,7 @@ import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { isMostlyEnglish, languageSection } from "@/lib/language-hint";
-import { detectLoudMoments, formatLoudMomentsForPrompt, isQuietStream, type LoudMoment } from "@/lib/loud-moments";
+import { detectLoudMoments, formatLoudMomentsForPrompt, isQuietStream, type LoudMoment, type LoudSample } from "@/lib/loud-moments";
 import { logAnthropicRateLimits } from "@/lib/anthropic-rate-limits";
 import { AssemblyAI } from "assemblyai";
 import {
@@ -380,7 +380,9 @@ export async function findClips(
   /** The streamer talks very little, so loud moments and chat carry more weight. */
   quietStream = false,
   /** The transcript is not English: write titles and hooks in the streamer's language. */
-  nonEnglish = false
+  nonEnglish = false,
+  /** The emotion peaks section (where the feeling peaked, measured from audio, words and chat), for Gaming and IRL. */
+  emotionSection = ""
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -519,7 +521,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## ALSO CONSIDER (near-misses, separate list)
 
-After your main list, fill "also_consider" with up to 3 more moments that scored 55-64, just below the quality floor. Do this when your main list has fewer than ${clipCount} clips AND at least one moment cleared 65; otherwise return an empty list. ONE EXCEPTION, "best of this stream": if NO moment cleared 65, return up to 3 of the best real moments you found in "also_consider" (scores 45-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones; if nothing scored at least 45, return an empty list. At most the smaller of 3 and (${clipCount} minus your main list length). Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${languageNote}${keywordSection}`,
+After your main list, fill "also_consider" with up to 3 more moments that scored 55-64, just below the quality floor. Do this when your main list has fewer than ${clipCount} clips AND at least one moment cleared 65; otherwise return an empty list. ONE EXCEPTION, "best of this stream": if NO moment cleared 65, return up to 3 of the best real moments you found in "also_consider" (scores 45-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones; if nothing scored at least 45, return an empty list. At most the smaller of 3 and (${clipCount} minus your main list length). Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${emotionSection}${languageNote}${keywordSection}`,
     messages: [
       {
         role: "user",
@@ -756,6 +758,9 @@ export async function runAnalysisPipeline(opts: {
   let words: TimedWord[];
   let durationSeconds: number;
   let loudMoments: LoudMoment[] = [];
+  // Raw loudness readings and the audio file, kept for the emotion curve (set only when this run downloads the audio).
+  let loudSamples: LoudSample[] = [];
+  let emotionAudioPath: string | null = null;
 
   if (cachedTranscript) {
     words = cachedTranscript.words;
@@ -795,12 +800,16 @@ export async function runAnalysisPipeline(opts: {
       uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir, !!durationHint && durationHint >= SEGMENT_MIN_VOD_S)
     );
     progress("download", "done");
-    // Gaming streamers can play well and say little, so measure the audio's loud moments too. It runs on this
-    // server for free, and a failure here only means no hints.
+    // Measure the audio's loudness for Gaming and IRL. Gaming streamers can play well and say little, so Gaming also
+    // uses the loud stretches as hints; both use the readings for the emotion curve below. It runs on this server for
+    // free, and a failure here only means no hints.
+    emotionAudioPath = audioPath;
+    const measured = await withMem("loud-moments", () => detectLoudMoments(audioPath, {
+      run, readText: (p) => readFile(p, "utf8"), ffmpeg: resolveBin("ffmpeg"), outPath: path.join(workDir, "loudness.txt"),
+      onSamples: (samples) => { loudSamples = samples; },
+    }));
     if (contentType === "gaming") {
-      loudMoments = await withMem("loud-moments", () => detectLoudMoments(audioPath, {
-        run, readText: (p) => readFile(p, "utf8"), ffmpeg: resolveBin("ffmpeg"), outPath: path.join(workDir, "loudness.txt"),
-      }));
+      loudMoments = measured;
       console.log(`[analyze] loud moments: ${loudMoments.length}`);
     }
 
@@ -830,6 +839,28 @@ export async function runAnalysisPipeline(opts: {
   const chatSpikes = await withMem("chat-spikes", async () =>
     chatSpikesPromise ? await chatSpikesPromise : null
   );
+  // The emotion curve: where the feeling peaked, from the audio, the words and chat. It needs the audio file, so it
+  // only runs when this analysis downloaded it. A failure here only means no emotion hints.
+  let emotionSection = "";
+  if (loudSamples.length && emotionAudioPath) {
+    try {
+      const { emotionCurve, pickPitchCandidates, findEmotionPeaks, formatEmotionPeaksForPrompt } = await import("@/lib/emotion-curve");
+      const { measurePitchRatios } = await import("@/lib/voice-pitch");
+      const emotionContent = contentType === "irl" ? "irl" : "gaming";
+      const curve = emotionCurve({ samples: loudSamples, words, chatSpikes });
+      if (curve) {
+        const audioFile = emotionAudioPath;
+        const pitchRatios = await withMem("voice-pitch", () => measurePitchRatios(audioFile, pickPitchCandidates(curve, emotionContent), {
+          run, ffmpeg: resolveBin("ffmpeg"), readBytes: (p) => readFile(p), tempPath: (i) => path.join(workDir, `pitch-${i}.raw`),
+        }));
+        const peaks = findEmotionPeaks(curve, emotionContent, durationSeconds, pitchRatios);
+        emotionSection = formatEmotionPeaksForPrompt(peaks, emotionContent);
+        console.log(`[analyze] emotion peaks: ${peaks.length} (voice pitch measured for ${pitchRatios.size})`);
+      }
+    } catch (err) {
+      console.warn("[analyze] emotion curve failed (no emotion hints):", err instanceof Error ? err.message : err);
+    }
+  }
   // NOTE: on the segmented long-VOD path (windows.length > 0 above), `words`
   // only covers the chat-spike-sampled windows, not the full VOD — a keyword
   // mentioned outside those windows won't be found. Same tradeoff the
@@ -844,7 +875,7 @@ export async function runAnalysisPipeline(opts: {
     keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
     windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
     // Results found with loud-moment hints are kept apart from older ones.
-    signals: [loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") || undefined };
+    signals: [loudMoments.length ? "loud-v1" : "", emotionSection ? "emo-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") || undefined };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
@@ -852,7 +883,7 @@ export async function runAnalysisPipeline(opts: {
   if (judged === null) {
     const selected = await withMem("find-clips", () =>
       findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish));
+        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish, emotionSection));
     judged = selected.clips;
     skipped = selected.skipped;
     await cache?.save(judged);
@@ -878,7 +909,7 @@ export async function runAnalysisPipeline(opts: {
     if (nextJudged === null) {
       const next = await withMem("find-clips-more", () =>
         findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish));
+          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish, emotionSection));
       nextJudged = next.clips;
       skipped += next.skipped;
       await nextCache.save(nextJudged);

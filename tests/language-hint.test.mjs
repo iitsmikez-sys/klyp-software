@@ -35,5 +35,5 @@ test("the pipeline adds the note and a separate saved-result key only for non-En
   assert.ok(pipeline.includes("const nonEnglish = !isMostlyEnglish(words);"));
   assert.ok(pipeline.includes('const languageNote = nonEnglish ? languageSection() : "";'));
   assert.ok(pipeline.includes('nonEnglish ? "lang-v1" : ""'));
-  assert.equal(pipeline.split("loudMoments, quietStream, nonEnglish));").length - 1, 2, "both clip-picking calls pass it");
+  assert.equal(pipeline.split("loudMoments, quietStream, nonEnglish, emotionSection));").length - 1, 2, "both clip-picking calls pass it (and the emotion peaks)");
 });

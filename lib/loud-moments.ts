@@ -118,13 +118,17 @@ export async function detectLoudMoments(
     outPath: string;
     /** Escapes a path for use inside an FFmpeg filter. The default handles Windows drive letters and backslashes. */
     filterPath?: (path: string) => string;
+    /** Receives the raw loudness readings (every 100 ms), which the emotion curve also uses. */
+    onSamples?: (samples: LoudSample[]) => void;
   },
 ): Promise<LoudMoment[]> {
   try {
     await deps.run(deps.ffmpeg, ["-hide_banner", "-nostats", "-loglevel", "error", "-i", audioPath, "-vn",
       "-af", `aresample=16000,ebur128=metadata=1,ametadata=mode=print:key=lavfi.r128.M:file='${(deps.filterPath ?? defaultFilterPath)(deps.outPath)}'`,
       "-f", "null", "-"], { maxRunMs: 10 * 60_000 });
-    return findLoudMoments(parseLoudnessMetadata(await deps.readText(deps.outPath)));
+    const samples = parseLoudnessMetadata(await deps.readText(deps.outPath));
+    deps.onSamples?.(samples);
+    return findLoudMoments(samples);
   } catch {
     return [];
   }
