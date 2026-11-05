@@ -147,8 +147,21 @@ test("the library card shows the countdown, turns amber then red, and says Detai
   assert.match(page, /VOD expired · footage deleted/);
   assert.match(page, /expiry\.kind === "expired" \? "border-red-500\/40" : expiry\.kind === "soon" \? "border-amber-400\/50"/);
   assert.match(page, /Keep 30 days with Pro/);
-  assert.match(page, /Upgrade to keep clips next time/);
   assert.match(page, /expiry\.kind === "expired" \? "Details" : "View clips"/);
-  // The upgrade nudges only show to Free accounts.
-  assert.ok((page.match(/\{!isPro && <Link href="\/dashboard\/upgrade"/g) ?? []).length === 2);
+  // The upgrade nudge for the last 2 days only shows to Free accounts.
+  assert.ok((page.match(/\{!isPro && <Link href="\/dashboard\/upgrade"/g) ?? []).length === 1);
+});
+
+test("an expired card gets the red EXPIRED stamp, a blurred thumbnail and dimmed details", () => {
+  const page = read("app/(dashboard)/dashboard/streams/page.tsx");
+  // The stamp: big, red, tilted, in the middle of the card, and it never blocks a click.
+  assert.match(page, /\{expiry\.kind === "expired" && \(\s*<>\s*<span className="sr-only" data-expiry="expired">VOD expired · footage deleted<\/span>/);
+  assert.match(page, /data-expired-stamp className="pointer-events-none absolute left-1\/2 top-1\/2 -translate-x-1\/2 -translate-y-1\/2 -rotate-\[8deg\][^"]*border-4 border-red-500[^"]*text-red-500[^"]*">\s*EXPIRED\s*<\/div>/);
+  assert.match(page, /relative overflow-hidden bg-surface border rounded-xl/);
+  // Thumbnail blurred and grey and not clickable; title, stats and the button dimmed.
+  assert.match(page, /expiry\.kind === "expired" \? "pointer-events-none blur-\[6px\] grayscale opacity-60" : ""/);
+  assert.equal((page.match(/expiry\.kind === "expired" \? "opacity-55" : ""/g) ?? []).length, 2);
+  assert.match(page, /expiry\.kind === "expired" \? "opacity-60" : ""/);
+  // The old small red line is gone.
+  assert.doesNotMatch(page, /Upgrade to keep clips next time/);
 });
