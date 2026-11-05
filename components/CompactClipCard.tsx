@@ -6,6 +6,7 @@ import ClipThumbnail from "./ClipThumbnail";
 import type { RawDownloadState } from "./useRawClipDownloads";
 import { type SavedClip, fmtTime, platformName, footageGone, vodLinkAt } from "@/lib/clip-ui";
 import { backupState } from "@/lib/clip-backup-state";
+import { isMediaExpired } from "@/lib/clip-expiry";
 
 export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawState, onDownloadReady, readyState, more, compact = false }: {
   clip: SavedClip;
@@ -19,7 +20,7 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const gone = footageGone(clip);
-  const backup = backupState(clip.archive_status, clip.url);
+  const backup = backupState(isMediaExpired(clip) ? "expired" : clip.archive_status, clip.url);
   const rawLabel = rawState?.status === "working"
     ? rawState.received !== undefined ? `Downloading ${rawState.received}%` : `Preparing raw ${rawState.seconds}s`
     : rawState?.status === "ready" ? "Download Raw Again" : "Download Raw";
@@ -44,7 +45,7 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
       {clip.clip_type && <><span aria-hidden="true">·</span><span>{clip.clip_type.replaceAll("_", " ")}</span></>}
     </div>
     <p role="status" className={`mt-2 text-xs ${backup.kind === 'saved' ? 'text-accent' : 'text-amber-300'}`}>{backup.message}</p>
-    {clip.archive_status === 'stored' && clip.media_expires_at &&
+    {clip.archive_status === 'stored' && clip.media_expires_at && !gone &&
       <p className="mt-1 text-xs text-foreground-muted">Saved until {new Date(clip.media_expires_at).toLocaleDateString()}</p>}
     <div className={`mt-auto ${compact ? "pt-3" : "pt-4"}`}>
       <button type="button" onClick={onDownloadReady} disabled={gone || !onDownloadReady || readyState?.status === "working"} title={gone ? "Source footage is unavailable" : undefined} className={`w-full rounded-lg bg-accent px-2 font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${compact ? "min-h-9 text-xs" : "min-h-10 text-sm"}`}>{gone ? "Footage unavailable" : readyLabel}</button>

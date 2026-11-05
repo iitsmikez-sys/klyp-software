@@ -18,6 +18,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useSparks } from "@/components/SparksProvider";
 import { type SavedClip, fmtDate, platformName } from "@/lib/clip-ui";
+import { dayWord, vodExpiry } from "@/lib/clip-expiry";
 import ClipThumbnail from "@/components/ClipThumbnail";
 import type { VodMeta, ChannelMeta } from "@/app/api/streams/metadata/route";
 
@@ -579,13 +580,15 @@ export default function StreamsPage() {
             {filteredVods.map((vod) => {
               const meta = vod.videoId ? vodMeta[vod.videoId] : undefined;
               const top = vod.clips[0];
+              // Free footage is kept 5 days and Pro 30: grey while there is time, amber in the last 2 days, red once gone.
+              const expiry = vodExpiry(vod.clips);
               return (
                 <div
                   key={vod.url}
-                  className="bg-surface border border-border rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:border-accent/30 transition-colors"
+                  className={`bg-surface border rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-4 transition-colors ${expiry.kind === "expired" ? "border-red-500/40" : expiry.kind === "soon" ? "border-amber-400/50" : "border-border hover:border-accent/30"}`}
                 >
                   {/* Frame from the VOD's best clip — Klyp has no VOD-level still. */}
-                  <div className="w-full sm:w-40 flex-shrink-0">
+                  <div className={`w-full sm:w-40 flex-shrink-0 ${expiry.kind === "expired" ? "grayscale opacity-60" : ""}`}>
                     <ClipThumbnail clip={top} onPlay={() => { window.location.href = `/dashboard/clips?vod=${encodeURIComponent(vod.url)}`; }} />
                   </div>
 
@@ -616,6 +619,23 @@ export default function StreamsPage() {
                     <p className="text-sm text-foreground-muted mt-1.5 truncate">
                       Top clip: <span className="text-foreground">&ldquo;{top.title}&rdquo;</span>
                     </p>
+                    {expiry.kind === "ok" && (
+                      <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-surface-2 px-2 py-0.5 text-xs text-foreground-muted" data-expiry="ok">
+                        Footage kept {dayWord(expiry.daysLeft)} more
+                      </p>
+                    )}
+                    {expiry.kind === "soon" && (
+                      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-amber-300" data-expiry="soon">
+                        <span className="rounded-md bg-amber-400/10 px-2 py-0.5">Footage deleted in {dayWord(expiry.daysLeft)}</span>
+                        {!isPro && <Link href="/dashboard/upgrade" className="underline underline-offset-2 hover:text-amber-200">Keep 30 days with Pro</Link>}
+                      </p>
+                    )}
+                    {expiry.kind === "expired" && (
+                      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-red-300" data-expiry="expired">
+                        <span className="rounded-md bg-red-500/10 px-2 py-0.5">VOD expired · footage deleted</span>
+                        {!isPro && <Link href="/dashboard/upgrade" className="underline underline-offset-2 hover:text-red-200">Upgrade to keep clips next time</Link>}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-5 sm:gap-6 flex-shrink-0">
@@ -637,7 +657,7 @@ export default function StreamsPage() {
                     href={`/dashboard/clips?vod=${encodeURIComponent(vod.url)}`}
                     className="flex-shrink-0 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-accent/40 text-accent text-[15px] font-bold hover:bg-accent-glow transition-colors"
                   >
-                    View clips
+                    {expiry.kind === "expired" ? "Details" : "View clips"}
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
                     </svg>

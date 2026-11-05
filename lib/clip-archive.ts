@@ -17,6 +17,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { r2Storage } from '@/lib/r2';
+import { isMediaExpired } from '@/lib/clip-expiry';
 import { recordR2UsageEvent } from '@/lib/r2-usage';
 
 export const CLIP_BUCKET = "clip-media";
@@ -40,7 +41,7 @@ export async function getArchivedClip(clipId: string, userId: string): Promise<A
   if (!clipId || !userId) return null;
   const admin = createAdminClient();
   const columns: string = process.env.R2_ENABLED === '1'
-    ? 'id, start_seconds, end_seconds, master_path, proxy_path, poster_path, archive_status, archive_provider'
+    ? 'id, start_seconds, end_seconds, master_path, proxy_path, poster_path, archive_status, archive_provider, media_expires_at'
     : 'id, start_seconds, end_seconds, master_path, proxy_path, poster_path, archive_status';
   const { data, error } = await admin
     .from("clips")
@@ -51,7 +52,7 @@ export async function getArchivedClip(clipId: string, userId: string): Promise<A
   if (error || !data) return null;
   const row = data as unknown as { id: string; start_seconds: number; end_seconds: number;
     master_path: string | null; proxy_path: string | null; poster_path: string | null;
-    archive_status: string; archive_provider?: string };
+    archive_status: string; archive_provider?: string; media_expires_at?: string | null };
   return {
     id: row.id,
     originalStartSeconds: row.start_seconds,
@@ -59,7 +60,8 @@ export async function getArchivedClip(clipId: string, userId: string): Promise<A
     masterPath: row.master_path,
     proxyPath: row.proxy_path,
     posterPath: row.poster_path,
-    status: row.archive_status,
+    // A passed expiry date counts as expired right away, even before the cleanup job marks the row.
+    status: isMediaExpired(row) ? 'expired' : row.archive_status,
     provider: row.archive_provider === 'r2' ? 'r2' : 'supabase',
   };
 }

@@ -1,5 +1,6 @@
 /** Shared UI helpers for clip lists across dashboard pages. */
 import type { TimedWord } from "@/lib/clips";
+import { isMediaExpired } from "@/lib/clip-expiry";
 
 export interface SavedClip {
   id: string;
@@ -88,8 +89,9 @@ export function clipDimensions(
  * has been deleted and no archive was made. Nothing can render it, so the UI
  * says so instead of offering a preview or export that is certain to fail.
  */
-export function footageGone(clip: { archive_status?: string | null }): boolean {
-  return clip.archive_status === "unavailable" || clip.archive_status === "expired";
+export function footageGone(clip: { archive_status?: string | null; media_expires_at?: string | null }): boolean {
+  // A passed expiry date counts as gone right away, even before the cleanup job marks the clip expired.
+  return clip.archive_status === "unavailable" || isMediaExpired(clip);
 }
 
 /** Badge colors per clip type — keep in sync with AnalyzePanel.

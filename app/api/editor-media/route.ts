@@ -28,7 +28,8 @@ async function owner(req: NextRequest, clipId: string) {
   const profile = token ? await getProfileFromToken(token) : null;
   if (!profile) return null;
   const clip = await getArchivedClip(clipId, profile.id);
-  return clip ? profile : null;
+  // Expired clips keep nothing: not even the media the user imported into that clip's editor.
+  return clip && clip.status !== "expired" ? profile : null;
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
