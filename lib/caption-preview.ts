@@ -7,7 +7,7 @@ import { EMOJI_FONT, activeWordScale, emojiForText, isHighlightStyle, isUppercas
 
 /** Paint a whole phrase while one word changes to green at the shared cue step. */
 export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x: number, y: number,
-  maxWidth: number, style: CaptionStyle, activeWord = -1, wordOffset = 0, emoji: { char: string; color: string } | null = null): void {
+  maxWidth: number, style: CaptionStyle, activeWord = -1, wordOffset = 0, emoji: { char: string; color: string } | null = null, seedMs = 0): void {
   if (!isHighlightStyle(style)) {
     ctx.strokeText(text, x, y, maxWidth);
     ctx.fillText(text, x, y, maxWidth);
@@ -36,7 +36,7 @@ export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x:
     ctx.translate(cursor, 0);
     ctx.scale(grow(index), grow(index));
     ctx.strokeText(word, 0, 0);
-    ctx.fillStyle = wordLook(style, activeWord, wordOffset + index === activeWord).css;
+    ctx.fillStyle = wordLook(style, activeWord, wordOffset + index === activeWord, seedMs).css;
     ctx.fillText(word, 0, 0);
     ctx.restore();
     cursor += widths[index] + space;
@@ -62,7 +62,7 @@ export function drawCaptionPreview(
   const motion = captionMotion(style, tSeconds * 1000 - cue.startMs);
   const baseSize = style === "CLEAN" ? 58 : style === "SLIDE" ? 68
     : style === "PULSE" ? 78 : style === "SPARK" ? 88
-      : style === "COMIC" ? 76 : style === "KEYWORD" ? 66 : style === "HYPE" ? 82 : style === "POP" ? 120 : style === "FIRE" ? 68 : style === "TRICOLOR" ? 60 : style === "FOCUS" ? 62 : 82;
+      : style === "COMIC" ? 76 : style === "KEYWORD" ? 66 : style === "HYPE" ? 82 : style === "POP" ? 120 : style === "FIRE" ? 68 : style === "TRICOLOR" ? 60 : style === "FOCUS" || style === "DUO" ? 62 : 82;
   const size = Math.max(12, Math.round(baseSize * scale * motion.scale));
   const y = options.position === "TOP" ? 400 * scale
     : options.position === "CENTER" ? height / 2 : height - 80 * scale;
@@ -83,6 +83,6 @@ export function drawCaptionPreview(
   ctx.fillStyle = color;
   paintCaptionLine(ctx, text, width / 2, y + motion.yOffset * scale, width - 20, style,
     keywordAtTime(tSeconds * 1000 - cue.startMs, cue.endMs - cue.startMs, text.trim().split(/\s+/).length),
-    0, style === "FIRE" ? emojiForText(text) : null);
+    0, style === "FIRE" ? emojiForText(text) : null, cue.startMs);
   ctx.restore();
 }

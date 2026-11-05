@@ -217,6 +217,7 @@ export default function ClipPreview({
     FIRE: "Neon green word plus an emoji that matches",
     TRICOLOR: "Active word flashes bright green and red, no emoji",
     FOCUS: "One big neon green word at a time",
+    DUO: "One word at a time, flashing bright green or red",
   };
 
   return (

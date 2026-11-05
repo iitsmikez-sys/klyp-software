@@ -154,6 +154,8 @@ const STYLE_PARAMS: Record<
   TRICOLOR: { fontSize: 60, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
   // Two short lines, neon green active word drawn larger, solid outline and a soft shadow.
   FOCUS: { fontSize: 62, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
+  // One big word at a time, flashing bright green or red.
+  DUO: { fontSize: 62, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
 };
 
 /**
@@ -232,14 +234,14 @@ function emojiAssText(emoji: { char: string; color: string } | null): string {
   return emoji ? ` {\\fn${EMOJI_FONT}\\c${assColorOf(emoji.color)}}${emoji.char}` : "";
 }
 
-function keywordAssText(lines: string[], activeIndex: number, style: CaptionStyle = "KEYWORD", emoji: { char: string; color: string } | null = null): string {
+function keywordAssText(lines: string[], activeIndex: number, style: CaptionStyle = "KEYWORD", emoji: { char: string; color: string } | null = null, seedMs = 0): string {
   let offset = 0;
   return lines.map((line, lineIndex) => {
     const words = line.split(/\s+/).filter(Boolean);
     const grow = Math.round(activeWordScale(style) * 100);
     const colored = words.map((word, index) => offset + index === activeIndex
-      ? grow === 100 ? `{\\c${wordLook(style, activeIndex, true).ass}}${word}{\\c&H00FFFFFF&}`
-        : `{\\c${wordLook(style, activeIndex, true).ass}\\fscx${grow}\\fscy${grow}}${word}{\\c&H00FFFFFF&\\fscx100\\fscy100}`
+      ? grow === 100 ? `{\\c${wordLook(style, activeIndex, true, seedMs).ass}}${word}{\\c&H00FFFFFF&}`
+        : `{\\c${wordLook(style, activeIndex, true, seedMs).ass}\\fscx${grow}\\fscy${grow}}${word}{\\c&H00FFFFFF&\\fscx100\\fscy100}`
       : word).join(" ");
     offset += words.length;
     return colored + (lineIndex === lines.length - 1 ? emojiAssText(emoji) : "");
@@ -254,7 +256,7 @@ function keywordDialogues(startMs: number, endMs: number, lines: string[], style
   for (let index = 0; index < count; index++) {
     const start = Math.round(startMs + (endMs - startMs) * index / count);
     const end = Math.round(startMs + (endMs - startMs) * (index + 1) / count);
-    if (end > start) events.push(dialogue(start, end, keywordAssText(lines, index, style, emoji)));
+    if (end > start) events.push(dialogue(start, end, keywordAssText(lines, index, style, emoji, startMs)));
   }
   return events;
 }
@@ -483,7 +485,7 @@ export function generateTimedCueAss(
     for (const line of layout.lines) {
      const words = line.text.split(/\s+/).filter(Boolean);
      const last = line === layout.lines[layout.lines.length - 1];
-     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset, style, last ? emoji : null)}`));
+     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset, style, last ? emoji : null, cue.start_ms)}`));
      offset += words.length;
     }
    }
@@ -508,7 +510,7 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const p = STYLE_PARAMS[style];
  const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1));
  const lineHeight = Math.round(fontSize * 1.2);
- const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "FOCUS" ? text.toUpperCase() : text);
+ const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "FOCUS" || style === "DUO" ? text.toUpperCase() : text);
  const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : style === "TRICOLOR" ? 26 : style === "FOCUS" ? 16 : 20)/appearance.transform.scale)) : undefined);
  const outline = Math.max(2, Math.round(p.outline * res.h / DEFAULT_RES.h * OUTLINE_BOOST * (appearance.transform?.scale ?? 1)));
  const edgeMargin = Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));
