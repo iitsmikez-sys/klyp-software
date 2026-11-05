@@ -5,7 +5,7 @@ import { drawWatermarkPreview, generateWatermarkAss, watermarkFilter } from '../
 const bs = String.fromCharCode(92);
 const rowsOf = (ass) => ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
 
-test('Free export types the credit, holds, then folds into a small logo word (kl white, yp green)', () => {
+test('Free export types the white credit, holds, then folds into a small logo word (kl white, yp green)', () => {
   const ass = generateWatermarkAss({ w: 1080, h: 1920 }, 8);
   assert.match(ass, /PlayResX: 1080\nPlayResY: 1920/);
   const rows = rowsOf(ass);
@@ -14,8 +14,9 @@ test('Free export types the credit, holds, then folds into a small logo word (kl
   assert.match(rows[0], /^Dialogue: 0,0:00:00\.00,0:00:00\.09,Mark[^\n]*\\pos\(234,673\)\\frz270\}\{\\1c&HFFFFFF&\}C$/);
   assert.ok(rows[20].includes('Created by '));
   assert.match(rows[20], /^Dialogue: 0,0:00:01\.82,0:00:03\.10,Mark/);
-  // Logo colors: "kl" white, "yp" green (#00E5A0), the rest white.
-  assert.ok(rows[20].includes(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HA0E500&}yp{${bs}1c&HFFFFFF&}.world`));
+  // The sideways credit is all white: no green anywhere in it.
+  assert.ok(rows[20].includes(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HFFFFFF&}yp{${bs}1c&HFFFFFF&}.world`));
+  rows.slice(0, 22).forEach((row) => assert.ok(!row.includes('A0E500'), row));
   assert.doesNotMatch(ass, /Created with/);
   // The fold and the small mark keep the original timing.
   assert.match(ass, /0:00:03\.10,0:00:03\.80/);
@@ -26,11 +27,10 @@ test('Free export types the credit, holds, then folds into a small logo word (kl
   assert.match(watermarkFilter('/tmp/klyp-ass/watermark.ass'), /subtitles='\/tmp\/klyp-ass\/watermark\.ass'/);
 });
 
-test('letters appear one at a time, each part keeping its color', () => {
+test('letters appear one at a time, all white', () => {
   const rows = rowsOf(generateWatermarkAss({ w: 1080, h: 1920 }, 8));
-  // The 13th letter is the "l" of "kl"; the 14th is the first green letter.
-  assert.ok(rows[13].endsWith(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HA0E500&}y`), rows[13]);
-  assert.ok(rows[14].endsWith(`{${bs}1c&HA0E500&}yp`), rows[14]);
+  assert.ok(rows[13].endsWith(`{${bs}1c&HFFFFFF&}kl{${bs}1c&HFFFFFF&}y`), rows[13]);
+  assert.ok(rows[14].endsWith(`{${bs}1c&HFFFFFF&}yp`), rows[14]);
 });
 
 test('short exports have no invalid subtitle intervals', () => {
@@ -56,7 +56,7 @@ test('preview types in the logo colors, then draws the small logo word in the sa
   drawWatermarkPreview(typing, 1.2, 1080, 1920);
   const typed = typing.calls.filter((c) => c[0] === 'text');
   assert.equal(typed.map((c) => c[3]).join(''), 'Created by kly');
-  assert.deepEqual(typed.map((c) => c[1]), ['#FFFFFF', '#FFFFFF', '#00E5A0']);
+  assert.ok(typed.every((c) => c[1] === '#FFFFFF'), 'the typed credit is all white');
   assert.ok(typing.calls.some((c) => c[0] === 'translate' && c[1] === 233.9 && c[2] === 673));
 
   const done = fakeCtx();

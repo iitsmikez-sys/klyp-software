@@ -1,6 +1,6 @@
 /** Free-export watermark shared by the ASS burn and canvas previews. */
 
-/** The credit, in the logo's colors: "kl" white, "yp" green, the rest white. */
+/** The sideways credit is all white. Only the small "klyp" mark at the end has the logo colors ("kl" white, "yp" green). */
 type Color = { css: string; ass: string };
 type Part = { text: string; color: Color };
 const WHITE: Color = { css: "#FFFFFF", ass: "&HFFFFFF&" };
@@ -8,7 +8,7 @@ const GREEN: Color = { css: "#00E5A0", ass: "&HA0E500&" };
 const PARTS: readonly Part[] = [
   { text: "Created by ", color: WHITE },
   { text: "kl", color: WHITE },
-  { text: "yp", color: GREEN },
+  { text: "yp", color: WHITE },
   { text: ".world", color: WHITE },
 ];
 /** The small mark that stays after the credit has folded away: just the logo word. */
