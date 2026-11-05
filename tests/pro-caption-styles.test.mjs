@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { CAPTION_STYLES, FREE_CAPTION_STYLES, isProCaptionStyle, resolveCaptionStyle } from "../lib/clips.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
-const PRO = ["CLEAN", "SLIDE", "BOUNCE", "GLOW", "COMIC", "KEYWORD", "HYPE", "POP", "FIRE", "TRICOLOR", "FOCUS", "DUO"];
+const PRO = ["CLEAN", "SLIDE", "BOUNCE", "GLOW", "COMIC", "KEYWORD", "HYPE", "POP", "FIRE", "TRICOLOR", "FOCUS", "DUO", "MARKER"];
 
 test("four caption styles are free, every other one is Pro", () => {
   assert.deepEqual([...FREE_CAPTION_STYLES].sort(), ["BOLD", "KLYP", "PULSE", "SPARK"]);

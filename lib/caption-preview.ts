@@ -3,7 +3,7 @@ import { keywordAtTime, defaultCaptionFontFamily, type CaptionCue } from "./capt
 import { ensureCaptionFonts } from "./caption-fonts";
 import { CAPTION_HEX, type CaptionOptions } from "./editor-captions";
 import { captionMotion } from "./caption-template-motion";
-import { EMOJI_FONT, activeWordScale, emojiForText, isHighlightStyle, isUppercaseStyle, wordLook } from "./caption-looks";
+import { EMOJI_FONT, MARKER_BOX, activeWordScale, emojiForText, isHighlightStyle, isUppercaseStyle, wordLook } from "./caption-looks";
 
 /** Paint a whole phrase while one word changes to green at the shared cue step. */
 export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x: number, y: number,
@@ -35,6 +35,7 @@ export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x:
     ctx.save();
     ctx.translate(cursor, 0);
     ctx.scale(grow(index), grow(index));
+    if (style === "MARKER" && wordOffset + index === activeWord) paintMarkerBox(ctx, widths[index]);
     ctx.strokeText(word, 0, 0);
     ctx.fillStyle = wordLook(style, activeWord, wordOffset + index === activeWord, seedMs).css;
     ctx.fillText(word, 0, 0);
@@ -49,6 +50,25 @@ export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x:
     ctx.font = original;
   }
   ctx.restore();
+}
+
+/** The Marker style's purple box behind the word being said, drawn at the text origin (left edge of the word). */
+function paintMarkerBox(ctx: CanvasRenderingContext2D, wordWidth: number): void {
+  const em = parseFloat(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? "40");
+  const probe = ctx.measureText("Hxgy");
+  const padX = em * 0.18, padY = em * 0.16, radius = Math.max(2, em * 0.1);
+  const x = -padX, y = -probe.actualBoundingBoxAscent - padY, w = wordWidth + 2 * padX, h = probe.actualBoundingBoxAscent + probe.actualBoundingBoxDescent + 2 * padY;
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+  const fill = ctx.fillStyle;
+  ctx.fillStyle = MARKER_BOX.css;
+  ctx.fill();
+  ctx.fillStyle = fill;
 }
 
 /** Draw the currently active ASS cue at approximately its export position. */
