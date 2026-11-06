@@ -40,7 +40,8 @@ export default function OutOfSparksDialog({ isPro, onClose }: { isPro: boolean; 
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true" aria-labelledby="out-of-sparks-title" data-out-of-sparks-dialog>
-      <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+      <div className="relative w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+        <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-lg leading-none text-foreground-muted transition-colors hover:bg-surface-2 hover:text-foreground">×</button>
         <div className="mb-3 flex justify-center">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/15"><SparkIcon size={22} className="text-accent" /></span>
         </div>
@@ -80,13 +81,12 @@ export default function OutOfSparksDialog({ isPro, onClose }: { isPro: boolean; 
             <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-foreground">Klyp Pro</p>
-                <p className="text-xs text-foreground-muted">500 Sparks every month, no watermark</p>
+                <p className="text-xs text-foreground-muted">More Sparks every month, more benefits, no watermark</p>
               </div>
               <a href="/dashboard/upgrade" className="whitespace-nowrap rounded-lg border border-border px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-subtle">See Pro</a>
             </div>
           </>
         )}
-        <button type="button" onClick={onClose} className="mt-4 w-full text-center text-xs text-foreground-muted underline underline-offset-2 hover:text-foreground">Maybe later</button>
       </div>
     </div>
   );

@@ -25,7 +25,8 @@ test("the pop-up sells the one-time packs first, Pro second, and starts the same
   assert.ok(dialog.includes("You&apos;re out of Sparks") && dialog.includes("No subscription needed"));
   assert.ok(dialog.includes('fetch("/api/stripe/packs"') && dialog.includes("JSON.stringify({ pack: packId })"));
   assert.ok(dialog.includes("SPARK_PACKS.map") && dialog.includes("packSavingsPercent"));
-  assert.ok(dialog.includes("{!isPro && (") && dialog.includes("500 Sparks every month"));
-  assert.ok(dialog.includes("Maybe later") && dialog.includes('e.key === "Escape"'));
+  assert.ok(dialog.includes("{!isPro && (") && dialog.includes("More Sparks every month, more benefits, no watermark"));
+  assert.ok(dialog.includes('aria-label="Close"') && dialog.includes('e.key === "Escape"'));
+  assert.doesNotMatch(dialog, /Maybe later|come back in|each<|[$]0[.][0-9]+ each/);
   assert.doesNotMatch(dialog, /¢|cents? each|each\b.*Spark/i);
 });
