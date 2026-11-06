@@ -45,10 +45,10 @@ test("clips without quotes (older results) are returned unchanged", () => {
   assert.deepEqual(trimClip(old, words), old);
 });
 
-test("a start quote that would leave under 12 seconds before the end is not used", () => {
+test("a start quote that would leave under 16 seconds before the end is not used (the review drops clips under 15)", () => {
   const out = trimClip(clip({ end_seconds: 40, start_quote: "so it's like we're good then", end_quote: "appreciate it bro" }), words);
   assert.equal(out.start_seconds, 0, "the start stays where it was");
-  assert.ok(out.end_seconds - out.start_seconds >= 12);
+  assert.ok(out.end_seconds - out.start_seconds >= 16);
 });
 
 test("a quote far from the proposed cut is not trusted", () => {
@@ -65,6 +65,14 @@ test("the thumbnail time stays inside the new cut, whether it was given from the
   assert.ok(outside.thumbnail_seconds < outside.end_seconds);
 });
 
+test("a trim never leaves a clip under 15 seconds, which the boundary review would drop", async () => {
+  const { MIN_TRIMMED_SECONDS } = await import("../lib/clip-cut-snap.ts");
+  assert.ok(MIN_TRIMMED_SECONDS > 15);
+  const short = [...say("so I threw a Halloween party in my apartment", 0, 6), ...say("and we got an eviction notice", 6, 12), ...say("so it's like we're good then", 12, 16)];
+  const out = trimClip({ start_seconds: 0, end_seconds: 22, thumbnail_seconds: 5, start_quote: "and we got an eviction notice", end_quote: "so it's like we're good then" }, short);
+  assert.ok(out.end_seconds - out.start_seconds >= 15, `${out.end_seconds - out.start_seconds}s`);
+});
+
 test("trimClipBatch trims every clip and keeps their order", () => {
   const out = trimClipBatch([clip(), clip({ start_quote: undefined, end_quote: undefined })], words);
   assert.ok(out[0].end_seconds < 36);
@@ -75,7 +83,7 @@ test("the pipeline snaps the cuts before the boundary review, asks for quotes, a
   const pipe = read("lib/analyze-pipeline.ts");
   assert.match(pipe, /reviewClipBatch\(trimClipBatch\(judged, words\), words, durationSeconds\)/);
   assert.match(pipe, /reviewClipBatch\(trimClipBatch\(nextJudged, words\), words, durationSeconds\)/);
-  assert.match(pipe, /AIM FOR 20-40 seconds/);
+  assert.match(pipe, /AIM FOR 15-35 seconds/);
   assert.match(pipe, /start_quote and end_quote/);
   assert.match(pipe, /"trim-v1"/);
   assert.match(pipe, /why it is NOT scored higher/);
