@@ -26,28 +26,28 @@ test("only the room left is used: 9 top picks -> 1 extra, 10 -> none, 3 -> up to
   assert.equal(pickExtras({ mainPicks: mains(3), candidates: cand, requestedCount: 10 }).length, 7);
 });
 
-test("a video with NO top pick returns the best of the stream (45 to 64), up to the requested count, and nothing weaker", () => {
-  const best = pickExtras({ mainPicks: [], candidates: [clip(5000, 62), clip(6000, 60), clip(7000, 48), clip(8000, 46), clip(9000, 40)], requestedCount: 10 });
-  assert.deepEqual(best.map((c) => c.viral_score), [62, 60, 48, 46]);
-  assert.deepEqual(pickExtras({ mainPicks: [], candidates: [clip(5000, 44), clip(6000, 30)], requestedCount: 10 }), [], "nothing worth showing at all");
+test("a video with NO top pick returns the best of the stream (40 to 64), up to the requested count, and nothing weaker", () => {
+  const best = pickExtras({ mainPicks: [], candidates: [clip(5000, 62), clip(6000, 60), clip(7000, 48), clip(8000, 41), clip(9000, 39)], requestedCount: 10 });
+  assert.deepEqual(best.map((c) => c.viral_score), [62, 60, 48, 41]);
+  assert.deepEqual(pickExtras({ mainPicks: [], candidates: [clip(5000, 39), clip(6000, 30)], requestedCount: 10 }), [], "nothing worth showing at all");
   assert.deepEqual(pickExtras({ mainPicks: [], candidates: [clip(5000, 62), clip(5030, 60)], requestedCount: 1 }).length, 1, "near-duplicates collapse to one");
   assert.deepEqual(pickExtras({ mainPicks: [], candidates: [clip(5000, 62)], requestedCount: 10, priorWindows: [{ start_seconds: 4990, end_seconds: 5020 }] }), [], "already delivered moments are skipped");
 });
 
 test("a result is 'best of this stream' only when every clip is below the quality bar", async () => {
   const { isBestOfResult, BEST_OF_MIN_SCORE } = await import("../lib/clip-extras.ts");
-  assert.equal(BEST_OF_MIN_SCORE, 45);
+  assert.equal(BEST_OF_MIN_SCORE, 40);
   assert.equal(isBestOfResult([{ viral_score: 62 }, { viral_score: 50 }]), true);
   assert.equal(isBestOfResult([{ viral_score: 80 }, { viral_score: 60 }]), false);
   assert.equal(isBestOfResult([]), false);
 });
 
-test("only scores from 45 up to (not including) 65 count as extras", () => {
+test("only scores from 40 up to (not including) 65 count as extras", () => {
   const extras = pickExtras({
     mainPicks: mains(3), requestedCount: 10,
-    candidates: [clip(5000, 44.9), clip(6000, 45), clip(7000, 64.9), clip(8000, 65), clip(9000, 80), clip(10000, Number.NaN)],
+    candidates: [clip(5000, 39.9), clip(6000, 40), clip(7000, 64.9), clip(8000, 65), clip(9000, 80), clip(10000, Number.NaN)],
   });
-  assert.deepEqual(extras.map((c) => c.viral_score).sort((a, b) => a - b), [45, 64.9]);
+  assert.deepEqual(extras.map((c) => c.viral_score).sort((a, b) => a - b), [40, 64.9]);
 });
 
 test("extras never overlap, or start within 60s of, a top pick, an earlier extra or a moment already delivered", () => {
@@ -149,9 +149,9 @@ test("findClips: only 3 top picks -> the list is filled up to 10 with the next-b
 });
 
 test("findClips: nothing cleared the bar -> the best of the stream is returned instead of an empty page", async () => {
-  const h = harness({ clips: [], also_consider: [full(5000, 61), full(5400, 58), full(9000, 40)] });
+  const h = harness({ clips: [], also_consider: [full(5000, 61), full(5400, 58), full(9000, 40), full(9400, 39)] });
   const { clips } = await h.run();
-  assert.deepEqual(Array.from(clips, (c) => c.viral_score), [61, 58], "the 40 is too weak to show");
+  assert.deepEqual(Array.from(clips, (c) => c.viral_score), [61, 58, 40], "the 40 is shown, the 39 is too weak");
 });
 
 test("findClips: nothing cleared the bar and nothing offered -> no clips at all", async () => {
@@ -175,9 +175,10 @@ test("findClips: the near-miss instruction is in the prompt, and the main list's
   await h.run();
   const system = h.seen.created[0].system;
   assert.match(system, /ALSO CONSIDER/);
-  assert.match(system, /scored 45-64/);
+  assert.match(system, /scored 40-64/);
   assert.match(system, /reaches \d+ clips|reaches 10 clips/);
   assert.match(system, /best of this stream/);
-  assert.match(system, /scores 45-64/);
+  assert.match(system, /scores 40-64/);
+  assert.match(system, /if nothing scored at least 40/);
   assert.match(system, /QUALITY FLOOR: include a clip ONLY if its viral_score is 65 or higher/);
 });

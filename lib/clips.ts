@@ -135,7 +135,7 @@ export const ClipAnalysisSchema = z.object({
   also_consider: z
     .array(ClipSchema)
     .max(10)
-    .describe("When the main list is shorter than the requested count: the next-best real moments scoring 45-64, best first, enough to fill the list up to the requested count. Empty when the main list is full or nothing real scored 45 or more."),
+    .describe("When the main list is shorter than the requested count: the next-best real moments scoring 40-64, best first, enough to fill the list up to the requested count. Empty when the main list is full or nothing real scored 40 or more."),
 });
 
 export type Clip = z.infer<typeof ClipSchema>;
@@ -165,7 +165,7 @@ export function clipAnalysisSchemaForContentType(contentType: ContentType) {
     also_consider: z
       .array(clipSchemaForContentType(contentType))
       .max(10)
-      .describe("When the main list is shorter than the requested count: the next-best real moments scoring 45-64, best first, enough to fill the list up to the requested count. Empty when the main list is full or nothing real scored 45 or more."),
+      .describe("When the main list is shorter than the requested count: the next-best real moments scoring 40-64, best first, enough to fill the list up to the requested count. Empty when the main list is full or nothing real scored 40 or more."),
   });
 }
 

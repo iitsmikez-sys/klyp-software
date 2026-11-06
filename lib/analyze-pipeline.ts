@@ -541,7 +541,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## ALSO CONSIDER (near-misses, separate list)
 
-After your main list, fill "also_consider" with the next-best moments that scored 45-64, below the quality floor, best first, so the full list reaches ${clipCount} clips whenever the footage has enough real moments. Do this whenever your main list has fewer than ${clipCount} clips; if the main list is already full, return an empty list. If NO moment cleared 65 ("best of this stream"), still return the best real moments you found here (scores 45-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones and never filler; if nothing scored at least 45, return an empty list. At most (${clipCount} minus your main list length) moments. Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${roleplaySection}${languageNote}${keywordSection}`,
+After your main list, fill "also_consider" with the next-best moments that scored 40-64, below the quality floor, best first, so the full list reaches ${clipCount} clips whenever the footage has enough real moments. Do this whenever your main list has fewer than ${clipCount} clips; if the main list is already full, return an empty list. If NO moment cleared 65 ("best of this stream"), still return the best real moments you found here (scores 40-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones and never filler; if nothing scored at least 40, return an empty list. At most (${clipCount} minus your main list length) moments. Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${roleplaySection}${languageNote}${keywordSection}`,
     messages: [
       {
         role: "user",
@@ -868,7 +868,7 @@ export async function runAnalysisPipeline(opts: {
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
     // "relatable-v1": results found before relatable moments and the share trigger were added; "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
-    signals: ["trim-v1", "story-v1", "relatable-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
+    signals: ["trim-v1", "story-v1", "relatable-v1", "floor40-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
