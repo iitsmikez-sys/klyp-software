@@ -7,7 +7,8 @@ const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").re
 test("the AI score pill sits in the top right of the picture, shows for every clip with a score, and never blocks a click", () => {
   const badge = read("components/ScoreBadge.tsx");
   assert.doesNotMatch(badge, /isTopPick\(\{ viral_score: score \}\)\) return null;/);
-  assert.match(badge, /A near-miss: just under the 65 top-pick bar\./);
+  assert.match(badge, /Below the 65 top-pick bar\./);
+  assert.match(badge, /border-amber-400\/60 text-amber-300/, "scores below the bar are amber, so the colour is the only label");
   assert.match(badge, /typeof score !== "number" \|\| !Number\.isFinite\(score\)/);
   assert.match(badge, /pointer-events-none absolute right-2 top-2/);
   assert.match(badge, /<span aria-hidden="true">★<\/span>/);
