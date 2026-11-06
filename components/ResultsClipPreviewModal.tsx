@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaptionStyle } from "@/lib/clips";
+import ScoreBreakdown from "./ScoreBreakdown";
 import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
@@ -454,7 +455,8 @@ export default function ResultsClipPreviewModal({
             {detailsOpen ? "Hide details" : "Details"}
           </button>
           {detailsOpen && <div className="pt-3 text-sm text-foreground-muted">
-            {clip.reason && <p className="mb-2"><span className="font-medium text-foreground">Why this moment:</span> {clip.reason}</p>}
+            <div className="mb-3 max-w-xs"><ScoreBreakdown clip={clip} top={3} /></div>
+            {clip.reason &&<p className="mb-2"><span className="font-medium text-foreground">Why this moment:</span> {clip.reason}</p>}
             {clip.caption && <p className="mb-2">{clip.caption}</p>}
             <p>Original VOD: {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}</p>
           </div>}

@@ -182,6 +182,8 @@ export default function AnalyzePanel() {
     start_seconds: clip.start_seconds, end_seconds: clip.end_seconds,
     hooks: clip.hooks, words: clip.words, created_at: new Date(0).toISOString(),
     archive_status: archiveStatuses[index] ?? null,
+    dim_hype: clip.dimensions?.hype ?? null, dim_emotion: clip.dimensions?.emotion ?? null, dim_skill: clip.dimensions?.skill ?? null,
+    dim_comedy: clip.dimensions?.comedy ?? null, dim_storyline: clip.dimensions?.storyline ?? null,
   })), [clips, savedIds, analyzedUrl, archiveStatuses]);
   useEffect(() => {
     const entries = Object.entries(savedIds);
