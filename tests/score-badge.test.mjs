@@ -4,9 +4,10 @@ import { readFileSync } from "node:fs";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 
-test("the AI score pill sits in the top right of the picture, shows only for top picks, and never blocks a click", () => {
+test("the AI score pill sits in the top right of the picture, shows for every clip with a score, and never blocks a click", () => {
   const badge = read("components/ScoreBadge.tsx");
-  assert.match(badge, /isTopPick\(\{ viral_score: score \}\)\) return null;/);
+  assert.doesNotMatch(badge, /isTopPick\(\{ viral_score: score \}\)\) return null;/);
+  assert.match(badge, /A near-miss: just under the 65 top-pick bar\./);
   assert.match(badge, /typeof score !== "number" \|\| !Number\.isFinite\(score\)/);
   assert.match(badge, /pointer-events-none absolute right-2 top-2/);
   assert.match(badge, /<span aria-hidden="true">★<\/span>/);

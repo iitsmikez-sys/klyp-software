@@ -5,12 +5,13 @@ import { isTopPick } from "../lib/clip-extras.ts";
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 
-test("the clip Details show a simple star-and-number AI score, for top picks only", async () => {
+test("the clip Details show a simple star-and-number AI score, for every clip", async () => {
   const modal = await read("components/ClipPreviewModal.tsx");
-  const at = modal.indexOf("Top picks only");
+  const at = modal.indexOf("Every clip shows its score");
   assert.ok(at > 0, "score block is present");
   const block = modal.slice(at, at + 900);
-  assert.match(block, /isTopPick\(clip\)/);
+  assert.doesNotMatch(block, /isTopPick\(clip\) &&/);
+  assert.match(block, /A near-miss: just under the 65 top-pick bar\./);
   assert.match(block, /Math\.round\(clip\.viral_score\)/);
   assert.match(block, /AI score/);
   // it sits inside the Details panel, above "Why this moment"
@@ -31,7 +32,7 @@ test("the score shows in Details and as a small pill on the clip cards, but not 
   assert.doesNotMatch(modal, /ScoreBadge|ScoreBreakdown/);
 });
 
-test("a clip below the 65 bar (a near-miss extra) shows no score", () => {
+test("the 65 bar still decides what counts as a top pick, even though every clip shows its score", () => {
   assert.equal(isTopPick({ viral_score: 87 }), true);
   assert.equal(isTopPick({ viral_score: 65 }), true);
   assert.equal(isTopPick({ viral_score: 64.9 }), false);
