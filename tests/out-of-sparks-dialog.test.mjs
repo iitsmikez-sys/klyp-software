@@ -9,11 +9,12 @@ test("pack savings are whole percents against the smallest pack, never cents", (
   assert.deepEqual(SPARK_PACKS.map(packSavingsPercent), [0, 10, 18]);
 });
 
-test("running out of Sparks no longer locks the link box: trying to use it opens the pack pop-up", () => {
+test("running low no longer locks the link box: they can paste a VOD, and only Find Clips opens the pack pop-up", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes("<OutOfSparksDialog isPro={isPro}"));
-  // the link box is only locked while analyzing, and focusing it while out of Sparks opens the pop-up
-  assert.ok(panel.includes("disabled={loading}\n                onFocus={() => { if (outOfSparks) setSparksDialog(true); }}"));
+  // the link box is only locked while analyzing; clicking or pasting into it never opens the pop-up
+  assert.ok(panel.includes('aria-label="VOD URL"'));
+  assert.ok(!panel.includes("onFocus={() => { if (outOfSparks)"));
   // Find Clips stays clickable when out of Sparks and opens the pop-up instead of analyzing
   assert.ok(panel.includes("disabled={!canSubmit && !outOfSparks}"));
   assert.ok(panel.includes("if (outOfSparks) { setSparksDialog(true); return; }"));
