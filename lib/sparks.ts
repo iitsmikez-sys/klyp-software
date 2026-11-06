@@ -19,6 +19,16 @@ export const CLIP_COUNT_COST: Record<ClipCount, number> = { 1: 0, 2: 0, 3: 0, 5:
 export const DEFAULT_CLIP_COUNT: ClipCount = 10;
 export const MAX_CLIP_COUNT: ClipCount = 10;
 
+/**
+ * How many clips a manual analysis looks for, by video length: 10 up to 2 hours, 12 up to 4 hours, 20 beyond.
+ * A long VOD has far more good moments than a short one. Still included in the price, and still only
+ * moments above the quality floor are returned. The database accepts 12 and 20 (record_analysis_clips).
+ */
+export function clipCountForDuration(durationSeconds: number): ClipCount {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 2 * 3600) return 10;
+  return durationSeconds <= 4 * 3600 ? 12 : 20;
+}
+
 /** Clips are included in the video price, so a returned clip adds no charge. */
 export function clipCharge(_requested: ClipCount, _returned: number): number {
   return 0;

@@ -36,6 +36,7 @@ import {
   CLIP_COUNT_OPTIONS,
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
+  clipCountForDuration,
   type ClipCount,
 } from "@/lib/sparks";
 import { detectChatSpikes, type ChatSpike } from "@/lib/twitch-chat";
@@ -243,6 +244,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     releaseSlot();
     return fail("validate", capacity.message, capacity.status);
   }
+  // Longer videos have more good moments, so they look for more clips (the job's saved intent stays at the default).
+  clipCount = clipCountForDuration(verifiedDuration);
   const upfrontCost = estimateSparks(verifiedDuration) + CLIP_COUNT_COST[clipCount];
   if (profile.sparks < upfrontCost) {
     releaseSlot();

@@ -30,7 +30,7 @@ function routeHarness({ duration = '7200', sparks = 20 } = {}) {
     '@/lib/plan-limits': planLimits,
     '@/lib/cors': { withCors: value => value, corsPreflight: () => {} },
     '@/lib/sparks': { estimateSparks: seconds => seconds < 1800 ? 10 : seconds < 3600 ? 20 : seconds < 7200 ? 35 : 50,
-      MIN_ANALYZE_COST: 20, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3 },
+      MIN_ANALYZE_COST: 20, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3, clipCountForDuration: () => 3 },
     '@/lib/twitch-chat': { detectChatSpikes: async () => null },
     '@/lib/analyze-pipeline': { runAnalysisPipeline: async () => { paidPipelineCalls++; return {
       clips: [], skipped: 0, durationSeconds: 7200, transcriptChars: 0, words: [] }; } },
