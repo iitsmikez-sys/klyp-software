@@ -409,6 +409,10 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
 
   const keywordSection = keyword?.trim() ? formatKeywordSection(keyword.trim(), keywordMatchSeconds) : "";
   const loudSection = contentType === "gaming" ? formatLoudMomentsForPrompt(loudMoments, quietStream) : "";
+  // Roleplay and talk-heavy gaming (GTA-style RP): the clip is what is said, not what is played.
+  const roleplaySection = contentType === "gaming"
+    ? `\n\n## ROLEPLAY AND DIALOGUE-DRIVEN GAMING\n\nMany gaming streams, especially roleplay servers (GTA-style RP), are improvised dialogue with the game as the background. For these the clip is what is SAID, not what is played, so do not look only for skill, rage or loud audio.\n- Treat these as top-tier moments: a quotable catchphrase or comeback ("Who on Money Time? Me."), an in-character confession or complaint, a funny misunderstanding (police mistaking a piece of bread for drugs), an ironic mini-story where a plan backfires, a roast or clapback that ends on a closing line, a deadpan one-liner, a confident boast.\n- Score them for the audience that gets them. Character names, crews, server slang and in-world jargon are PART of the appeal: never mark a clip down for needing roleplay knowledge. Mark it down only when the point is truly lost without that knowledge.\n- Hype and skill can honestly be near zero. A clean setup, a turn, and a last line that lands can score 70-85, and a quotable line with a clear comeback can score 80 or more. Judge hook, payoff, quotability and share trigger.`
+    : "";
   const languageNote = nonEnglish ? languageSection() : "";
   const priorSection = priorWindows.length
     ? `\n\n## MOMENTS ALREADY DELIVERED TO THIS USER\n\nThese time ranges were already sold from this VOD. Find the next best genuinely different moments outside these ranges. Do not return a clip within 60 seconds of any listed start or overlapping a listed range. If no other moment clears the quality floor, return an empty clips array.\n${priorWindows.map((w) => `- ${Math.round(w.start_seconds)}s to ${Math.round(w.end_seconds)}s`).join("\n")}`
@@ -522,6 +526,8 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 - caption: 1-2 social-ready sentences with 2-4 relevant hashtags (game name, #clutch/#fail/#gaming-style tags, trending where genuinely fitting).
 - reason: 2-3 plain sentences telling the streamer, editor-to-editor, why this moment earns its score. Name the arc (setup, turn, payoff), say who would share or save it and why (for example "anyone who has cancelled plans last minute"), and finish with why it is NOT scored higher (for example repetition, a slow start, or no visual payoff). If you quote a line, quote only the punchline that is inside the clip.
 
+- Never put a slur or other hateful or platform-flagged word in a title, hook, caption or reason, even when the streamer says it in the clip. Describe the moment in clean words instead; the clip's own audio is not changed.
+
 ## THUMBNAIL FRAME
 
 - thumbnail_seconds: the single timestamp inside the clip where the frame is most expressive — peak reaction face, the win screen, the moment of impact. This is usually at or just after the emotional peak, NOT the start of the clip.
@@ -535,7 +541,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## ALSO CONSIDER (near-misses, separate list)
 
-After your main list, fill "also_consider" with the next-best moments that scored 45-64, below the quality floor, best first, so the full list reaches ${clipCount} clips whenever the footage has enough real moments. Do this whenever your main list has fewer than ${clipCount} clips; if the main list is already full, return an empty list. If NO moment cleared 65 ("best of this stream"), still return the best real moments you found here (scores 45-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones and never filler; if nothing scored at least 45, return an empty list. At most (${clipCount} minus your main list length) moments. Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${languageNote}${keywordSection}`,
+After your main list, fill "also_consider" with the next-best moments that scored 45-64, below the quality floor, best first, so the full list reaches ${clipCount} clips whenever the footage has enough real moments. Do this whenever your main list has fewer than ${clipCount} clips; if the main list is already full, return an empty list. If NO moment cleared 65 ("best of this stream"), still return the best real moments you found here (scores 45-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones and never filler; if nothing scored at least 45, return an empty list. At most (${clipCount} minus your main list length) moments. Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${roleplaySection}${languageNote}${keywordSection}`,
     messages: [
       {
         role: "user",
@@ -862,7 +868,7 @@ export async function runAnalysisPipeline(opts: {
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
     // "relatable-v1": results found before relatable moments and the share trigger were added; "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
-    signals: ["trim-v1", "story-v1", "relatable-v1", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
+    signals: ["trim-v1", "story-v1", "relatable-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
