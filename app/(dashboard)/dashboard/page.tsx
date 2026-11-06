@@ -4,6 +4,7 @@ import UpgradeButton from "@/components/UpgradeButton";
 import SavedClips from "@/components/SavedClips";
 import ConnectStreamBanner from "@/components/ConnectStreamBanner";
 import DashboardStats from "@/components/DashboardStats";
+import AudienceQuestion from "@/components/AudienceQuestion";
 
 export default function DashboardPage() {
   return (
@@ -28,6 +29,7 @@ export default function DashboardPage() {
       <ConnectStreamBanner />
 
       <DashboardStats />
+      <AudienceQuestion />
     </div>
   );
 }
