@@ -1061,11 +1061,11 @@ export default function AnalyzePanel() {
                 aria-label="VOD URL"
                 value={url}
                 onChange={(e) => setUrl(e.target.value.trim())}
-                placeholder="Paste a YouTube or Twitch VOD link"
+                placeholder="Paste a YouTube, Twitch, or Kick VOD link"
                 disabled={loading}
                 className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
               />
-              {!isPro && <p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch and YouTube videos up to 2 hours.</p>}
+              {!isPro && <p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch, Kick and YouTube videos up to 2 hours.</p>}
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
                 <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
               </div>}

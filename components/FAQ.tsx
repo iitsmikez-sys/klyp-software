@@ -10,7 +10,7 @@ const faqs = [
   },
   {
     q: "Which streaming platforms are supported?",
-    a: "You can analyze published YouTube videos and Twitch VODs. Connect a Twitch channel to queue automatic clipping after a new VOD is published.",
+    a: "You can analyze published YouTube videos, Twitch VODs, and Kick VODs (Kick is in beta). Connect a Twitch channel to queue automatic clipping after a new VOD is published.",
   },
   {
     q: "Do I need to leave my computer on?",
