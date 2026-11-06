@@ -10,5 +10,7 @@ export async function register() {
     startAutoClipWorker();
     const { startEditorAssetCleanup } = await import("@/lib/editor-asset-cleanup");
     startEditorAssetCleanup();
+    const { startActivationEmailWorker } = await import("@/lib/activation-email-worker");
+    startActivationEmailWorker();
   }
 }
