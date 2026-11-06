@@ -50,7 +50,7 @@ export const maxDuration = 300;
 export const OPTIONS = corsPreflight;
 
 const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
+  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
 /** Bundled caption fonts (public/fonts) handed to libass so captions render in the same fonts as the preview. */
 const fontsDir = () => path.join(process.cwd?.() ?? ".", "public", "fonts");

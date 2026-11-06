@@ -40,7 +40,7 @@ const THUMB_WIDTH = 640;
 const THUMB_HEIGHT = 360;
 
 const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
+  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
 /**
  * Cache identity for one clip's frame: the source, the exact range, and the
