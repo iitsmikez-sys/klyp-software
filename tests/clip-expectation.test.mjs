@@ -19,14 +19,15 @@ test("the screen names the ceiling for this video's length and never states a pl
   assert.match(src, /clipCountForDuration\(/);
 });
 
-test("longer videos look for more clips: 10 up to 2 hours, 12 up to 4 hours, 20 beyond", async () => {
+test("longer videos look for more clips: 10 up to 2 hours, 12 up to 4 hours, 15 beyond (the cap)", async () => {
   const { clipCountForDuration } = await import("../lib/sparks.ts");
   assert.equal(clipCountForDuration(15 * 60), 10);
   assert.equal(clipCountForDuration(2 * 3600), 10);
   assert.equal(clipCountForDuration(2 * 3600 + 1), 12);
   assert.equal(clipCountForDuration(4 * 3600), 12);
-  assert.equal(clipCountForDuration(4 * 3600 + 1), 20);
-  assert.equal(clipCountForDuration(8 * 3600), 20);
+  assert.equal(clipCountForDuration(4 * 3600 + 1), 15);
+  assert.equal(clipCountForDuration(8 * 3600), 15);
+  assert.equal(clipCountForDuration(24 * 3600), 15, "never more than 15");
   assert.equal(clipCountForDuration(Number.NaN), 10);
   assert.equal(clipCountForDuration(0), 10);
 });
@@ -42,7 +43,14 @@ test("the analyze route sets the count from the verified length, and the finder 
   assert.ok(route.indexOf("clipCount = clipCountForDuration(verifiedDuration)") < route.indexOf("const upfrontCost"));
   assert.equal(discoveryPoolSize(10), 10);
   assert.equal(discoveryPoolSize(12), 20);
-  assert.equal(discoveryPoolSize(20), 20);
+  assert.equal(discoveryPoolSize(15), 20);
+});
+
+test("the database never sees a count it rejects: 15 is sent as the next value it accepts", () => {
+  const jobs = read("lib/analysis-jobs.ts");
+  assert.match(jobs, /DB_REQUESTED_CLIP_VALUES = \[1, 2, 3, 5, 7, 10, 12, 20\]/);
+  assert.match(jobs, /DB_REQUESTED_CLIP_VALUES\.find\(\(value\) => value >= clipCount\) \?\? 20/);
+  for (const n of [10, 12, 15]) assert.ok([1, 2, 3, 5, 7, 10, 12, 20].find((v) => v >= n) >= n);
 });
 
 test("the prompt looks for stories with a payoff on purpose and judges them on hook and payoff, not hype or skill", () => {

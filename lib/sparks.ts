@@ -13,20 +13,21 @@ export const MIN_ANALYZE_COST = 20;
  */
 export const CLIP_COUNT_OPTIONS = [10] as const;
 /** Wider than the options: older jobs and the internal candidate pool (20) still carry other counts. */
-export type ClipCount = 1 | 2 | 3 | 5 | 7 | 10 | 12 | 20;
+export type ClipCount = 1 | 2 | 3 | 5 | 7 | 10 | 12 | 15 | 20;
 /** Kept so older callers keep working: clips are included in the video price. */
-export const CLIP_COUNT_COST: Record<ClipCount, number> = { 1: 0, 2: 0, 3: 0, 5: 0, 7: 0, 10: 0, 12: 0, 20: 0 };
+export const CLIP_COUNT_COST: Record<ClipCount, number> = { 1: 0, 2: 0, 3: 0, 5: 0, 7: 0, 10: 0, 12: 0, 15: 0, 20: 0 };
 export const DEFAULT_CLIP_COUNT: ClipCount = 10;
 export const MAX_CLIP_COUNT: ClipCount = 10;
 
 /**
- * How many clips a manual analysis looks for, by video length: 10 up to 2 hours, 12 up to 4 hours, 20 beyond.
- * A long VOD has far more good moments than a short one. Still included in the price, and still only
- * moments above the quality floor are returned. The database accepts 12 and 20 (record_analysis_clips).
+ * How many clips a manual analysis looks for, by video length: 10 up to 2 hours, 12 up to 4 hours, 15 beyond
+ * (15 is the cap). A long VOD has far more good moments than a short one. Still included in the price, and
+ * still only moments above the quality floor are returned. The database does not list 15, so the accounting
+ * call sends the next value it accepts (see accountAnalysisJob in lib/analysis-jobs.ts).
  */
 export function clipCountForDuration(durationSeconds: number): ClipCount {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 2 * 3600) return 10;
-  return durationSeconds <= 4 * 3600 ? 12 : 20;
+  return durationSeconds <= 4 * 3600 ? 12 : 15;
 }
 
 /** Clips are included in the video price, so a returned clip adds no charge. */
