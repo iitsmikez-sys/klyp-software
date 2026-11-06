@@ -25,7 +25,9 @@ export const OPTIONS = corsPreflight;
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
-const durationCache = new Map<string, VodProbe>();
+const durationCache = new Map<string, { probe: VodProbe; at: number }>();
+/** Kick's thumbnail links are signed and stop working after 5 minutes, so a cached one must not be reused for long. */
+const SIGNED_THUMBNAIL_TTL_MS = 4 * 60_000;
 
 export async function GET(req: NextRequest) {
   // This route only runs on the processing service — set DEPLOYMENT_TARGET
@@ -47,7 +49,9 @@ export async function GET(req: NextRequest) {
   catch { return withCors(NextResponse.json({ error: "Could not verify your account." }, { status: 500 })); }
   if (!profile) return withCors(NextResponse.json({ error: "Sign in to check a VOD." }, { status: 401 }));
 
-  let probe = durationCache.get(url);
+  let cached = durationCache.get(url);
+  if (cached && cached.probe.thumbnail?.includes("X-Amz-Signature") && Date.now() - cached.at > SIGNED_THUMBNAIL_TTL_MS) cached = undefined;
+  let probe = cached?.probe;
 
   if (probe === undefined) {
     const releaseSlot = acquireUserProcessingSlot(profile.id);
@@ -62,7 +66,7 @@ export async function GET(req: NextRequest) {
         url,
       ]));
       probe = parseVodProbe(out);
-      durationCache.set(url, probe);
+      durationCache.set(url, { probe, at: Date.now() });
       if (durationCache.size > 1000) durationCache.delete(durationCache.keys().next().value!);
     } catch (err) {
       return withCors(

@@ -58,3 +58,11 @@ test("every copy of the VOD link check in the app accepts Kick links, including 
     assert.ok(re.test("https://www.twitch.tv/videos/123"), `${p} still accepts Twitch`);
   }
 });
+
+test("a cached video probe stops being reused once its signed Kick thumbnail link would have expired", () => {
+  const route = read("app/api/duration/route.ts");
+  assert.match(route, /SIGNED_THUMBNAIL_TTL_MS = 4 \* 60_000/);
+  assert.ok(route.includes('cached.probe.thumbnail?.includes("X-Amz-Signature")'));
+  assert.ok(route.includes("Date.now() - cached.at > SIGNED_THUMBNAIL_TTL_MS"));
+  assert.ok(route.includes("durationCache.set(url, { probe, at: Date.now() })"));
+});
