@@ -26,3 +26,10 @@ export function packForSession(session: { amount_total?: number | null; currency
 
 export const isPackSession = (session: { mode?: string | null; metadata?: Record<string, string> | null }): boolean =>
   session.mode === "payment" && session.metadata?.kind === "spark_pack";
+
+/** How much cheaper a pack is per Spark than the smallest pack, as a whole percent (0 for the smallest). Shown as "Save 10%", never as cents. */
+export function packSavingsPercent(pack: SparkPack): number {
+  const smallest = SPARK_PACKS[0];
+  const base = smallest.cents / smallest.sparks;
+  return Math.max(0, Math.round((1 - pack.cents / pack.sparks / base) * 100));
+}
