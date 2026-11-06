@@ -89,7 +89,7 @@ import { analysisCharge, estimateSparks, CLIP_COUNT_COST, clipCharge, UPSCALE_CO
 import { SPARKS_ALLOWANCE } from "../lib/tier.ts";
 
 test("Spark pricing: per video with clips included, allowances unchanged", () => {
-  assert.deepEqual(Object.values(CLIP_COUNT_COST), [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(Object.values(CLIP_COUNT_COST), [0, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.deepEqual([10, 29 * 60].map((s) => estimateSparks(s)), [20, 20]);
   assert.equal(estimateSparks(45 * 60), 35);
   assert.equal(estimateSparks(90 * 60), 50);

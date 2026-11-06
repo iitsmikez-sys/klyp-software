@@ -38,7 +38,7 @@ function harness({ plan = "free", url = YT, uploadId, seconds = 600, sparks = 50
       getProfileFromToken: async () => ({ id: "fixture-user", sparks, ...PROFILES[plan] }) },
     "@/lib/cors": { withCors: (v) => v, corsPreflight: () => {} },
     "@/lib/sparks": { estimateSparks: (s) => (s < 1800 ? 10 : s < 3600 ? 20 : s < 7200 ? 35 : 50), MIN_ANALYZE_COST: 14,
-      CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3 },
+      CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3, clipCountForDuration: () => 3 },
     "@/lib/twitch-chat": { detectChatSpikes: async () => null },
     "@/lib/analyze-pipeline": { runAnalysisPipeline: async () => { state.paidPipelineCalls++; return { clips: [], skipped: 0, durationSeconds: seconds, transcriptChars: 0, words: [] }; } },
     "@/lib/vod-discovery-pipeline": { runDiscoveryPipeline: async () => { throw new Error("unexpected v2"); } },

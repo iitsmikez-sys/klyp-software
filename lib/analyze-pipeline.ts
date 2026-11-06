@@ -419,7 +419,9 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
 
   const request = {
     model,
-    max_tokens: 16000,
+    // 20 clips (long videos) write about twice as much, so they get more room. Kept under the size where the
+    // SDK refuses a non-streaming request.
+    max_tokens: clipCount > 10 ? 20000 : 16000,
     thinking: { type: "adaptive" },
     system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
 
@@ -474,7 +476,9 @@ DEPRIORITIZE — these rarely make good clips even when nothing about them is te
 - Slow builds: a moment that needs a long runway to get anywhere. If the payoff doesn't land within roughly the first 45 seconds, it's a weak candidate no matter what happens after.
 - Setup without payoff: a promising claim, bet, or buildup that the transcript never resolves. Half a moment is not a moment — this is UNEXPECTED_TURN's own rule above, generalized to every signal.
 - Anything that would only work by stretching past ~90 seconds. The 15-60s boundary below already enforces a hard cap tighter than this — don't reach for a marginal moment that only makes sense if you imagine a longer window than you're allowed to cut.
-- Calm, low-energy talking with no reaction, tension, or punchline. A streamer explaining something clearly but flatly, in a level conversational tone, is not a clip — it never goes viral no matter how interesting the content is. If nothing in the signal list above actually fires on a moment, that absence is usually exactly this: skip it. Never select a moment on vibes alone; every clip needs a real, identifiable trigger.
+- Calm, low-energy talking with no turn, tension, or punchline. A streamer explaining something clearly but flatly, in a level conversational tone, is not a clip — it never goes viral no matter how interesting the content is. If nothing in the signal list above actually fires on a moment, that absence is usually exactly this: skip it. Never select a moment on vibes alone; every clip needs a real, identifiable trigger.
+
+STORIES ARE NOT FLAT TALKING. A streamer telling a short, self-contained story with a clear setup, a turn, and a payoff line is clippable even when the delivery is calm or deadpan: a party that ends in an eviction warning, a random encounter that ends in an absurd invitation, a bad day that ends in a perfect one-liner. These are UNEXPECTED_TURN or RELATABLE_QUOTABLE moments. Look for them on purpose, in every part of the VOD, not only the loud parts. Judge a story clip on its hook (does the first line make a stranger stop?), its payoff (does the last line land?), and how relatable it is to someone who has never seen this streamer. Do NOT mark it down for lacking hype or skill: for a story, the storyline and comedic dimensions carry the score, and a story with a strong hook and a clean payoff can honestly score 70-85. A story with no payoff, or one that needs a paragraph of context, still does not clip.
 
 Signals are your DETECTION layer; the five scoring dimensions remain your JUDGMENT layer. A moment found by any signal still has to earn its viral_score and clear the quality floor.
 
@@ -849,7 +853,8 @@ export async function runAnalysisPipeline(opts: {
     windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
-    signals: ["trim-v1", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
+    // "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
+    signals: ["trim-v1", "story-v1", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;

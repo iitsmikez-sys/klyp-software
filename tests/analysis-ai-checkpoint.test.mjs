@@ -32,7 +32,7 @@ test("saved AI checkpoint bypasses all providers and commits through accounting 
     "@/lib/profile-token": { bearerToken: () => "test-token", getProfileFromToken: async () => ({ id: "user-1", sparks: 200, tier: "pro", stripe_subscription_id: "sub_test" }) },
     "@/lib/plan-limits": planLimits,
     "@/lib/cors": { withCors: (response) => response, corsPreflight: () => {} },
-    "@/lib/sparks": { estimateSparks: () => 35, MIN_ANALYZE_COST: 10, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3 },
+    "@/lib/sparks": { estimateSparks: () => 35, MIN_ANALYZE_COST: 10, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3, clipCountForDuration: () => 3 },
     "@/lib/twitch-chat": { detectChatSpikes: async () => null },
     "@/lib/analyze-pipeline": { runAnalysisPipeline: async () => { pipelineCalls++; throw new Error("provider pipeline must not run"); } },
     "@/lib/vod-discovery-pipeline": { runDiscoveryPipeline: async () => { pipelineCalls++; throw new Error("V2 provider pipeline must not run"); } },
