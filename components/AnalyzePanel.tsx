@@ -946,7 +946,7 @@ export default function AnalyzePanel() {
         <UnsavedClipsDialog count={unsavedCount} keptDays={keptDays} isPro={tier === "pro"} saving={saving !== null}
           onStay={() => setLeaveTarget(null)} onLeave={leaveNow} onSaveAll={saveAllThenLeave} />
       )}
-      {sparksDialog && outOfSparks && <OutOfSparksDialog isPro={isPro} onClose={() => setSparksDialog(false)} />}
+      {sparksDialog && outOfSparks && <OutOfSparksDialog isPro={isPro} balance={balance} onClose={() => setSparksDialog(false)} />}
       {/* ── Full-screen pipeline progress overlay ── */}
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
@@ -1064,7 +1064,6 @@ export default function AnalyzePanel() {
                 onChange={(e) => setUrl(e.target.value.trim())}
                 placeholder="Paste a YouTube or Twitch VOD link"
                 disabled={loading}
-                onFocus={() => { if (outOfSparks) setSparksDialog(true); }}
                 className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
               />
               {!isPro && <p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch and YouTube videos up to 2 hours.</p>}
@@ -1315,7 +1314,7 @@ export default function AnalyzePanel() {
           <div className="flex items-center gap-2 mt-4 px-4 py-3 rounded-lg bg-accent-glow border border-accent/30 text-sm">
             <SparkIcon size={14} className="text-accent flex-shrink-0" />
             <span className="text-foreground">
-              You&apos;re out of Sparks —{" "}
+              {balance !== null && balance > 0 ? `You have ${balance} Sparks and a video starts at ${MIN_ANALYZE_COST} —` : "You’re out of Sparks —"}{" "}
               <button type="button" onClick={() => setSparksDialog(true)} className="text-accent font-semibold hover:underline">
                 get more Sparks
               </button>{" "}

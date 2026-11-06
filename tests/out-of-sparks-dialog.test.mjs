@@ -9,11 +9,12 @@ test("pack savings are whole percents against the smallest pack, never cents", (
   assert.deepEqual(SPARK_PACKS.map(packSavingsPercent), [0, 10, 18]);
 });
 
-test("running out of Sparks no longer locks the link box: trying to use it opens the pack pop-up", () => {
+test("running low no longer locks the link box: they can paste a VOD, and only Find Clips opens the pack pop-up", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes("<OutOfSparksDialog isPro={isPro}"));
-  // the link box is only locked while analyzing, and focusing it while out of Sparks opens the pop-up
-  assert.ok(panel.includes("disabled={loading}\n                onFocus={() => { if (outOfSparks) setSparksDialog(true); }}"));
+  // the link box is only locked while analyzing; clicking or pasting into it never opens the pop-up
+  assert.ok(panel.includes('aria-label="VOD URL"'));
+  assert.ok(!panel.includes("onFocus={() => { if (outOfSparks)"));
   // Find Clips stays clickable when out of Sparks and opens the pop-up instead of analyzing
   assert.ok(panel.includes("disabled={!canSubmit && !outOfSparks}"));
   assert.ok(panel.includes("if (outOfSparks) { setSparksDialog(true); return; }"));
@@ -22,11 +23,18 @@ test("running out of Sparks no longer locks the link box: trying to use it opens
 
 test("the pop-up sells the one-time packs first, Pro second, and starts the same pack checkout as the Upgrade page", () => {
   const dialog = read("components/OutOfSparksDialog.tsx");
-  assert.ok(dialog.includes("You&apos;re out of Sparks") && dialog.includes("No subscription needed"));
+  assert.ok(dialog.includes("You're out of Sparks") && dialog.includes("No subscription needed"));
   assert.ok(dialog.includes('fetch("/api/stripe/packs"') && dialog.includes("JSON.stringify({ pack: packId })"));
   assert.ok(dialog.includes("SPARK_PACKS.map") && dialog.includes("packSavingsPercent"));
   assert.ok(dialog.includes("{!isPro && (") && dialog.includes("More Sparks every month, more benefits, no watermark"));
   assert.ok(dialog.includes('aria-label="Close"') && dialog.includes('e.key === "Escape"'));
   assert.doesNotMatch(dialog, /Maybe later|come back in|each<|[$]0[.][0-9]+ each/);
   assert.doesNotMatch(dialog, /¢|cents? each|each\b.*Spark/i);
+});
+
+test("someone with a few Sparks, but fewer than the cheapest video, is told the real reason", () => {
+  const dialog = read("components/OutOfSparksDialog.tsx");
+  assert.ok(dialog.includes("You need more Sparks") && dialog.includes("a video starts at ${MIN_ANALYZE_COST}"));
+  const panel = read("components/AnalyzePanel.tsx");
+  assert.ok(panel.includes("balance={balance}") && panel.includes("balance > 0 ?"));
 });

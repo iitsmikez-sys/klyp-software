@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { DEFAULT_PACK_ID, SPARK_PACKS, packById, packSavingsPercent } from "@/lib/spark-packs";
+import { MIN_ANALYZE_COST } from "@/lib/sparks";
 import { SparkIcon } from "./SparksBalance";
 
 const TAGS: Record<string, string> = { p250: "Most popular", p500: "Best value" };
 
 /** Shown when someone with no Sparks tries to analyze a video: buy a one-time pack, or look at Pro. */
-export default function OutOfSparksDialog({ isPro, onClose }: { isPro: boolean; onClose: () => void }) {
+export default function OutOfSparksDialog({ isPro, balance, onClose }: { isPro: boolean; balance: number | null; onClose: () => void }) {
+  // Some Sparks left but fewer than the cheapest video: say so, instead of claiming they have none.
+  const hasSome = balance !== null && balance > 0;
   const [packId, setPackId] = useState<string>(DEFAULT_PACK_ID);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +48,8 @@ export default function OutOfSparksDialog({ isPro, onClose }: { isPro: boolean; 
         <div className="mb-3 flex justify-center">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/15"><SparkIcon size={22} className="text-accent" /></span>
         </div>
-        <h3 id="out-of-sparks-title" className="text-center font-syne text-xl font-bold text-foreground">You&apos;re out of Sparks</h3>
-        <p className="mb-5 mt-1.5 text-center text-sm text-foreground-muted">Top up once and keep clipping. No subscription needed.</p>
+        <h3 id="out-of-sparks-title" className="text-center font-syne text-xl font-bold text-foreground">{hasSome ? "You need more Sparks" : "You're out of Sparks"}</h3>
+        <p className="mb-5 mt-1.5 text-center text-sm text-foreground-muted">{hasSome ? `You have ${balance} Sparks and a video starts at ${MIN_ANALYZE_COST}. ` : ""}Top up once and keep clipping. No subscription needed.</p>
 
         <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Spark pack">
           {SPARK_PACKS.map((p) => {
