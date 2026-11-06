@@ -27,9 +27,17 @@ export function packForSession(session: { amount_total?: number | null; currency
 export const isPackSession = (session: { mode?: string | null; metadata?: Record<string, string> | null }): boolean =>
   session.mode === "payment" && session.metadata?.kind === "spark_pack";
 
-/** How much cheaper a pack is per Spark than the smallest pack, as a whole percent (0 for the smallest). Shown as "Save 10%", never as cents. */
+/**
+ * How much cheaper a pack is per Spark than the smallest pack, as a whole percent rounded down (0 for the
+ * smallest), so a discount is never overstated. Shown as "Save 10%", never as cents. Integer math keeps it exact.
+ */
 export function packSavingsPercent(pack: SparkPack): number {
   const smallest = SPARK_PACKS[0];
-  const base = smallest.cents / smallest.sparks;
-  return Math.max(0, Math.round((1 - pack.cents / pack.sparks / base) * 100));
+  const paidPercent = (pack.cents * smallest.sparks * 100) / (pack.sparks * smallest.cents);
+  return Math.max(0, Math.floor(100 - paidPercent));
+}
+
+/** The smallest pack that covers a shortfall of Sparks, or the biggest pack when none does. */
+export function packToCover(shortfall: number): SparkPack {
+  return SPARK_PACKS.find((p) => p.sparks >= shortfall) ?? SPARK_PACKS[SPARK_PACKS.length - 1];
 }

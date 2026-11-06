@@ -1,19 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DEFAULT_PACK_ID, SPARK_PACKS, packById, packSavingsPercent } from "@/lib/spark-packs";
+import { SPARK_PACKS, packById, packSavingsPercent, packToCover } from "@/lib/spark-packs";
 import { MIN_ANALYZE_COST } from "@/lib/sparks";
 import { SparkIcon } from "./SparksBalance";
 
 const TAGS: Record<string, string> = { p250: "Most popular", p500: "Best value" };
 
-/** Shown when someone with no Sparks tries to analyze a video: buy a one-time pack, or look at Pro. */
-export default function OutOfSparksDialog({ isPro, balance, onClose }: { isPro: boolean; balance: number | null; onClose: () => void }) {
+/** The video the person pasted, shown so the pop-up reads as "your clips are one step away". */
+export type PendingVideo = { title: string; thumbnail?: string | null; platform: string; duration: string; cost: number };
+
+/** Shown when someone without enough Sparks tries to analyze a video: buy a one-time pack, or look at Pro. */
+export default function OutOfSparksDialog({ isPro, balance, video, onClose }: { isPro: boolean; balance: number | null; video?: PendingVideo | null; onClose: () => void }) {
   // Some Sparks left but fewer than the cheapest video: say so, instead of claiming they have none.
   const hasSome = balance !== null && balance > 0;
-  const [packId, setPackId] = useState<string>(DEFAULT_PACK_ID);
+  const shortfall = video && balance !== null ? Math.max(0, video.cost - balance) : 0;
+  const [packId, setPackId] = useState<string>(() => (shortfall > 0 ? packToCover(shortfall).id : "p250"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
   const pack = packById(packId);
 
   useEffect(() => {
@@ -43,13 +48,38 @@ export default function OutOfSparksDialog({ isPro, balance, onClose }: { isPro: 
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true" aria-labelledby="out-of-sparks-title" data-out-of-sparks-dialog>
-      <div className="relative w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-2xl">
         <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-lg leading-none text-foreground-muted transition-colors hover:bg-surface-2 hover:text-foreground">×</button>
-        <div className="mb-3 flex justify-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/15"><SparkIcon size={22} className="text-accent" /></span>
-        </div>
-        <h3 id="out-of-sparks-title" className="text-center font-syne text-xl font-bold text-foreground">{hasSome ? "You need more Sparks" : "You're out of Sparks"}</h3>
-        <p className="mb-5 mt-1.5 text-center text-sm text-foreground-muted">{hasSome ? `You have ${balance} Sparks and a video starts at ${MIN_ANALYZE_COST}. ` : ""}Top up once and keep clipping. No subscription needed.</p>
+
+        {video ? (
+          <>
+            <h3 id="out-of-sparks-title" className="text-center font-syne text-xl font-bold text-foreground">Your clips are almost ready</h3>
+            <p className="mb-4 mt-1.5 text-center text-sm text-foreground-muted">Top up once and Klyp finds the best moments in this video.</p>
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-background/50 p-2.5" data-pending-video>
+              <div className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-2">
+                {video.thumbnail && !imageFailed
+                  ? <img src={video.thumbnail} alt="" onError={() => setImageFailed(true)} className="h-full w-full object-cover" />
+                  : <SparkIcon size={20} className="text-accent" />}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{video.title}</p>
+                <p className="mt-0.5 text-xs text-foreground-muted">{video.platform} · {video.duration} · costs {video.cost} Sparks</p>
+              </div>
+            </div>
+            <div className="mb-5 mt-1.5 flex justify-between px-0.5 text-xs text-foreground-muted">
+              <span className="flex items-center gap-1"><SparkIcon size={12} className="text-accent" /> You have {balance ?? 0} Sparks</span>
+              {shortfall > 0 && <span>You need {shortfall} more</span>}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mb-3 flex justify-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/15"><SparkIcon size={22} className="text-accent" /></span>
+            </div>
+            <h3 id="out-of-sparks-title" className="text-center font-syne text-xl font-bold text-foreground">{hasSome ? "You need more Sparks" : "You're out of Sparks"}</h3>
+            <p className="mb-5 mt-1.5 text-center text-sm text-foreground-muted">{hasSome ? `You have ${balance} Sparks and a video starts at ${MIN_ANALYZE_COST}. ` : ""}Top up once and keep clipping. No subscription needed.</p>
+          </>
+        )}
 
         <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Spark pack">
           {SPARK_PACKS.map((p) => {
