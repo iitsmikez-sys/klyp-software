@@ -946,7 +946,7 @@ export default function AnalyzePanel() {
         <UnsavedClipsDialog count={unsavedCount} keptDays={keptDays} isPro={tier === "pro"} saving={saving !== null}
           onStay={() => setLeaveTarget(null)} onLeave={leaveNow} onSaveAll={saveAllThenLeave} />
       )}
-      {sparksDialog && outOfSparks && <OutOfSparksDialog isPro={isPro} balance={balance} onClose={() => setSparksDialog(false)} />}
+      {sparksDialog && outOfSparks && <OutOfSparksDialog isPro={isPro} balance={balance} video={inputMode === "url" && previewDuration !== null && totalEstimate !== null ? { title: previewMeta?.title || `${platformName(url)} VOD`, thumbnail: previewImageFailed ? null : previewMeta?.thumbnail, platform: platformName(url), duration: fmtTime(previewDuration), cost: totalEstimate } : null} onClose={() => setSparksDialog(false)} />}
       {/* ── Full-screen pipeline progress overlay ── */}
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
