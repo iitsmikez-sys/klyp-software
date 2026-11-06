@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { vodSourceKey } from "../lib/vod-source.ts";
 import { sourceKindOf, checkSourceLimit, describeLimits } from "../lib/plan-limits.ts";
 
@@ -32,8 +32,23 @@ test("the platform label says Kick", () => {
   assert.ok(ui.includes('host === "kick.com"') && ui.includes('return "Kick"'));
 });
 
-test("all four routes that take a VOD link accept Kick links", () => {
-  for (const p of ["app/api/analyze/route.ts", "app/api/duration/route.ts", "app/api/preview/route.ts", "app/api/clip/route.ts"]) {
+function filesWithLinkCheck(dir) {
+  const found = [];
+  for (const entry of readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) found.push(...filesWithLinkCheck(rel));
+    else if (/\.(ts|tsx)$/.test(entry.name) && /VOD_URL_PATTERN =/.test(read(rel))) found.push(rel);
+  }
+  return found;
+}
+
+test("every copy of the VOD link check in the app accepts Kick links, including the paste box and thumbnails", () => {
+  const files = [...filesWithLinkCheck("app"), ...filesWithLinkCheck("lib"), ...filesWithLinkCheck("components")];
+  for (const must of ["components/AnalyzePanel.tsx", "app/api/thumbnail/route.ts", "lib/legacy-clip-export-route.ts"]) {
+    assert.ok(files.includes(must), `${must} is checked`);
+  }
+  assert.ok(files.length >= 7, "found every copy of the link check");
+  for (const p of files) {
     const m = /VOD_URL_PATTERN =\s*(\/.+\/i);/.exec(read(p));
     assert.ok(m, `${p} has the pattern`);
     const re = eval(m[1]);

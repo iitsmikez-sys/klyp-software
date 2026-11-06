@@ -35,7 +35,7 @@ import UnsavedClipsDialog from "./UnsavedClipsDialog";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
 
 const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
+  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
 /** Export can include a first-time source download + full-quality burn — generous but finite. */
 const EXPORT_TIMEOUT_MS = 10 * 60_000;
@@ -1096,7 +1096,7 @@ export default function AnalyzePanel() {
                   </div>
                 </div>
               )}
-              {url && !VOD_URL_PATTERN.test(url) && <p className="mt-2 text-xs text-foreground-muted">Use a Twitch or YouTube VOD link to get started.</p>}
+              {url && !VOD_URL_PATTERN.test(url) && <p className="mt-2 text-xs text-foreground-muted">Use a Twitch, Kick, or YouTube VOD link to get started.</p>}
             </div>
           ) : (
             <>
