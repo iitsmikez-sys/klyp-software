@@ -11,7 +11,8 @@ test("the clip Details show a simple star-and-number AI score, for every clip", 
   assert.ok(at > 0, "score block is present");
   const block = modal.slice(at, at + 900);
   assert.doesNotMatch(block, /isTopPick\(clip\) &&/);
-  assert.match(block, /A near-miss: just under the 65 top-pick bar\./);
+  assert.match(block, /Below the 65 top-pick bar\./);
+  assert.match(block, /bg-amber-300/);
   assert.match(block, /Math\.round\(clip\.viral_score\)/);
   assert.match(block, /AI score/);
   // it sits inside the Details panel, above "Why this moment"

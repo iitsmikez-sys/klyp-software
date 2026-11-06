@@ -126,8 +126,8 @@ export const ClipAnalysisSchema = z.object({
     .describe("The best clippable moments (up to the requested count, only those above the quality floor), ordered by viral_score descending"),
   also_consider: z
     .array(ClipSchema)
-    .max(3)
-    .describe("Up to 3 near-miss moments scoring 55-64 when the main list is short and at least one moment cleared 65; or, when nothing cleared 65, up to 3 of the best real moments scoring 45-64 (best of this stream). Empty otherwise."),
+    .max(10)
+    .describe("When the main list is shorter than the requested count: the next-best real moments scoring 45-64, best first, enough to fill the list up to the requested count. Empty when the main list is full or nothing real scored 45 or more."),
 });
 
 export type Clip = z.infer<typeof ClipSchema>;
@@ -156,8 +156,8 @@ export function clipAnalysisSchemaForContentType(contentType: ContentType) {
       .describe("The best clippable moments (up to the requested count, only those above the quality floor), ordered by viral_score descending"),
     also_consider: z
       .array(clipSchemaForContentType(contentType))
-      .max(3)
-      .describe("Up to 3 near-miss moments scoring 55-64 when the main list is short and at least one moment cleared 65; or, when nothing cleared 65, up to 3 of the best real moments scoring 45-64 (best of this stream). Empty otherwise."),
+      .max(10)
+      .describe("When the main list is shorter than the requested count: the next-best real moments scoring 45-64, best first, enough to fill the list up to the requested count. Empty when the main list is full or nothing real scored 45 or more."),
   });
 }
 

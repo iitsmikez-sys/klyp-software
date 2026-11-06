@@ -1,21 +1,21 @@
 /**
  * Near-miss "extra" clips. The clip finder keeps its strict bar (65+) for the main list; Claude may also
- * return up to 3 moments that scored 55-64. They are added to the result, below the main picks, only
- * to fill the list towards the requested count.
+ * also return the next-best moments that scored 45-64. They are added to the result, below the main picks,
+ * only to fill the list towards the requested count (10), so a video is rarely left with 3 clips.
  *
  * Rules (each one has a test):
- *  - with at least one main pick: only scores from 55 up to (not including) the bar
- *  - with NO main pick ("best of this stream"): the best moments from 45 up to the bar, so a quiet or small
+ *  - only scores from 45 up to (not including) the bar; nothing weaker is ever shown
+ *  - with NO main pick ("best of this stream") the same rule applies, so a quiet or small
  *    streamer is not left empty-handed; the analysis is free then (see migration 043)
- *  - at most 3, and never more than the room left to the requested count
+ *  - never more than the room left to the requested count
  *  - never overlapping, or starting within 60 seconds of, a main pick, an earlier extra, or a moment
  *    the user already received
  */
 export const QUALITY_BAR = 65;
-export const EXTRA_MIN_SCORE = 55;
+export const EXTRA_MIN_SCORE = 45;
 /** The lowest score shown when nothing cleared the bar. */
 export const BEST_OF_MIN_SCORE = 45;
-export const MAX_EXTRAS = 3;
+export const MAX_EXTRAS = 10;
 export const EXTRA_DEDUPE_WINDOW_S = 60;
 
 type Window = { start_seconds: number; end_seconds: number };
@@ -33,7 +33,7 @@ export function pickExtras<T extends Scored>(opts: {
 }): T[] {
   const { mainPicks, candidates, requestedCount, priorWindows = [] } = opts;
   const bestOf = mainPicks.length === 0;
-  const room = bestOf ? MAX_EXTRAS : Math.min(MAX_EXTRAS, requestedCount - mainPicks.length);
+  const room = Math.min(MAX_EXTRAS, requestedCount - mainPicks.length);
   if (room <= 0) return [];
   const floor = bestOf ? BEST_OF_MIN_SCORE : EXTRA_MIN_SCORE;
   const kept: T[] = [];

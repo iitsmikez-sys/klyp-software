@@ -14,21 +14,21 @@ const mains = (n, from = 1000) => Array.from({ length: n }, (_, i) => clip(from 
 
 /* the ranking rules */
 test("7 top picks and plenty of near-misses -> exactly 3 extras, best first, to reach 10", () => {
-  const extras = pickExtras({ mainPicks: mains(7), candidates: [clip(5000, 58), clip(6000, 63), clip(7000, 56), clip(8000, 61)], requestedCount: 10 });
+  const extras = pickExtras({ mainPicks: mains(7), candidates: [clip(5000, 58), clip(6000, 63), clip(7000, 56), clip(8000, 61), clip(9000, 50)], requestedCount: 10 });
   assert.deepEqual(extras.map((c) => c.viral_score), [63, 61, 58]);
-  assert.equal(MAX_EXTRAS, 3);
+  assert.equal(MAX_EXTRAS, 10);
 });
 
-test("only the room left is used: 9 top picks -> 1 extra, 10 -> none, 5 -> at most 3", () => {
-  const cand = [clip(5000, 62), clip(6000, 61), clip(7000, 60), clip(8000, 59), clip(9000, 58)];
+test("only the room left is used: 9 top picks -> 1 extra, 10 -> none, 3 -> up to 7 to reach 10", () => {
+  const cand = Array.from({ length: 9 }, (_, i) => clip(5000 + i * 200, 62 - i));
   assert.equal(pickExtras({ mainPicks: mains(9), candidates: cand, requestedCount: 10 }).length, 1);
   assert.equal(pickExtras({ mainPicks: mains(10), candidates: cand, requestedCount: 10 }).length, 0);
-  assert.equal(pickExtras({ mainPicks: mains(5), candidates: cand, requestedCount: 10 }).length, 3);
+  assert.equal(pickExtras({ mainPicks: mains(3), candidates: cand, requestedCount: 10 }).length, 7);
 });
 
-test("a video with NO top pick returns the best of the stream (45 to 64), at most 3, and nothing weaker", () => {
+test("a video with NO top pick returns the best of the stream (45 to 64), up to the requested count, and nothing weaker", () => {
   const best = pickExtras({ mainPicks: [], candidates: [clip(5000, 62), clip(6000, 60), clip(7000, 48), clip(8000, 46), clip(9000, 40)], requestedCount: 10 });
-  assert.deepEqual(best.map((c) => c.viral_score), [62, 60, 48]);
+  assert.deepEqual(best.map((c) => c.viral_score), [62, 60, 48, 46]);
   assert.deepEqual(pickExtras({ mainPicks: [], candidates: [clip(5000, 44), clip(6000, 30)], requestedCount: 10 }), [], "nothing worth showing at all");
   assert.deepEqual(pickExtras({ mainPicks: [], candidates: [clip(5000, 62), clip(5030, 60)], requestedCount: 1 }).length, 1, "near-duplicates collapse to one");
   assert.deepEqual(pickExtras({ mainPicks: [], candidates: [clip(5000, 62)], requestedCount: 10, priorWindows: [{ start_seconds: 4990, end_seconds: 5020 }] }), [], "already delivered moments are skipped");
@@ -42,12 +42,12 @@ test("a result is 'best of this stream' only when every clip is below the qualit
   assert.equal(isBestOfResult([]), false);
 });
 
-test("only scores from 55 up to (not including) 65 count as extras", () => {
+test("only scores from 45 up to (not including) 65 count as extras", () => {
   const extras = pickExtras({
     mainPicks: mains(3), requestedCount: 10,
-    candidates: [clip(5000, 54.9), clip(6000, 55), clip(7000, 64.9), clip(8000, 65), clip(9000, 80), clip(10000, Number.NaN)],
+    candidates: [clip(5000, 44.9), clip(6000, 45), clip(7000, 64.9), clip(8000, 65), clip(9000, 80), clip(10000, Number.NaN)],
   });
-  assert.deepEqual(extras.map((c) => c.viral_score).sort((a, b) => a - b), [55, 64.9]);
+  assert.deepEqual(extras.map((c) => c.viral_score).sort((a, b) => a - b), [45, 64.9]);
 });
 
 test("extras never overlap, or start within 60s of, a top pick, an earlier extra or a moment already delivered", () => {
@@ -64,11 +64,11 @@ test("a top pick is a clip at or above 65", () => {
 });
 
 /* Claude's answer shape */
-test("the answer schema accepts a list of near-misses (max 3) and rejects more", () => {
+test("the answer schema accepts a list of near-misses (max 10) and rejects more", () => {
   const shape = ClipAnalysisSchema.shape;
   assert.ok(shape.also_consider);
   assert.equal(shape.also_consider.safeParse([]).success, true);
-  assert.equal(shape.also_consider.safeParse(new Array(4).fill({})).success, false);
+  assert.equal(shape.also_consider.safeParse(new Array(11).fill({})).success, false);
   assert.ok(clipAnalysisSchemaForContentType("irl").shape.also_consider);
 });
 
@@ -137,6 +137,16 @@ test("findClips: 7 top picks + 3 near-misses -> 10 clips, top picks first, extra
   assert.deepEqual(Array.from(clips.slice(7), (c) => c.viral_score), [61, 58, 56]);
 });
 
+test("findClips: only 3 top picks -> the list is filled up to 10 with the next-best moments, best first", async () => {
+  const h = harness({
+    clips: Array.from({ length: 3 }, (_, i) => full(1000 + i * 200, 85 - i)),
+    also_consider: Array.from({ length: 9 }, (_, i) => full(5000 + i * 200, 64 - i * 2)),
+  });
+  const { clips } = await h.run();
+  assert.equal(clips.length, 10);
+  assert.deepEqual(Array.from(clips.slice(3), (c) => c.viral_score), [64, 62, 60, 58, 56, 54, 52]);
+});
+
 test("findClips: nothing cleared the bar -> the best of the stream is returned instead of an empty page", async () => {
   const h = harness({ clips: [], also_consider: [full(5000, 61), full(5400, 58), full(9000, 40)] });
   const { clips } = await h.run();
@@ -164,7 +174,8 @@ test("findClips: the near-miss instruction is in the prompt, and the main list's
   await h.run();
   const system = h.seen.created[0].system;
   assert.match(system, /ALSO CONSIDER/);
-  assert.match(system, /55-64/);
+  assert.match(system, /scored 45-64/);
+  assert.match(system, /reaches \d+ clips|reaches 10 clips/);
   assert.match(system, /best of this stream/);
   assert.match(system, /scores 45-64/);
   assert.match(system, /QUALITY FLOOR: include a clip ONLY if its viral_score is 65 or higher/);
