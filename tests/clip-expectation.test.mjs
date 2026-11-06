@@ -1,33 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { expectedClipCeiling, upToClipsText } from "../lib/clip-expectation.ts";
+import { bestMomentsText } from "../lib/clip-expectation.ts";
+import { discoveryPoolSize } from "../lib/discovery-pool.ts";
 
-test("short videos promise fewer clips, long ones keep the full ceiling", () => {
-  assert.equal(expectedClipCeiling(10, 5 * 60), 1);
-  assert.equal(expectedClipCeiling(10, 30 * 60), 3);
-  assert.equal(expectedClipCeiling(10, 60 * 60), 6);
-  assert.equal(expectedClipCeiling(10, 2 * 3600), 10);
-  assert.equal(expectedClipCeiling(10, 8 * 3600), 10);
+const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
+
+test("the wording names the ceiling, 'Best moments, up to 10'", () => {
+  assert.equal(bestMomentsText(10), "Best moments, up to 10");
 });
 
-test("never above what was requested, never below 1, and unknown length keeps the request", () => {
-  assert.equal(expectedClipCeiling(3, 8 * 3600), 3);
-  assert.equal(expectedClipCeiling(10, 1), 1);
-  assert.equal(expectedClipCeiling(10, null), 10);
-  assert.equal(expectedClipCeiling(10, undefined), 10);
-  assert.equal(expectedClipCeiling(10, NaN), 10);
-  assert.equal(expectedClipCeiling(10, 0), 10);
-  assert.equal(expectedClipCeiling(0, 600), 1);
-});
-
-test("wording is 'Up to N clips' and singular for one", () => {
-  assert.equal(upToClipsText(10), "Up to 10 clips");
-  assert.equal(upToClipsText(1), "Up to 1 clip");
-});
-
-test("the analyze screen never states a plain clip count", () => {
-  const src = readFileSync(new URL("../components/AnalyzePanel.tsx", import.meta.url), "utf8");
+test("the screen never shrinks the number by video length and never states a plain clip count", () => {
+  const src = read("components/AnalyzePanel.tsx");
   assert.doesNotMatch(src, />\{clipCount\} clips ·/);
-  assert.match(src, /upToClipsText\(shownClips\)/);
+  assert.doesNotMatch(src, /expectedClipCeiling|shownClips|upToClipsText/);
+  assert.match(src, /bestMomentsText\(clipCount\)/);
+  assert.match(src, /Finds your best moments, up to \{clipCount\}/);
+});
+
+test("the request to the clip finder is the same for a 15 minute video as for a 5 hour one", () => {
+  const pipeline = read("lib/analyze-pipeline.ts");
+  // the finder is told to look for the top clipCount, and nothing scales that number by the video's length
+  assert.ok(pipeline.includes("Find up to ${clipCount} clippable moments"));
+  assert.ok(pipeline.includes("return the TOP ${clipCount} by viral_score"));
+  assert.ok(pipeline.includes("deduped.filter(clip => clip.viral_score >= 65).slice(0, clipCount)"));
+  assert.doesNotMatch(pipeline, /durationSeconds\s*\/\s*\d+[^\n]*clipCount|clipCount[^\n]*durationSeconds\s*\/\s*\d+/);
+  assert.equal(discoveryPoolSize(10), 10);
+  // the analyze route passes the requested count straight through
+  assert.doesNotMatch(read("app/api/analyze/route.ts"), /expectedClipCeiling|MINUTES_PER_CLIP/);
 });

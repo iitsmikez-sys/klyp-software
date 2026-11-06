@@ -28,7 +28,7 @@ import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
 import { UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
-import { expectedClipCeiling, upToClipsText } from "@/lib/clip-expectation";
+import { bestMomentsText } from "@/lib/clip-expectation";
 import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
 import UnsavedClipsDialog from "./UnsavedClipsDialog";
@@ -168,7 +168,6 @@ export default function AnalyzePanel() {
   // Full estimate = VOD length cost (probed) + clip count cost.
   const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   // What the screen promises: the ceiling, lowered for short videos. Wording only; the request is unchanged.
-  const shownClips = expectedClipCeiling(clipCount, previewDuration);
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
@@ -1195,14 +1194,14 @@ export default function AnalyzePanel() {
 
         <details className="group mt-3 rounded-lg border border-border bg-background/35">
           <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-foreground-muted marker:content-none hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-            <span className="min-w-0"><span className="font-semibold text-foreground">Clip Settings</span><span className="ml-2 font-normal text-foreground-muted">{upToClipsText(shownClips)} · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · topic added" : ""}</span></span>
+            <span className="min-w-0"><span className="font-semibold text-foreground">Clip Settings</span><span className="ml-2 font-normal text-foreground-muted">{bestMomentsText(clipCount)} · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · topic added" : ""}</span></span>
             <svg aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m5 7.5 5 5 5-5" /></svg>
           </summary>
           <div className="grid gap-3 border-t border-border px-3 py-3 lg:grid-cols-2">
         <div className="min-w-0">
           <span className="mb-1.5 block text-xs font-medium text-foreground">Clips</span>
           <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-foreground-muted">
-            Finds up to {shownClips} clip{shownClips === 1 ? "" : "s"}, included in the price. Only moments worth posting are returned, so you may get fewer.
+            Finds your best moments, up to {clipCount}, included in the price. Only moments worth posting are returned, so you may get fewer.
           </p>
         </div>
 
@@ -1277,11 +1276,11 @@ export default function AnalyzePanel() {
                 <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{estimatedSparks} Sparks</p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
-                <p className="text-xs text-foreground-muted">{upToClipsText(shownClips)}</p>
-                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">Included</p>
+                <p className="text-xs text-foreground-muted">Best moments</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">Up to {clipCount} · included</p>
               </div>
             </div>
-            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Priced by video length, with up to {shownClips} clip{shownClips === 1 ? "" : "s"} included. If no moment clears the quality bar, you aren't charged any Sparks.</p>
+            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Priced by video length, with up to {clipCount} clips included. If no moment clears the quality bar, you aren't charged any Sparks.</p>
             {cantAfford && (
               <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
                 <p className="text-sm font-semibold text-foreground">This video needs {totalEstimate} Sparks</p>
