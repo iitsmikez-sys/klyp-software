@@ -21,6 +21,19 @@ export function isStoredAudience(value: unknown): value is StoredAudience {
 
 type UserLike = { created_at?: string | null; user_metadata?: Record<string, unknown> | null } | null | undefined;
 
+export type AudienceTally = { own: number; others: number; both: number; skipped: number; unanswered: number };
+
+/** Adds up the answers across accounts, for the owner-only Sources page. */
+export function tallyAudience(users: Iterable<{ user_metadata?: Record<string, unknown> | null }>): AudienceTally {
+  const tally: AudienceTally = { own: 0, others: 0, both: 0, skipped: 0, unanswered: 0 };
+  for (const u of users) {
+    const v = u.user_metadata?.[AUDIENCE_KEY];
+    if (isStoredAudience(v)) tally[v]++;
+    else tally.unanswered++;
+  }
+  return tally;
+}
+
 /** Ask a signed-in, recent account that has neither answered nor skipped. */
 export function shouldAskAudience(user: UserLike, now = Date.now()): boolean {
   if (!user?.created_at) return false;
