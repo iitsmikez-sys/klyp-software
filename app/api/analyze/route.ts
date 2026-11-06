@@ -62,7 +62,7 @@ export const maxDuration = 300;
 export const OPTIONS = corsPreflight;
 
 const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/)/i;
+  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
 type FailStage = Extract<AnalyzeResponse, { ok: false }>["stage"];
 
@@ -137,7 +137,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
 
   const sourceKey = vodSourceKey(url, uploadId);
   if ((!uploadId && !VOD_URL_PATTERN.test(url)) || !sourceKey) {
-    return fail("validate", "Please provide a valid YouTube video or Twitch VOD URL.", 400);
+    return fail("validate", "Please provide a valid YouTube, Twitch, or Kick VOD URL.", 400);
   }
 
   // -- Sparks gate: must be logged in with enough balance for the cheapest analysis --
@@ -157,7 +157,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // Pro-only, refused before a job row exists or anything is probed or processed.
   const plan = planOf(profile);
   const sourceKind = sourceKindOf(sourceKey);
-  if (!sourceKind) return fail("validate", "Please provide a valid YouTube video or Twitch VOD URL.", 400);
+  if (!sourceKind) return fail("validate", "Please provide a valid YouTube, Twitch, or Kick VOD URL.", 400);
   if (sourceKind === "upload" && !uploadsAllowed(plan)) return fail("validate", UPLOAD_PRO_MESSAGE, 403);
   const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null };
   let job;

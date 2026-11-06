@@ -17,5 +17,10 @@ export function vodSourceKey(url: string, uploadId?: string): string | null {
     const match = /^\/videos\/(\d+)\/?$/.exec(parsed.pathname);
     return match ? `twitch:${match[1]}` : null;
   }
+  if (host === "kick.com") {
+    // kick.com/<channel>/videos/<uuid> and the newer kick.com/video/<uuid>
+    const match = /^\/(?:video|[\w.-]+\/videos)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i.exec(parsed.pathname);
+    return match ? `kick:${match[1].toLowerCase()}` : null;
+  }
   return null;
 }

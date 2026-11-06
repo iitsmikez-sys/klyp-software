@@ -9,16 +9,16 @@
 import { hasProAccess, type Profile } from "./tier.ts";
 
 export type PlanName = "free" | "pro";
-export type SourceKind = "youtube" | "twitch" | "upload";
+export type SourceKind = "youtube" | "twitch" | "kick" | "upload";
 
 const HOUR = 3600;
 
 export const PLAN_LIMITS = {
   // Free has 60 Sparks and anything from 2 hours up costs 65, so 2 hours is the longest video a Free
   // account can actually run, for either source.
-  free: { youtube: 2 * HOUR, twitch: 2 * HOUR, upload: 0, autoClip: false },
-  pro: { youtube: 8 * HOUR, twitch: 8 * HOUR, upload: 8 * HOUR, autoClip: true },
-} as const satisfies Record<PlanName, { youtube: number; twitch: number; upload: number; autoClip: boolean }>;
+  free: { youtube: 2 * HOUR, twitch: 2 * HOUR, kick: 2 * HOUR, upload: 0, autoClip: false },
+  pro: { youtube: 8 * HOUR, twitch: 8 * HOUR, kick: 8 * HOUR, upload: 8 * HOUR, autoClip: true },
+} as const satisfies Record<PlanName, { youtube: number; twitch: number; kick: number; upload: number; autoClip: boolean }>;
 
 /** Pro needs a real subscription or complimentary access — the raw tier flag alone is not trusted. */
 export function planOf(profile: Pick<Profile, "tier" | "stripe_subscription_id" | "complimentary_pro">): PlanName {
@@ -31,7 +31,7 @@ export function sourceKindOf(sourceKey: string | null | undefined): SourceKind |
   const at = sourceKey.indexOf(":");
   if (at < 1 || at === sourceKey.length - 1) return null; // needs a prefix AND an id
   const prefix = sourceKey.slice(0, at);
-  return prefix === "youtube" || prefix === "twitch" || prefix === "upload" ? prefix : null;
+  return prefix === "youtube" || prefix === "twitch" || prefix === "kick" || prefix === "upload" ? prefix : null;
 }
 
 export const maxSecondsFor = (plan: PlanName, kind: SourceKind): number => PLAN_LIMITS[plan][kind];
@@ -47,10 +47,10 @@ const lengthText = (seconds: number) => {
   const m = Math.floor((seconds % HOUR) / 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 };
-const KIND_LABEL: Record<SourceKind, string> = { youtube: "YouTube videos", twitch: "Twitch VODs", upload: "uploaded videos" };
+const KIND_LABEL: Record<SourceKind, string> = { youtube: "YouTube videos", twitch: "Twitch VODs", kick: "Kick VODs", upload: "uploaded videos" };
 
 export const UPLOAD_PRO_MESSAGE =
-  "Uploading your own video is a Pro feature. Upgrade to Pro, or paste a YouTube or Twitch link instead.";
+  "Uploading your own video is a Pro feature. Upgrade to Pro, or paste a YouTube, Twitch, or Kick link instead.";
 export const AUTO_CLIP_PRO_MESSAGE = "Automatic clipping is a Pro feature. Upgrade to Pro to turn it on.";
 
 export type LimitCheck = { ok: true } | { ok: false; status: number; message: string };
@@ -82,6 +82,7 @@ export function describeLimits(plan: PlanName) {
     plan,
     youtubeMaxSeconds: PLAN_LIMITS[plan].youtube,
     twitchMaxSeconds: PLAN_LIMITS[plan].twitch,
+    kickMaxSeconds: PLAN_LIMITS[plan].kick,
     uploadMaxSeconds: PLAN_LIMITS[plan].upload,
     uploadsAllowed: uploadsAllowed(plan),
     autoClipAllowed: autoClipAllowed(plan),

@@ -12,8 +12,8 @@ const freeTier = { tier: "free", stripe_subscription_id: null, complimentary_pro
 const proFlagOnly = { tier: "pro", stripe_subscription_id: null, complimentary_pro: false }; // drifted flag, no subscription
 
 test("the limits are exactly the agreed plan structure", () => {
-  assert.deepEqual(PLAN_LIMITS.free, { youtube: 2 * H, twitch: 2 * H, upload: 0, autoClip: false });
-  assert.deepEqual(PLAN_LIMITS.pro, { youtube: 8 * H, twitch: 8 * H, upload: 8 * H, autoClip: true });
+  assert.deepEqual(PLAN_LIMITS.free, { youtube: 2 * H, twitch: 2 * H, kick: 2 * H, upload: 0, autoClip: false });
+  assert.deepEqual(PLAN_LIMITS.pro, { youtube: 8 * H, twitch: 8 * H, kick: 8 * H, upload: 8 * H, autoClip: true });
 });
 
 test("plan comes from real access: subscription or complimentary, never the bare tier flag", () => {
@@ -79,7 +79,7 @@ test("auto-clipping is Pro-only", () => {
 });
 
 test("limits are summarized for the dashboard", () => {
-  assert.deepEqual(describeLimits("free"), { plan: "free", youtubeMaxSeconds: 2 * H, twitchMaxSeconds: 2 * H, uploadMaxSeconds: 0, uploadsAllowed: false, autoClipAllowed: false });
+  assert.deepEqual(describeLimits("free"), { plan: "free", youtubeMaxSeconds: 2 * H, twitchMaxSeconds: 2 * H, kickMaxSeconds: 2 * H, uploadMaxSeconds: 0, uploadsAllowed: false, autoClipAllowed: false });
   assert.equal(describeLimits("pro").uploadsAllowed, true);
   assert.equal(maxSecondsFor("pro", "twitch"), 8 * H);
 });

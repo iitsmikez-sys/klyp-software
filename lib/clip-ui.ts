@@ -149,10 +149,11 @@ export function fmtTime(totalSeconds: number) {
     : `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-export function platformName(url: string): "Twitch" | "YouTube" | "VOD" {
+export function platformName(url: string): "Twitch" | "YouTube" | "Kick" | "VOD" {
   try {
     const host = new URL(url).hostname;
     if (host.includes("twitch")) return "Twitch";
+    if (host === "kick.com" || host.endsWith(".kick.com")) return "Kick";
     if (host.includes("youtube") || host.includes("youtu.be")) return "YouTube";
   } catch { /* fall through */ }
   return "VOD";
