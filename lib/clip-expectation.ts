@@ -1,16 +1,7 @@
 /**
- * How many clips a video can sensibly give. The requested number (10) is a ceiling, not a promise:
- * Klyp only returns moments worth posting, and a short video simply has fewer of them.
- * Roughly one clip per 10 minutes, never more than the requested number, never fewer than 1.
- * This is only wording for the screen. It never changes how many clips are requested.
+ * How the clip count is worded on screen. The requested number (10) is a ceiling, not a promise: Klyp only
+ * returns moments worth posting, so a short video may give fewer. The wording names the ceiling without
+ * guessing a smaller number from the video's length, and the request itself is never scaled by length either:
+ * every analysis asks the finder for the top 10 (see tests/clip-expectation.test.mjs).
  */
-export const MINUTES_PER_CLIP = 10;
-
-export function expectedClipCeiling(requested: number, durationSeconds: number | null | undefined): number {
-  if (!Number.isFinite(requested) || requested < 1) return 1;
-  if (durationSeconds == null || !Number.isFinite(durationSeconds) || durationSeconds <= 0) return requested;
-  const byLength = Math.max(1, Math.ceil(durationSeconds / 60 / MINUTES_PER_CLIP));
-  return Math.min(requested, byLength);
-}
-
-export const upToClipsText = (n: number) => `Up to ${n} clip${n === 1 ? "" : "s"}`;
+export const bestMomentsText = (n: number) => `Best moments, up to ${n}`;

@@ -12,6 +12,7 @@ import {
 } from "@/lib/sparks";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
+import OutOfSparksDialog from "./OutOfSparksDialog";
 import ClipPreviewModal from "./ResultsClipPreviewModal";
 import FoundClipCard from "./FoundClipCard";
 import { isTopPick } from "@/lib/clip-extras";
@@ -27,7 +28,7 @@ import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
 import { UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
-import { expectedClipCeiling, upToClipsText } from "@/lib/clip-expectation";
+import { bestMomentsText } from "@/lib/clip-expectation";
 import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
 import UnsavedClipsDialog from "./UnsavedClipsDialog";
@@ -91,6 +92,7 @@ export default function AnalyzePanel() {
   const [url, setUrl] = useState("");
   const [analyzedUrl, setAnalyzedUrl] = useState(""); // URL snapshot the clips belong to
   const [loading, setLoading] = useState(false);
+  const [sparksDialog, setSparksDialog] = useState(false);
   const [stages, setStages] = useState<StageStates>(INITIAL_STAGES);
   const [etaRemaining, setEtaRemaining] = useState<number | null>(null);
   /** When the current stage started, so we can show real elapsed time instead
@@ -166,7 +168,6 @@ export default function AnalyzePanel() {
   // Full estimate = VOD length cost (probed) + clip count cost.
   const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   // What the screen promises: the ceiling, lowered for short videos. Wording only; the request is unchanged.
-  const shownClips = expectedClipCeiling(clipCount, previewDuration);
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
@@ -557,6 +558,7 @@ export default function AnalyzePanel() {
 
   const analyze = (e: FormEvent) => {
     e.preventDefault();
+    if (outOfSparks) { setSparksDialog(true); return; }
     if (!canSubmit) return;
     void runAnalysis();
   };
@@ -943,6 +945,7 @@ export default function AnalyzePanel() {
         <UnsavedClipsDialog count={unsavedCount} keptDays={keptDays} isPro={tier === "pro"} saving={saving !== null}
           onStay={() => setLeaveTarget(null)} onLeave={leaveNow} onSaveAll={saveAllThenLeave} />
       )}
+      {sparksDialog && outOfSparks && <OutOfSparksDialog isPro={isPro} balance={balance} video={inputMode === "url" && previewDuration !== null && totalEstimate !== null ? { title: previewMeta?.title || `${platformName(url)} VOD`, thumbnail: previewImageFailed ? null : previewMeta?.thumbnail, platform: platformName(url), duration: fmtTime(previewDuration), cost: totalEstimate } : null} onClose={() => setSparksDialog(false)} />}
       {/* ── Full-screen pipeline progress overlay ── */}
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
@@ -1059,7 +1062,7 @@ export default function AnalyzePanel() {
                 value={url}
                 onChange={(e) => setUrl(e.target.value.trim())}
                 placeholder="Paste a YouTube, Twitch, or Kick VOD link"
-                disabled={loading || outOfSparks}
+                disabled={loading}
                 className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
               />
               {!isPro && <p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch, Kick and YouTube videos up to 2 hours.</p>}
@@ -1158,8 +1161,8 @@ export default function AnalyzePanel() {
                       <p className="text-xs text-foreground-muted">MP4, MOV, AVI up to 4GB</p>
                       <button
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={loading || outOfSparks}
+                        onClick={() => { if (outOfSparks) setSparksDialog(true); else fileInputRef.current?.click(); }}
+                        disabled={loading}
                         className="mt-2 px-4 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
                       >
                         Browse files
@@ -1191,14 +1194,14 @@ export default function AnalyzePanel() {
 
         <details className="group mt-3 rounded-lg border border-border bg-background/35">
           <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-foreground-muted marker:content-none hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-            <span className="min-w-0"><span className="font-semibold text-foreground">Clip Settings</span><span className="ml-2 font-normal text-foreground-muted">{upToClipsText(shownClips)} · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · topic added" : ""}</span></span>
+            <span className="min-w-0"><span className="font-semibold text-foreground">Clip Settings</span><span className="ml-2 font-normal text-foreground-muted">{bestMomentsText(clipCount)} · {CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · topic added" : ""}</span></span>
             <svg aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m5 7.5 5 5 5-5" /></svg>
           </summary>
           <div className="grid gap-3 border-t border-border px-3 py-3 lg:grid-cols-2">
         <div className="min-w-0">
           <span className="mb-1.5 block text-xs font-medium text-foreground">Clips</span>
           <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-foreground-muted">
-            Finds up to {shownClips} clip{shownClips === 1 ? "" : "s"}, included in the price. Only moments worth posting are returned, so you may get fewer.
+            Finds your best moments, up to {clipCount}, included in the price. Only moments worth posting are returned, so you may get fewer.
           </p>
         </div>
 
@@ -1273,11 +1276,11 @@ export default function AnalyzePanel() {
                 <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{estimatedSparks} Sparks</p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
-                <p className="text-xs text-foreground-muted">{upToClipsText(shownClips)}</p>
-                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">Included</p>
+                <p className="text-xs text-foreground-muted">Best moments</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">Up to {clipCount} · included</p>
               </div>
             </div>
-            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Priced by video length, with up to {shownClips} clip{shownClips === 1 ? "" : "s"} included. If no moment clears the quality bar, you aren't charged any Sparks.</p>
+            <p className="mt-2 border-t border-border pt-1.5 text-[11px] leading-relaxed text-foreground-muted">Priced by video length, with up to {clipCount} clips included. If no moment clears the quality bar, you aren't charged any Sparks.</p>
             {cantAfford && (
               <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
                 <p className="text-sm font-semibold text-foreground">This video needs {totalEstimate} Sparks</p>
@@ -1292,7 +1295,7 @@ export default function AnalyzePanel() {
           </div>
         )}
         <div className="mt-3 flex justify-end">
-          <button type="submit" disabled={!canSubmit}
+          <button type="submit" disabled={!canSubmit && !outOfSparks} onClick={(e) => { if (outOfSparks) { e.preventDefault(); setSparksDialog(true); } }}
             className="flex min-h-10 w-full items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45 sm:w-48">
             {loading ? "Analyzing…" : "Find Clips"}
           </button>
@@ -1310,11 +1313,11 @@ export default function AnalyzePanel() {
           <div className="flex items-center gap-2 mt-4 px-4 py-3 rounded-lg bg-accent-glow border border-accent/30 text-sm">
             <SparkIcon size={14} className="text-accent flex-shrink-0" />
             <span className="text-foreground">
-              You&apos;re out of Sparks —{" "}
-              <a href="/dashboard/upgrade" className="text-accent font-semibold hover:underline">
-                upgrade to Pro
-              </a>{" "}
-              to get more ⚡
+              {balance !== null && balance > 0 ? `You have ${balance} Sparks and a video starts at ${MIN_ANALYZE_COST} —` : "You’re out of Sparks —"}{" "}
+              <button type="button" onClick={() => setSparksDialog(true)} className="text-accent font-semibold hover:underline">
+                get more Sparks
+              </button>{" "}
+              to keep clipping ⚡
             </span>
           </div>
         )}
