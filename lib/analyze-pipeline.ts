@@ -40,6 +40,7 @@ import { anthropicCreditGate } from "@/lib/anthropic-credit";
 import { recordProviderUsage } from "@/lib/provider-cost";
 import { clipInsideObservedCoverage } from "@/lib/vod-candidates";
 import { reviewClipBatch, type FlaggedClip } from "@/lib/clip-boundaries";
+import { trimClipBatch } from "@/lib/clip-cut-snap";
 import { formatTranscript } from "@/lib/format-transcript";
 import { discoveryPoolSize } from "@/lib/discovery-pool";
 import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/analysis-result-cache";
@@ -493,7 +494,10 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## CLIP BOUNDARIES
 
-- 15-60 seconds per clip: short enough for TikTok/Shorts, long enough to breathe.
+- 15-60 seconds per clip is the hard range, but AIM FOR 20-40 seconds. Go past 45 only when the payoff truly cannot land sooner. Viewers drop off fast, so a tight 27-second clip beats a loose 50-second one of the same moment.
+- Start on the HOOK: the first word of the line that makes a stranger stop scrolling. Skip warm-up chatter, apologies, "so anyway" lead-ins and rambling before it. The trigger must land within the first 5 seconds.
+- End on the PUNCHLINE: the last word of the payoff or reaction. Cut everything after it: no wrap-up, no new topic, no extra detail, no "anyway". If the same point is repeated, end after the strongest version.
+- start_quote and end_quote: copy the first 4-8 words and the last 4-8 words of the clip EXACTLY as they appear in the transcript, word for word, so the cut can be snapped to them. The transcript only has a time stamp every 20 seconds, so these quotes are how the exact cut points are found. Never invent or paraphrase them.
 - start_seconds / end_seconds must lie within the VOD duration (${durationSeconds}s) and align with the transcript timestamps.
 - Pad the start a few seconds before the key line so the viewer gets setup — but never so much that the payoff arrives late. The best clips put the trigger inside the first 5 seconds.
 - End on the peak: cut right after the punchline, the win, or the reaction settles. Trailing dead air kills rewatch rate.
@@ -504,7 +508,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 - title: short and PUNCHY, written like a top-performing TikTok caption. Use caps for EMPHASIS on the key word, an emoji where it earns its place, and concrete specifics over generic hype ("He hit the 1HP clutch and chat LOST IT 😭" beats "Insane gaming moment"). Never spoil the payoff — sell the moment, don't summarize it.
 - hooks: exactly 3 alternative on-screen hook lines, burned over the first 3 seconds of the clip in big meme-caption text. Write them as REACTION/CALLOUT statements about the moment — the style a clips channel would slap on screen: "RAKAI CRASHED OUT", "HE ONE-SHOT THE FINAL BOSS", "CHAT MADE HIM RAGE QUIT". HARD LIMIT: under 8 words each. Punchy callouts, not sentences — no hashtags, no trailing punctuation. Each of the 3 takes a DIFFERENT angle on the same moment (the reaction, the stakes, the absurdity). They render in ALL CAPS on screen, so write text that works uppercased.
 - caption: 1-2 social-ready sentences with 2-4 relevant hashtags (game name, #clutch/#fail/#gaming-style tags, trending where genuinely fitting).
-- reason: one sentence telling the streamer, editor-to-editor, why this moment earns its slot.
+- reason: 2-3 plain sentences telling the streamer, editor-to-editor, why this moment earns its score. Name the arc (setup, turn, payoff), say what kind of reaction it should get (comments, shares, rewatches), and finish with why it is NOT scored higher (for example repetition, a slow start, or no visual payoff). If you quote a line, quote only the punchline that is inside the clip.
 
 ## THUMBNAIL FRAME
 
@@ -844,7 +848,8 @@ export async function runAnalysisPipeline(opts: {
     keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
     windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
     // Results found with loud-moment hints are kept apart from older ones.
-    signals: [loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") || undefined };
+    // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
+    signals: ["trim-v1", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
@@ -864,7 +869,7 @@ export async function runAnalysisPipeline(opts: {
   let readyPool = visualCache ? await visualCache.load() : null;
   let flagged: FlaggedClip<Clip>[] = [];
   if (readyPool === null) {
-    const review = reviewClipBatch(judged, words, durationSeconds);
+    const review = reviewClipBatch(trimClipBatch(judged, words), words, durationSeconds);
     flagged = review.flagged;
     readyPool = await withMem("vision-check", () =>
       validateFinalistVisuals(review.ready, uploadedPath ?? url, workDir, !!uploadedPath, opts.costRunId));
@@ -888,7 +893,7 @@ export async function runAnalysisPipeline(opts: {
       resultCacheKey({ ...cacheInput, pipeline: "legacy-visual", priorWindows }));
     let nextReady = await nextVisualCache.load();
     if (nextReady === null) {
-      const nextReview = reviewClipBatch(nextJudged, words, durationSeconds);
+      const nextReview = reviewClipBatch(trimClipBatch(nextJudged, words), words, durationSeconds);
       flagged.push(...nextReview.flagged);
       nextReady = await withMem("vision-check-more", () =>
         validateFinalistVisuals(nextReview.ready, uploadedPath ?? url, workDir, !!uploadedPath, opts.costRunId));

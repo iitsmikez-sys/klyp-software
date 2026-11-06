@@ -57,6 +57,7 @@ function harness({ denyProviderSpend = false } = {}) {
     '@/lib/provider-budget-core': { quoteTextMessage: () => 500_000, quoteSelectMessage: async () => ({ microUsd: 500_000, basis: 'bytes' }), quoteTranscription: () => 100_000 },
     '@/lib/vod-candidates': { clipInsideObservedCoverage: () => true },
     '@/lib/clip-boundaries': { reviewClipBatch: clips => ({ ready: clips, flagged: [] }) },
+    '@/lib/clip-cut-snap': { trimClipBatch: clips => clips },
     '@/lib/format-transcript': { formatTranscript: () => 'Full VOD transcript: quiet joke at 600 seconds.' },
     '@/lib/discovery-pool': { discoveryPoolSize },
     '@/lib/vod-budget': { reviewProcessingBudget: () => ({ requiresReview: false }) },

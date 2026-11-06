@@ -127,6 +127,7 @@ function pipelineHarness(review) {
     "@/lib/provider-cost": { recordProviderUsage: () => {} },
     "@/lib/vod-candidates": { reviewClipBatch: (clips) => ({ ready: clips, flagged: [] }) },
     "@/lib/clip-boundaries": { reviewClipBatch: (clips) => ({ ready: clips, flagged: [] }) },
+    "@/lib/clip-cut-snap": { trimClipBatch: (clips) => clips },
     "@/lib/format-transcript": { formatTranscript: () => "" },
     "@/lib/discovery-pool": { discoveryPoolSize: () => 10 },
     "@/lib/analysis-result-cache": { createResultCache: () => null, resultCacheKey: () => "cache", selectReviewedCachedClips: () => ({ clips: [], flagged: [], readyCount: 0 }) },
