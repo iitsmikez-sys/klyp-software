@@ -66,3 +66,18 @@ test("a cached video probe stops being reused once its signed Kick thumbnail lin
   assert.ok(route.includes("Date.now() - cached.at > SIGNED_THUMBNAIL_TTL_MS"));
   assert.ok(route.includes("durationCache.set(url, { probe, at: Date.now() })"));
 });
+
+test("the database function that saves and charges clips accepts the same kick: keys the app creates", () => {
+  const sql = read("supabase/migrations/045_kick_sources.sql");
+  const m = /p_source_key !~ '(\^\(.+\)\$)'/.exec(sql);
+  assert.ok(m, "the source-key rule is present");
+  const re = new RegExp(m[1]);
+  assert.ok(re.test(vodSourceKey(`https://kick.com/chaifailed/videos/${ID}`)), "a Kick key passes");
+  assert.ok(re.test("twitch:123456789") && re.test("youtube:dQw4w9WgXcQ") && re.test("upload:abc_123"), "existing sources still pass");
+  assert.ok(!re.test("kick:not-a-uuid") && !re.test("vimeo:12345"), "junk is still refused");
+  assert.ok(sql.includes("create or replace function public.record_analysis_clips"), "it replaces the same function");
+  // The newest earlier version of that function must be the one this copies, so nothing else changes.
+  const old = read("supabase/migrations/043_no_charge_without_clips.sql");
+  const strip = (t) => t.split("\n").filter((l) => !l.startsWith("--")).join("\n").replace("|kick:[0-9a-f-]{36}", "");
+  assert.equal(strip(sql), strip(old));
+});
