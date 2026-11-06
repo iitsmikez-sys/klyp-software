@@ -4,11 +4,12 @@
  * and last words of the moment it wants. This snaps the cut to those exact words, using the saved word timings.
  *
  * Safe by design: if a quote cannot be found close to the proposed cut, that side is left alone, and a trim is
- * never allowed to leave a clip shorter than 12 seconds or longer than 60.
+ * never allowed to leave a clip shorter than 16 seconds or longer than 60.
  */
 import type { TimedWord } from "./clips.ts";
 
-export const MIN_TRIMMED_SECONDS = 12;
+/** The boundary review drops any clip under 15 seconds, so a trim must never go below that (a little margin for rounding). */
+export const MIN_TRIMMED_SECONDS = 16;
 export const MAX_SECONDS = 60;
 /** How far before the proposed start, and after the proposed end, a quote may be found. */
 const SEARCH_BEFORE_START_S = 15;

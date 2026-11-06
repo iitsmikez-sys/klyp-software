@@ -457,7 +457,7 @@ Score every candidate moment on five dimensions, 0-20 each:
 
 Report those five numbers in the "dimensions" field of every clip you return. They are the working behind the score, so report what you actually judged — never reverse-engineer them from viral_score, and never flatten them to make a clip look balanced. A 19/2/0/4/7 is a more useful answer than five 8s, and the breakdown is shown to the streamer.
 
-viral_score (1-100) is your holistic judgment informed by those dimensions — NOT their sum. A clip that maxes one dimension (a 20/20 comedic moment) beats a clip that's mediocre at everything. Also weigh: does it work with ZERO context for a viewer who has never seen this streamer? Is there a quotable line? Is it relatable outside this game's community?
+viral_score (1-100) is your holistic judgment informed by those dimensions — NOT their sum. A clip that maxes one dimension (a 20/20 comedic moment) beats a clip that's mediocre at everything. Also weigh: does it work with ZERO context for a viewer who has never seen this streamer? Is there a quotable line? Is it relatable outside this game's community? SHARE TRIGGER: ask who would send this to a friend, save it, or comment on it, and why. A clip with a clear answer ("anyone who has ever cancelled plans", "anyone who streams to a small audience") earns real credit here even when it is calm and quiet.
 
 Calibrate honestly. 90+ means "this could genuinely go viral" — most VODs have zero or one such moment. 75-89 is a strong clip any editor would post. 65-74 is solid but unremarkable. Below 65 does not get returned at all (see FINAL SELECTION). NEVER inflate scores to make a boring VOD look good — streamers trust the number, and an inflated score sneaks a weak clip past the quality floor.
 
@@ -467,7 +467,7 @@ Do NOT just pick moments that feel generically "interesting." Run six deliberate
 
 1. UNEXPECTED_TURN — a setup followed by a twist or payoff, ideally landing 15-45 seconds after the setup: a confident claim that immediately backfires, a plan that inverts, a prediction that comes true absurdly fast. The clip must contain BOTH the setup and the payoff — a setup with no payoff isn't a clip, it's dead air; do not select it.
 2. REACTION_SPIKE — a genuine, extreme reaction (shock, laughter, rage, disgust) that erupts within ~2 seconds of its trigger. In transcript: sudden screaming, sentences cut off mid-word, cursing bursts, laughter breaking through speech, "NO WAY"/"WHAT", instant tone whiplash from calm to explosive. Delayed or performed reactions don't count.
-3. RELATABLE_QUOTABLE — a standalone one-liner, hot take, or observation that would work as a screenshot or text post with no video, roughly under 10 words. Big energy NOT required — deadpan delivery counts. Test: would this line work as a tweet?
+3. RELATABLE_QUOTABLE — a standalone one-liner, hot take, or observation that would work as a screenshot or text post with no video, OR a short relatable confession: one complete thought of roughly 15-25 seconds that a stranger would recognise from their own life. Big energy NOT required — deadpan delivery counts. Test: would this work as a tweet, or would someone send it to a friend with "this is literally me"?
 4. CHAT_EXPLOSION — the live audience erupting: chat message-rate spiking far above the stream's baseline. Assign this signal ONLY when chat replay spike data is present in your input AND a spike aligns with the moment (chat lags the cause by 5-15 seconds — anchor on the cause). If no chat data was provided, never assign this signal.
 5. CONFLICT — callouts, arguments, beef between people in or around the stream: streamer vs teammate, streamer vs chat, trash talk that escalates, genuine tension. Weight it higher when the tension resolves in a way nobody saw coming (an apology that lands sideways, the argument flipping into laughter, a comeback that ends it cold) rather than fizzling out or resolving exactly as expected. Real friction only — scripted bits belong under other signals.
 6. CHAOS — bizarre, random, or off-topic moments unrelated to the main stream content: non-sequiturs, absurd tangents, unexplainable events, "why is this happening" energy.
@@ -479,6 +479,14 @@ DEPRIORITIZE — these rarely make good clips even when nothing about them is te
 - Calm, low-energy talking with no turn, tension, or punchline. A streamer explaining something clearly but flatly, in a level conversational tone, is not a clip — it never goes viral no matter how interesting the content is. If nothing in the signal list above actually fires on a moment, that absence is usually exactly this: skip it. Never select a moment on vibes alone; every clip needs a real, identifiable trigger.
 
 STORIES ARE NOT FLAT TALKING. A streamer telling a short, self-contained story with a clear setup, a turn, and a payoff line is clippable even when the delivery is calm or deadpan: a party that ends in an eviction warning, a random encounter that ends in an absurd invitation, a bad day that ends in a perfect one-liner. These are UNEXPECTED_TURN or RELATABLE_QUOTABLE moments. Look for them on purpose, in every part of the VOD, not only the loud parts. Judge a story clip on its hook (does the first line make a stranger stop?), its payoff (does the last line land?), and how relatable it is to someone who has never seen this streamer. Do NOT mark it down for lacking hype or skill: for a story, the storyline and comedic dimensions carry the score, and a story with a strong hook and a clean payoff can honestly score 70-85. A story with no payoff, or one that needs a paragraph of context, still does not clip.
+
+RELATABLE MOMENTS ARE CLIPS TOO. Short, calm moments that top clip channels post all the time are easy to miss because nobody screams. Look for them on purpose, in every part of the VOD:
+- A relatable confession or honest observation about life ("I agree to plans while excited, then the date arrives and I just don't want to go").
+- An honest self-own or deadpan self-deprecating answer, especially to a chat question, ending on an absurd or unexpected punchline.
+- A quirky bit or odd decision played straight (letting a coin flip decide something silly).
+- A sincere gratitude or community moment (coming back after a break and thanking the few viewers who stayed).
+- A short gross-out or embarrassing mini-story with a clean last line.
+These are often only 15-25 seconds: one thought, one turn, one ending (never under 15 seconds). Short is a strength. Judge them on hook, payoff, relatability and share trigger, never on hype or skill, and never on how loud the streamer is. The rule against calm, flat talking is for talking with NO turn and NO payoff; it does not apply to these.
 
 Signals are your DETECTION layer; the five scoring dimensions remain your JUDGMENT layer. A moment found by any signal still has to earn its viral_score and clear the quality floor.
 
@@ -498,7 +506,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## CLIP BOUNDARIES
 
-- 15-60 seconds per clip is the hard range, but AIM FOR 20-40 seconds. Go past 45 only when the payoff truly cannot land sooner. Viewers drop off fast, so a tight 27-second clip beats a loose 50-second one of the same moment.
+- 15-60 seconds per clip is the hard range, but AIM FOR 15-35 seconds. A single-thought clip of 15-25 seconds with a clean ending is ideal; never stretch a short moment to reach a length. Go past 45 only when the payoff truly cannot land sooner. Viewers drop off fast, so a tight 27-second clip beats a loose 50-second one of the same moment.
 - Start on the HOOK: the first word of the line that makes a stranger stop scrolling. Skip warm-up chatter, apologies, "so anyway" lead-ins and rambling before it. The trigger must land within the first 5 seconds.
 - End on the PUNCHLINE: the last word of the payoff or reaction. Cut everything after it: no wrap-up, no new topic, no extra detail, no "anyway". If the same point is repeated, end after the strongest version.
 - start_quote and end_quote: copy the first 4-8 words and the last 4-8 words of the clip EXACTLY as they appear in the transcript, word for word, so the cut can be snapped to them. The transcript only has a time stamp every 20 seconds, so these quotes are how the exact cut points are found. Never invent or paraphrase them.
@@ -509,10 +517,10 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## TITLES, HOOKS, CAPTIONS
 
-- title: short and PUNCHY, written like a top-performing TikTok caption. Use caps for EMPHASIS on the key word, an emoji where it earns its place, and concrete specifics over generic hype ("He hit the 1HP clutch and chat LOST IT 😭" beats "Insane gaming moment"). Never spoil the payoff — sell the moment, don't summarize it.
+- title: short and PUNCHY, written like a top-performing TikTok caption. Use caps for EMPHASIS on the key word, an emoji where it earns its place, and concrete specifics over generic hype ("He hit the 1HP clutch and chat LOST IT 😭" beats "Insane gaming moment"). Never spoil the payoff — sell the moment, don't summarize it. For relatable, story and confession clips, a curiosity question also works well and may replace the caption style ("Why he cancels plans at the last minute", "Why his viewers dropped from 1,000 to 80"): name the topic, keep the answer for the clip.
 - hooks: exactly 3 alternative on-screen hook lines, burned over the first 3 seconds of the clip in big meme-caption text. Write them as REACTION/CALLOUT statements about the moment — the style a clips channel would slap on screen: "RAKAI CRASHED OUT", "HE ONE-SHOT THE FINAL BOSS", "CHAT MADE HIM RAGE QUIT". HARD LIMIT: under 8 words each. Punchy callouts, not sentences — no hashtags, no trailing punctuation. Each of the 3 takes a DIFFERENT angle on the same moment (the reaction, the stakes, the absurdity). They render in ALL CAPS on screen, so write text that works uppercased.
 - caption: 1-2 social-ready sentences with 2-4 relevant hashtags (game name, #clutch/#fail/#gaming-style tags, trending where genuinely fitting).
-- reason: 2-3 plain sentences telling the streamer, editor-to-editor, why this moment earns its score. Name the arc (setup, turn, payoff), say what kind of reaction it should get (comments, shares, rewatches), and finish with why it is NOT scored higher (for example repetition, a slow start, or no visual payoff). If you quote a line, quote only the punchline that is inside the clip.
+- reason: 2-3 plain sentences telling the streamer, editor-to-editor, why this moment earns its score. Name the arc (setup, turn, payoff), say who would share or save it and why (for example "anyone who has cancelled plans last minute"), and finish with why it is NOT scored higher (for example repetition, a slow start, or no visual payoff). If you quote a line, quote only the punchline that is inside the clip.
 
 ## THUMBNAIL FRAME
 
@@ -853,8 +861,8 @@ export async function runAnalysisPipeline(opts: {
     windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
-    // "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
-    signals: ["trim-v1", "story-v1", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
+    // "relatable-v1": results found before relatable moments and the share trigger were added; "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
+    signals: ["trim-v1", "story-v1", "relatable-v1", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
