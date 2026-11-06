@@ -114,6 +114,7 @@ function harness(answer) {
     "@/lib/provider-cost": { recordProviderUsage: () => {} },
     "@/lib/vod-candidates": { reviewClipBatch: (c) => ({ ready: c, flagged: [] }), clipInsideObservedCoverage: () => true },
     "@/lib/clip-boundaries": { reviewClipBatch: (c) => ({ ready: c, flagged: [] }) },
+    "@/lib/clip-cut-snap": { trimClipBatch: (c) => c },
     "@/lib/format-transcript": { formatTranscript: () => "" },
     "@/lib/discovery-pool": { discoveryPoolSize: () => 10 },
     "@/lib/analysis-result-cache": { createResultCache: () => null, resultCacheKey: () => "k", selectReviewedCachedClips: () => ({ clips: [], flagged: [], readyCount: 0 }) },

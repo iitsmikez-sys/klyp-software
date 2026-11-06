@@ -117,6 +117,14 @@ export const ClipSchema = z.object({
   thumbnail_seconds: z
     .number()
     .describe("Timestamp in seconds (within the clip) of the most expressive frame to use as the thumbnail"),
+  start_quote: z
+    .string()
+    .optional()
+    .describe("The first 4-8 words spoken in the clip, copied exactly from the transcript. Used to start the cut on the hook line."),
+  end_quote: z
+    .string()
+    .optional()
+    .describe("The last 4-8 words spoken in the clip (the punchline or payoff), copied exactly from the transcript. Used to end the cut right after it."),
 });
 
 export const ClipAnalysisSchema = z.object({
