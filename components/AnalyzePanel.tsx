@@ -12,6 +12,7 @@ import {
 } from "@/lib/sparks";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
+import OutOfSparksDialog from "./OutOfSparksDialog";
 import ClipPreviewModal from "./ResultsClipPreviewModal";
 import FoundClipCard from "./FoundClipCard";
 import { isTopPick } from "@/lib/clip-extras";
@@ -91,6 +92,7 @@ export default function AnalyzePanel() {
   const [url, setUrl] = useState("");
   const [analyzedUrl, setAnalyzedUrl] = useState(""); // URL snapshot the clips belong to
   const [loading, setLoading] = useState(false);
+  const [sparksDialog, setSparksDialog] = useState(false);
   const [stages, setStages] = useState<StageStates>(INITIAL_STAGES);
   const [etaRemaining, setEtaRemaining] = useState<number | null>(null);
   /** When the current stage started, so we can show real elapsed time instead
@@ -557,6 +559,7 @@ export default function AnalyzePanel() {
 
   const analyze = (e: FormEvent) => {
     e.preventDefault();
+    if (outOfSparks) { setSparksDialog(true); return; }
     if (!canSubmit) return;
     void runAnalysis();
   };
@@ -943,6 +946,7 @@ export default function AnalyzePanel() {
         <UnsavedClipsDialog count={unsavedCount} keptDays={keptDays} isPro={tier === "pro"} saving={saving !== null}
           onStay={() => setLeaveTarget(null)} onLeave={leaveNow} onSaveAll={saveAllThenLeave} />
       )}
+      {sparksDialog && outOfSparks && <OutOfSparksDialog isPro={isPro} onClose={() => setSparksDialog(false)} />}
       {/* ── Full-screen pipeline progress overlay ── */}
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
@@ -1059,7 +1063,8 @@ export default function AnalyzePanel() {
                 value={url}
                 onChange={(e) => setUrl(e.target.value.trim())}
                 placeholder="Paste a YouTube or Twitch VOD link"
-                disabled={loading || outOfSparks}
+                disabled={loading}
+                onFocus={() => { if (outOfSparks) setSparksDialog(true); }}
                 className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
               />
               {!isPro && <p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch and YouTube videos up to 2 hours.</p>}
@@ -1158,8 +1163,8 @@ export default function AnalyzePanel() {
                       <p className="text-xs text-foreground-muted">MP4, MOV, AVI up to 4GB</p>
                       <button
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={loading || outOfSparks}
+                        onClick={() => { if (outOfSparks) setSparksDialog(true); else fileInputRef.current?.click(); }}
+                        disabled={loading}
                         className="mt-2 px-4 py-2 rounded-lg border border-accent/40 text-accent text-xs font-bold font-syne hover:bg-accent-glow transition-colors disabled:opacity-50"
                       >
                         Browse files
@@ -1292,7 +1297,7 @@ export default function AnalyzePanel() {
           </div>
         )}
         <div className="mt-3 flex justify-end">
-          <button type="submit" disabled={!canSubmit}
+          <button type="submit" disabled={!canSubmit && !outOfSparks} onClick={(e) => { if (outOfSparks) { e.preventDefault(); setSparksDialog(true); } }}
             className="flex min-h-10 w-full items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45 sm:w-48">
             {loading ? "Analyzing…" : "Find Clips"}
           </button>
@@ -1311,10 +1316,10 @@ export default function AnalyzePanel() {
             <SparkIcon size={14} className="text-accent flex-shrink-0" />
             <span className="text-foreground">
               You&apos;re out of Sparks —{" "}
-              <a href="/dashboard/upgrade" className="text-accent font-semibold hover:underline">
-                upgrade to Pro
-              </a>{" "}
-              to get more ⚡
+              <button type="button" onClick={() => setSparksDialog(true)} className="text-accent font-semibold hover:underline">
+                get more Sparks
+              </button>{" "}
+              to keep clipping ⚡
             </span>
           </div>
         )}
