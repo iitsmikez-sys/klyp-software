@@ -30,7 +30,7 @@ test("the score shows in Details and as a small pill on the clip cards, but not 
     assert.equal((src.match(/viral_score/g) ?? []).length, 1);
   }
   assert.equal((modal.match(/viral_score/g) ?? []).length, 2); // the guard and the number, only in Details
-  assert.doesNotMatch(modal, /ScoreBadge|ScoreBreakdown/);
+  assert.doesNotMatch(modal, /ScoreBadge/);
 });
 
 test("the 65 bar still decides what counts as a top pick, even though every clip shows its score", () => {

@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import ScoreBreakdown from "./ScoreBreakdown";
 import { previewSourceStart } from '@/lib/editor-preview';
 import SavedClipEditor from "./SavedClipEditor";
 import { defaultClipEditDraft, readClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
@@ -519,6 +520,7 @@ export default function ClipPreviewModal({
                   <span className="text-xs">AI score</span>
                 </p>
               )}
+              <div className="mb-3 max-w-xs"><ScoreBreakdown clip={clip} top={3} /></div>
               {clip.reason && <p className="mb-2"><span className="font-medium text-foreground">Why this moment:</span> {clip.reason}</p>}
               {clip.caption && <p className="mb-2">{clip.caption}</p>}
               <p>Original VOD: {fmtTime(clip.start_seconds)} – {fmtTime(clip.end_seconds)}</p>
