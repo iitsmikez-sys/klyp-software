@@ -11,6 +11,7 @@ import {
   clipCountForDuration,
   type ClipCount,
 } from "@/lib/sparks";
+import PasteBoxHint from "./PasteBoxHint";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
 import OutOfSparksDialog from "./OutOfSparksDialog";
@@ -78,6 +79,8 @@ function fmtBytes(bytes: number) {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+/** The paste box's plain wording: shown when the animation is off, and read out to screen readers. */
+const PASTE_PLACEHOLDER = "Paste a YouTube, Twitch, or Kick VOD link";
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB — keep in sync with /api/upload
 const UPLOAD_EXT_PATTERN = /\.(mp4|mov|avi|mkv|webm|m4v)$/i;
 
@@ -152,6 +155,12 @@ export default function AnalyzePanel() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [clipCount, setClipCount] = useState<ClipCount>(DEFAULT_CLIP_COUNT);
+  // The paste box's rolling hint: only while the box is empty and not focused, and never for people who turned on "reduce motion".
+  const [urlFocused, setUrlFocused] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(true);
+  useEffect(() => {
+    try { setReduceMotion(window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch { setReduceMotion(true); }
+  }, []);
   const [analysisNote, setAnalysisNote] = useState<string | null>(null);
   // Background health poll — lets the UI notice the processing service going
   // down (or coming back) without the user having to reload the page.
@@ -166,6 +175,7 @@ export default function AnalyzePanel() {
   /** Clips below the quality bar (near-miss extras). When there are none, every clip is a top pick and no badges are shown. */
   const extraCount = (clips ?? []).filter((clip) => !isTopPick(clip)).length;
   const outOfSparks = balance !== null && balance < MIN_ANALYZE_COST;
+  const animateHint = !urlFocused && url === "" && !loading && !reduceMotion;
   // Full estimate = VOD length cost (probed) + clip count cost.
   const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   /** The ceiling shown on screen: longer videos look for more clips (the server sets the real number from the verified length). */
@@ -1060,17 +1070,24 @@ export default function AnalyzePanel() {
         <form onSubmit={analyze} className="min-w-0">
           {inputMode === "url" ? (
             <div>
-              <input
-                type="url"
-                required
-                aria-label="VOD URL"
-                value={url}
-                onChange={(e) => setUrl(e.target.value.trim())}
-                placeholder="Paste a YouTube, Twitch, or Kick VOD link"
-                disabled={loading}
-                className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
-              />
-              {!isPro && <p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch, Kick and YouTube videos up to 2 hours.</p>}
+              <div className="relative">
+                <input
+                  type="url"
+                  required
+                  aria-label="VOD URL"
+                  aria-describedby="vod-url-hint"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value.trim())}
+                  onFocus={() => setUrlFocused(true)}
+                  onBlur={() => setUrlFocused(false)}
+                  placeholder={animateHint ? "" : PASTE_PLACEHOLDER}
+                  disabled={loading}
+                  className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
+                />
+                {animateHint && <PasteBoxHint />}
+                <span id="vod-url-hint" className="sr-only">{PASTE_PLACEHOLDER}</span>
+              </div>
+              {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch, Kick and YouTube videos up to 2 hours.</p>}
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
                 <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
               </div>}

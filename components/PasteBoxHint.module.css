@@ -1,0 +1,24 @@
+/* The platform name slides up and fades in each time it changes. People who turn on "reduce motion" never see this
+   component at all (the paste box shows its plain placeholder), and this keeps the word still as a second guard. */
+.word {
+  display: inline-block;
+  font-weight: 500;
+  animation: roll 0.45s ease both;
+}
+
+@keyframes roll {
+  from {
+    opacity: 0;
+    transform: translateY(0.6em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .word {
+    animation: none;
+  }
+}
