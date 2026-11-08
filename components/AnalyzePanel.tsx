@@ -26,6 +26,7 @@ import ProGateModal from "./ProGateModal";
 import { isBestOfResult } from "@/lib/clip-extras";
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent, type EventProps } from "@/lib/track";
+import { openFeedback } from "./FeedbackButton";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
@@ -1437,6 +1438,8 @@ export default function AnalyzePanel() {
           {downloadError && (
             <div role="alert" className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
               {downloadError}
+              <button type="button" data-tell-us onClick={() => openFeedback({ reason: "broke", message: `That download didn't work: ${downloadError}` })}
+                className="ml-2 font-semibold text-foreground underline underline-offset-2 hover:text-accent">Tell us what happened</button>
             </div>
           )}
           {downloadWarning && <div role="status" className="mb-4 px-4 py-3 rounded-lg border border-amber-500/30 text-sm text-amber-300">{downloadWarning}</div>}
