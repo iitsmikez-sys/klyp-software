@@ -56,7 +56,7 @@ await page.getByRole('button',{name:'Close preview'}).click();await page.getByRo
 exportFails=true;await page.getByRole('button',{name:'↓ Export',exact:true}).first().click();await page.getByRole('alert').getByText('Test export failed').waitFor();exportFails=false;exports=[];
 const download=page.waitForEvent('download');await page.getByRole('button',{name:'↓ Export',exact:true}).first().click();await download;
 assert.equal(exports[0].hook,'CHAT DID NOT EXPECT THIS');assert.equal(exports[0].aspect_ratio,'Original');assert.ok(exports[0].segments);assert.equal(exports[0].caption_color,'YELLOW');assert.equal(exports[0].caption_position,'CENTER');
-assert.equal(exports[0].layout.mode,'FACECAM');assert.equal(exports[0].style,'PULSE');
+assert.equal(exports[0].layout.mode,'FACECAM');assert.equal(exports[0].style,'HIGHLIGHTER');
 await page.getByRole('button',{name:'Customize',exact:true}).first().click();
 assert.equal(await page.getByRole('combobox',{name:'Export format'}).inputValue(),'Original');
 saveFails=true;await page.getByRole('button',{name:'Keep clip to add media'}).click();await page.getByRole('dialog').getByRole('alert').getByText('Test save failed').waitFor();

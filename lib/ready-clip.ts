@@ -7,7 +7,7 @@
 import type { CaptionStyle, TimedWord } from "./clips.ts";
 import type { HookStyle } from "./captions.ts";
 
-export const READY_CLIP_STYLE: CaptionStyle = "PULSE";
+export const READY_CLIP_STYLE: CaptionStyle = "HIGHLIGHTER";
 export const READY_CLIP_HOOK_STYLE: HookStyle = "WHITE_BOX";
 export const READY_CLIP_ASPECT = "9:16";
 

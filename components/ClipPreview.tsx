@@ -219,6 +219,7 @@ export default function ClipPreview({
     FOCUS: "One big neon green word at a time",
     DUO: "One word at a time, flashing bright green or red",
     MARKER: "White phrase with a purple box that jumps to the word being said",
+    HIGHLIGHTER: "Bold capitals with a thick outline; the word being said turns yellow",
   };
 
   return (

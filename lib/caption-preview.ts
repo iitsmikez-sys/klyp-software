@@ -3,7 +3,7 @@ import { keywordAtTime, defaultCaptionFontFamily, type CaptionCue } from "./capt
 import { ensureCaptionFonts } from "./caption-fonts";
 import { CAPTION_HEX, type CaptionOptions } from "./editor-captions";
 import { captionMotion } from "./caption-template-motion";
-import { EMOJI_FONT, MARKER_BOX, activeWordScale, emojiForText, isHighlightStyle, isUppercaseStyle, wordLook } from "./caption-looks";
+import { EMOJI_FONT, activeWordScale, boxColorFor, emojiForText, isBoxStyle, isHighlightStyle, isUppercaseStyle, wordLook } from "./caption-looks";
 
 /** Paint a whole phrase while one word changes to green at the shared cue step. */
 export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x: number, y: number,
@@ -35,7 +35,7 @@ export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x:
     ctx.save();
     ctx.translate(cursor, 0);
     ctx.scale(grow(index), grow(index));
-    if (style === "MARKER" && wordOffset + index === activeWord) paintMarkerBox(ctx, widths[index]);
+    if (isBoxStyle(style) && wordOffset + index === activeWord) paintMarkerBox(ctx, widths[index], style);
     ctx.strokeText(word, 0, 0);
     ctx.fillStyle = wordLook(style, activeWord, wordOffset + index === activeWord, seedMs).css;
     ctx.fillText(word, 0, 0);
@@ -52,8 +52,8 @@ export function paintCaptionLine(ctx: CanvasRenderingContext2D, text: string, x:
   ctx.restore();
 }
 
-/** The Marker style's purple box behind the word being said, drawn at the text origin (left edge of the word). */
-function paintMarkerBox(ctx: CanvasRenderingContext2D, wordWidth: number): void {
+/** The box behind the word being said (purple for Marker, yellow for Highlighter), drawn at the text origin (left edge of the word). */
+function paintMarkerBox(ctx: CanvasRenderingContext2D, wordWidth: number, style: CaptionStyle): void {
   const em = parseFloat(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? "40");
   const probe = ctx.measureText("Hxgy");
   const padX = em * 0.18, padY = em * 0.16, radius = Math.max(2, em * 0.1);
@@ -66,7 +66,7 @@ function paintMarkerBox(ctx: CanvasRenderingContext2D, wordWidth: number): void 
   ctx.arcTo(x, y, x + w, y, radius);
   ctx.closePath();
   const fill = ctx.fillStyle;
-  ctx.fillStyle = MARKER_BOX.css;
+  ctx.fillStyle = boxColorFor(style).css;
   ctx.fill();
   ctx.fillStyle = fill;
 }
@@ -82,7 +82,7 @@ export function drawCaptionPreview(
   const motion = captionMotion(style, tSeconds * 1000 - cue.startMs);
   const baseSize = style === "CLEAN" ? 58 : style === "SLIDE" ? 68
     : style === "PULSE" ? 78 : style === "SPARK" ? 88
-      : style === "COMIC" ? 76 : style === "KEYWORD" ? 66 : style === "HYPE" ? 82 : style === "POP" ? 120 : style === "FIRE" ? 68 : style === "TRICOLOR" ? 60 : style === "FOCUS" || style === "DUO" ? 62 : 82;
+      : style === "COMIC" ? 76 : style === "KEYWORD" ? 66 : style === "HYPE" ? 82 : style === "POP" ? 120 : style === "FIRE" ? 68 : style === "TRICOLOR" ? 60 : style === "FOCUS" || style === "DUO" ? 62 : style === "HIGHLIGHTER" ? 84 : 82;
   const size = Math.max(12, Math.round(baseSize * scale * motion.scale));
   const y = options.position === "TOP" ? 400 * scale
     : options.position === "CENTER" ? height / 2 : height - 80 * scale;

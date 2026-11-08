@@ -17,8 +17,8 @@ const clip = {
   words: [{ text: "no", start: 100000, end: 100300 }], hooks: ["He did WHAT?!", "Second hook"],
 };
 
-test("the recipe uses real styles: white box hook and Pulse captions", () => {
-  assert.equal(READY_CLIP_STYLE, "PULSE");
+test("the recipe uses real styles: white box hook and Highlighter captions", () => {
+  assert.equal(READY_CLIP_STYLE, "HIGHLIGHTER");
   assert.equal(READY_CLIP_HOOK_STYLE, "WHITE_BOX");
   assert.ok(CAPTION_STYLES.includes(READY_CLIP_STYLE));
   assert.ok(HOOK_STYLES.includes(READY_CLIP_HOOK_STYLE));
@@ -28,7 +28,7 @@ test("the ready clip request carries the AI's first hook and the fixed look", ()
   const body = readyClipRequest(clip, { url: "https://twitch.tv/videos/1", clipId: "abc", handle: "karmic" });
   assert.equal(body.hook, "He did WHAT?!");
   assert.equal(body.hook_style, "WHITE_BOX");
-  assert.equal(body.style, "PULSE");
+  assert.equal(body.style, "HIGHLIGHTER");
   assert.equal(body.aspect_ratio, "9:16");
   assert.equal(body.clip_id, "abc");
   assert.equal(body.handle, "karmic");

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { CAPTION_STYLES, type CaptionStyle } from '@/lib/clips';
 import { ProStyleNote, StyleDiamond } from './ProDiamond';
 
-const featuredStyles: readonly CaptionStyle[] = ['BOLD', 'CLEAN', 'KLYP', 'PULSE', 'HYPE', 'POP', 'FIRE', 'TRICOLOR', 'FOCUS', 'DUO', 'MARKER'];
+const featuredStyles: readonly CaptionStyle[] = ['BOLD', 'CLEAN', 'KLYP', 'PULSE', 'HIGHLIGHTER', 'HYPE', 'POP', 'FIRE', 'TRICOLOR', 'FOCUS', 'DUO', 'MARKER'];
 
 const templateInfo: Record<CaptionStyle, { name: string; detail: string; sample: string }> = {
   BOLD: { name: 'Bold', detail: 'Clear and direct', sample: 'BIG MOMENT' },
@@ -24,6 +24,7 @@ const templateInfo: Record<CaptionStyle, { name: string; detail: string; sample:
   FOCUS: { name: 'Focus', detail: 'One big green word', sample: 'SECOND' },
   DUO: { name: 'Duo', detail: 'Green or red, one word', sample: 'SECOND' },
   MARKER: { name: 'Marker', detail: 'Purple box on the word', sample: 'Can you daddy?' },
+  HIGHLIGHTER: { name: 'Highlighter', detail: 'Yellow on the word', sample: 'WAIT, ARE YOU GUYS' },
 };
 
 export default function CaptionTemplatePicker({ value, onChange }: {
@@ -39,7 +40,7 @@ export default function CaptionTemplatePicker({ value, onChange }: {
         const info = templateInfo[style];
         return <button key={style} type="button" className="caption-template-card" data-style={style.toLowerCase()} aria-label={`${info.name} caption template`} aria-pressed={value === style} onClick={() => onChange(style)}>
           <StyleDiamond style={style} size={24} className="right-1.5 top-1.5 z-10" />
-          <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : style === 'HYPE' ? <>BROWN <em>FOX</em></> : style === 'FIRE' ? <>THE QUICK <em>BROWN</em> 🔥</> : style === 'FOCUS' ? <em>SECOND</em> : style === 'DUO' ? <em>SECOND</em> : style === 'MARKER' ? <>Can <em>you</em> daddy?</> : style === 'TRICOLOR' ? <><i>THE</i> <i className="tri-r">QUICK</i> <i>BROWN</i></> : info.sample}</b></span>
+          <span className="caption-template-sample"><b>{style === 'KEYWORD' ? <>BEEN <em>SO</em> FORTUNATE</> : style === 'HYPE' ? <>BROWN <em>FOX</em></> : style === 'FIRE' ? <>THE QUICK <em>BROWN</em> 🔥</> : style === 'FOCUS' ? <em>SECOND</em> : style === 'DUO' ? <em>SECOND</em> : style === 'MARKER' ? <>Can <em>you</em> daddy?</> : style === 'HIGHLIGHTER' ? <>WAIT, <em>ARE</em> YOU GUYS</> : style === 'TRICOLOR' ? <><i>THE</i> <i className="tri-r">QUICK</i> <i>BROWN</i></> : info.sample}</b></span>
           <span className="caption-template-meta"><strong>{info.name}</strong><small>{info.detail}</small></span>
         </button>;
       })}

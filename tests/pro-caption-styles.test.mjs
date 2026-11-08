@@ -6,8 +6,8 @@ import { CAPTION_STYLES, FREE_CAPTION_STYLES, isProCaptionStyle, resolveCaptionS
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 const PRO = ["CLEAN", "SLIDE", "BOUNCE", "GLOW", "COMIC", "KEYWORD", "HYPE", "POP", "FIRE", "TRICOLOR", "FOCUS", "DUO", "MARKER"];
 
-test("four caption styles are free, every other one is Pro", () => {
-  assert.deepEqual([...FREE_CAPTION_STYLES].sort(), ["BOLD", "KLYP", "PULSE", "SPARK"]);
+test("five caption styles are free, every other one is Pro", () => {
+  assert.deepEqual([...FREE_CAPTION_STYLES].sort(), ["BOLD", "HIGHLIGHTER", "KLYP", "PULSE", "SPARK"]);
   for (const s of FREE_CAPTION_STYLES) assert.equal(isProCaptionStyle(s), false, s);
   for (const s of PRO) assert.equal(isProCaptionStyle(s), true, s);
   assert.equal(PRO.length + FREE_CAPTION_STYLES.length, CAPTION_STYLES.length, "every style is classified");
