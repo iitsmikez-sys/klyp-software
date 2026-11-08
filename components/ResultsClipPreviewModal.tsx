@@ -427,7 +427,7 @@ export default function ResultsClipPreviewModal({
         <div className="flex flex-wrap gap-2 px-6 pt-4 pb-2">
           <button type="button" onClick={onDownloadReady} disabled={!onDownloadReady || readyWorking || rawWorking}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-background hover:bg-accent-dim disabled:opacity-50">
-            {readyWorking ? `Preparing ${rawSeconds}s…` : "Download ready clip"}
+            {readyWorking ? `Preparing ${rawSeconds}s…` : "Download"}
           </button>
           <button type="button" onClick={onEditClip} disabled={!onEditClip || savingClip}
             className="rounded-lg border border-border px-3 py-1.5 self-center text-xs font-medium text-foreground-muted hover:border-accent/50 hover:text-foreground disabled:opacity-50">
