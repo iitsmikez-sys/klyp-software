@@ -56,16 +56,12 @@ test("the transcript text is regular weight, not bold, and the active block stil
   assert.match(css, /\.editor-transcript-lines button\[aria-current=true\] \{ background:#172520/);
 });
 
-test("'N fixes ready' sits at the top of the panel and opens the cleanup list", () => {
+test("Quick cleanup stays exactly where it was: no 'fixes ready' chip at the top, the collapsed bar at the bottom", () => {
   const src = read("components/EditorTranscript.tsx");
-  assert.match(src, /className="editor-cleanup-chip"/);
-  assert.match(src, /\{cleanup\.length === 1 \? 'fix' : 'fixes'\} ready/);
-  assert.match(src, /canEdit && cleanup\.length > 0 && <button/);
-  assert.match(src, /setCleanupOpen\(true\)/);
-  assert.match(src, /<details ref=\{cleanupRef\} open=\{cleanupOpen\} onToggle=/);
-  // the chip comes before the search box, so it is the first thing under the heading
-  assert.ok(src.indexOf("editor-cleanup-chip") < src.indexOf('aria-label="Search transcript"'));
-  // the cleanup list itself is unchanged
+  assert.doesNotMatch(src, /fixes ready|editor-cleanup-chip|cleanupOpen/);
+  assert.doesNotMatch(read("components/clip-timeline-editor.css"), /editor-cleanup-chip/);
+  assert.match(src, /<details className="editor-cleanup editor-cleanup-collapsed">/);
+  assert.match(src, /Quick cleanup\{cleanup\.length > 0 \? ` · \$\{cleanup\.length\} suggestions` : ''\}/);
   assert.match(src, /Review each suggested cut before applying it\./);
 });
 

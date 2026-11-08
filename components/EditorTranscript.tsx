@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { SavedClip } from '@/lib/clip-ui';
 import { outputSpansForSourceCue, type SourceSegment } from '@/lib/editor-timeline';
 import type { TimelineInsert } from '@/lib/clip-edit-draft';
@@ -24,8 +24,6 @@ export default function EditorTranscript({ clip, segments, inserts, time, onSeek
 }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
-  const [cleanupOpen, setCleanupOpen] = useState(false);
-  const cleanupRef = useRef<HTMLDetailsElement>(null);
   const key = (item: CleanupCandidate) => `${item.start_seconds}:${item.end_seconds}`;
   const chosen = cleanup.filter(item => selected.includes(key(item)));
   const saved = chosen.reduce((sum, item) => sum + item.end_seconds - item.start_seconds, 0);
@@ -34,10 +32,6 @@ export default function EditorTranscript({ clip, segments, inserts, time, onSeek
 
   return <aside className="editor-transcript">
     <div className="editor-panel-heading"><h2>Transcript</h2><span>Click a paragraph to play</span></div>
-    {canEdit && cleanup.length > 0 && <button type="button" className="editor-cleanup-chip" onClick={() => {
-      setCleanupOpen(true);
-      requestAnimationFrame(() => cleanupRef.current?.scrollIntoView({ block: 'nearest' }));
-    }}>{cleanup.length} {cleanup.length === 1 ? 'fix' : 'fixes'} ready</button>}
     <input aria-label="Search transcript" placeholder="Search transcript…" value={query} onChange={event => setQuery(event.target.value)} />
     <div className="editor-transcript-lines">
       {matches.map(paragraph => {
@@ -53,7 +47,7 @@ export default function EditorTranscript({ clip, segments, inserts, time, onSeek
       {!paragraphs.length && <p>{clip.words?.length ? 'No transcript words remain in this edit.' : 'No timed transcript was saved for this clip. Video and hook editing are available.'}</p>}
       {!!paragraphs.length && !matches.length && <p>No matching transcript paragraphs.</p>}
     </div>
-    {canEdit && <details ref={cleanupRef} open={cleanupOpen} onToggle={event => setCleanupOpen(event.currentTarget.open)} className="editor-cleanup editor-cleanup-collapsed">
+    {canEdit && <details className="editor-cleanup editor-cleanup-collapsed">
       <summary>Quick cleanup{cleanup.length > 0 ? ` · ${cleanup.length} suggestions` : ''}</summary>
       <div className="editor-cleanup-content">
         {cleanup.length ? <>
