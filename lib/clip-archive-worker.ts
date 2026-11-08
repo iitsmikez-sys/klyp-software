@@ -120,7 +120,8 @@ export async function processClipArchiveJobs(): Promise<void> {
       await archiveOne(job);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const sourceGone = /uploaded file is no longer available|video unavailable|HTTP(?: Error)? (404|410)|source video no longer available/i.test(message);
+      // "is not a valid URL" means the clip was saved with no usable source link: retrying 8 times can never fix that.
+      const sourceGone = /uploaded file is no longer available|video unavailable|HTTP(?: Error)? (404|410)|source video no longer available|is not a valid URL/i.test(message);
       const { error: failError } = await admin.rpc("fail_clip_archive_job", {
         p_clip_id: job.clip_id, p_error: message,
         p_retry_seconds: Math.min(86400, 120 * 2 ** Math.min(job.attempts - 1, 10)),

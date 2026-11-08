@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import os from "os";
 import path from "path";
 import { shouldRetryYouTubeOverIpv6 } from "./youtube-ipv6-fallback.ts";
+import { withYoutubeCookies } from "./youtube-cookies.ts";
 
 /**
  * Proof for the ffmpeg -9 kills on /api/preview (2026-08-08): the exact same
@@ -308,8 +309,9 @@ export function runCapture(bin: string, args: string[], opts: RunOptions = {}): 
 }
 
 /** Capture yt-dlp metadata, retrying a YouTube bot challenge over IPv6. */
-export async function runYtDlpCaptureWithIpv6Fallback(args: string[], opts: RunOptions = {}): Promise<string> {
+export async function runYtDlpCaptureWithIpv6Fallback(plainArgs: string[], opts: RunOptions = {}): Promise<string> {
   const bin = resolveBin("yt-dlp");
+  const args = withYoutubeCookies(plainArgs); // only when YOUTUBE_COOKIES_B64 is set, and only for YouTube links
   try {
     return await runCapture(bin, args, opts);
   } catch (err) {
@@ -391,12 +393,13 @@ function transientMessage(raw: string): string {
  * Non-transient failures (bad URL, missing binary, private/deleted video) fail fast.
  */
 export async function runYtDlpWithRetry(
-  args: string[],
+  plainArgs: string[],
   opts: RunOptions = {},
   retries = 1,
   delayMs = 3000
 ): Promise<void> {
   const bin = resolveBin("yt-dlp");
+  const args = withYoutubeCookies(plainArgs); // only when YOUTUBE_COOKIES_B64 is set, and only for YouTube links
   let triedIpv6 = false;
   for (let attempt = 0; ; attempt++) {
     try {
