@@ -25,6 +25,7 @@ import resultsStyles from "./ClipResults.module.css";
 import ProGateModal from "./ProGateModal";
 import { isBestOfResult } from "@/lib/clip-extras";
 import { createClient } from "@/lib/supabase/client";
+import { trackEvent, type EventProps } from "@/lib/track";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
@@ -811,12 +812,21 @@ export default function AnalyzePanel() {
 
   const downloadClip = async (clip: ClipWithWords, index: number, styleOverride?: CaptionStyle, raw = false, ready = false) => {
     if (busy || exportLock.current) return;
+    const downloadProps = (extra: EventProps): EventProps => ({
+      kind: raw ? "raw" : ready ? "ready" : "styled",
+      clip_seconds: Math.round(clip.end_seconds - clip.start_seconds),
+      score: Math.round(clip.viral_score),
+      plan: isPro ? "pro" : "free",
+      ...extra,
+    });
     if (raw && rawCache.current[index]) {
       saveBlob(rawCache.current[index], clipFilename(clip, index, true));
+      void trackEvent("download", downloadProps({ ok: true, cached: true, took_ms: 0 }));
       return;
     }
     if (ready && readyCache.current[index]) {
       saveBlob(readyCache.current[index], clipFilename(clip, index));
+      void trackEvent("download", downloadProps({ ok: true, cached: true, took_ms: 0 }));
       return;
     }
     exportLock.current = true;
@@ -835,8 +845,10 @@ export default function AnalyzePanel() {
       if (ready) readyCache.current[index] = blob;
       if (warning) setDownloadWarning(warning);
       saveBlob(blob, clipFilename(clip, index, raw));
+      void trackEvent("download", downloadProps({ ok: true, cached: false, took_ms: Date.now() - rawStarted }));
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : "Download failed.");
+      void trackEvent("download", downloadProps({ ok: false, cached: false, took_ms: Date.now() - rawStarted, error: (err instanceof Error ? err.message : "Download failed.").slice(0, 80) }));
     } finally {
       if (rawTicker !== null) window.clearInterval(rawTicker);
       exportLock.current = false;
@@ -853,6 +865,7 @@ export default function AnalyzePanel() {
     if (total === 0) return;
     exportLock.current = true;
     setZipProgress({ done: 0, total });
+    const zipStarted = Date.now();
 
     try {
       const JSZip = (await import("jszip")).default;
@@ -876,8 +889,10 @@ export default function AnalyzePanel() {
 
       const zipBlob = await zip.generateAsync({ type: "blob" });
       saveBlob(zipBlob, "klyp_clips.zip");
+      void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", ok: true, took_ms: Date.now() - zipStarted });
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : "ZIP download failed.");
+      void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", ok: false, took_ms: Date.now() - zipStarted });
     } finally {
       exportLock.current = false;
       setZipProgress(null);
@@ -1432,7 +1447,7 @@ export default function AnalyzePanel() {
           )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
             {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <FoundClipCard
-              key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy} keptDays={resultsKeptDays(isPro)}
+              key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy} keptDays={resultsKeptDays(isPro)} showWatermarkNudge={!isPro}
               saving={saving === i || saving === "all"} exporting={downloading === i}
               rawSeconds={downloading === i ? downloadElapsed : 0} exportKind={downloadKind}
               onReadyExport={() => void downloadClip(clip, i, undefined, false, true)}

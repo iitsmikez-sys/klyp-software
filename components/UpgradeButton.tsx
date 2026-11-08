@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
+import { trackEvent } from "@/lib/track";
 
 /**
  * Dashboard header CTA: free users get "Upgrade to Pro" (links to the in-app
@@ -19,6 +20,7 @@ export default function UpgradeButton() {
     return (
       <Link
         href="/dashboard/upgrade"
+        onClick={() => void trackEvent("upgrade_link_click", { from: "header" })}
         className="flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-foreground-muted transition-colors hover:border-accent/50 hover:text-foreground whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         <SparkIcon size={13} />
