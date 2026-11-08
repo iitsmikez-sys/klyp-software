@@ -230,6 +230,10 @@ export async function transcribe(
     () => aai.transcripts.transcribe({ audio: audioPath, speech_models: ['universal-3-5-pro', 'universal-2'] }));
 
   if (transcript.status === "error") {
+    // A file with no spoken audio (silence, music only) cannot be clipped: say so plainly. Nothing is charged for it.
+    if (/no spoken audio|no speech/i.test(String(transcript.error))) {
+      throw new Error("We couldn't hear any speech in this video, so there's nothing to clip. No Sparks were charged. Try a video where someone is talking.");
+    }
     throw new Error(`AssemblyAI transcription failed: ${transcript.error}`);
   }
   const audioSeconds = Number(transcript.audio_duration ?? 0) || (transcript.words?.at(-1)?.end ?? 0) / 1000;
