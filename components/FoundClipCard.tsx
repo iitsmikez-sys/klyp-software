@@ -33,7 +33,7 @@ export default function FoundClipCard({ clip, topPick = false, kept, busy, expor
     <p className="mt-1 text-xs text-foreground-muted">{platformName(clip.url)} · VOD {fmtTime(clip.start_seconds)} · {clip.clip_type.replaceAll('_', ' ')}</p>
     <div className="mt-auto pt-4">
       <button type="button" onClick={onReadyExport} disabled={busy} className="w-full rounded-lg bg-accent px-3 py-2.5 text-sm font-semibold text-background hover:bg-accent-dim disabled:opacity-50">{readyWorking ? `Preparing ${rawSeconds}s…` : 'Download'}</button>
-      <p data-download-note className="mt-1.5 text-center text-[11px] text-foreground-muted">{readyWorking ? `Usually 1 to 3 minutes. Keep this page open.` : `Usually 1 to 3 minutes · Saved for ${keptDays} days`}</p>
+      <p data-download-note className="mt-1.5 text-center text-[11px] text-foreground-muted">{readyWorking ? `Keep this page open.` : `Saved for ${keptDays} days`}</p>
       {showWatermarkNudge && <p className="mt-1 text-center text-[11px]"><a href="/dashboard/upgrade" data-watermark-nudge onClick={() => void trackEvent('watermark_nudge_click')} className="text-accent hover:underline">Free clips include a Klyp watermark. Remove it with Pro</a></p>}
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-xs">

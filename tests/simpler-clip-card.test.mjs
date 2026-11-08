@@ -6,11 +6,12 @@ const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").re
 const card = read("components/FoundClipCard.tsx");
 const panel = read("components/AnalyzePanel.tsx");
 
-test("the card has one clear Download button, with the wait and the save time in plain words", () => {
+test("the card has one clear Download button, with how long clips are saved in plain words", () => {
   assert.match(card, /'Download'\}<\/button>/);
-  assert.match(card, /Usually 1 to 3 minutes · Saved for \$\{keptDays\} days/);
-  assert.match(card, /Usually 1 to 3 minutes\. Keep this page open\./, "while it works, it says how long and not to leave");
+  assert.match(card, /`Saved for \$\{keptDays\} days`/);
+  assert.match(card, /`Keep this page open\.`/, "while it works, it says not to leave");
   assert.match(card, /Preparing \$\{rawSeconds\}s…/);
+  assert.doesNotMatch(card, /Usually 1 to 3 minutes/, "no time estimate on the card");
 });
 
 test("Edit, Download Raw, Keep and Discard are tucked under More, not shown as loose buttons", () => {
