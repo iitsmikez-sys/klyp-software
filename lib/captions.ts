@@ -503,7 +503,28 @@ export function generateTimedCueAss(
  const styles = hasFixedPalette(style) ? styleBlock(style, res, 0, undefined, font, textScale)
    : styleBlock(style, res, 0, undefined, font, textScale).replace(STYLE_PARAMS[style].color, appearance.assColor);
  const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
- for (const cue of normalizeTimedCues(cues)) {
+ // Highlighter never wraps to a second line: a long phrase is split into chunks that each fit on one line,
+ // shown one after another, so the yellow keeps moving at speaking pace.
+ const oneLine = (cue: { id?: string; start_ms: number; end_ms: number; text: string }) => {
+  if (style !== "HIGHLIGHTER") return [cue];
+  const area = typeof safeArea === 'function' ? safeArea(cue) : safeArea;
+  const words = cue.text.split(/\s+/).filter(Boolean);
+  const chunks: string[][] = [];
+  for (const word of words) {
+   const current = chunks[chunks.length - 1];
+   if (current && layoutTimedCaption([...current, word].join(" "), style, appearance, res, area, font).lines.length <= 1) current.push(word);
+   else chunks.push([word]);
+  }
+  if (chunks.length <= 1) return [cue];
+  let used = 0;
+  return chunks.map((chunk) => {
+   const start = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * used / words.length);
+   used += chunk.length;
+   const end = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * used / words.length);
+   return { ...cue, start_ms: start, end_ms: end, text: chunk.join(" ") };
+  });
+ };
+ for (const cue of normalizeTimedCues(cues).flatMap(oneLine)) {
   const layout = layoutTimedCaption(cue.text, style, appearance, res, typeof safeArea === 'function' ? safeArea(cue) : safeArea, font);
   if (isHighlightStyle(style)) {
    const emoji = style === "FIRE" ? emojiForText(layout.lines.map(line => line.text).join(" ")) : null;
