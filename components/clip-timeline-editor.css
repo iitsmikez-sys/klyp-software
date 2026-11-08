@@ -64,7 +64,9 @@
 .editor-panel-heading span { font-size:11px; color:var(--editor-muted) }
 .editor-transcript>input { flex-shrink:0; font-size:13px!important; margin-bottom:12px }
 .editor-transcript-lines { overflow:auto; flex:1; padding-bottom:12px }
-.editor-transcript-lines button { display:flex; flex-direction:column; align-items:flex-start; width:100%; gap:5px; text-align:left; padding:12px 8px 16px; border-bottom:1px solid #283238; border-radius:0; font-size:13px; line-height:1.55; font-weight:550 }
+.editor-transcript-lines button { display:flex; flex-direction:column; align-items:flex-start; width:100%; gap:5px; text-align:left; padding:12px 8px 16px; border-bottom:1px solid #283238; border-radius:0; font-size:13px; line-height:1.6; font-weight:400 }
+.editor-cleanup-chip { align-self:flex-start; flex-shrink:0; margin:0 0 10px; padding:4px 11px; border:1px solid #2f7a62; border-radius:999px; background:transparent; color:var(--editor-mint); font-size:11px; font-weight:600; cursor:pointer }
+.editor-cleanup-chip:hover { background:#14211f }
 .editor-transcript-lines time { color:var(--editor-muted); font-size:12px; font-variant-numeric:tabular-nums; flex-shrink:0 }
 .editor-transcript-lines button[aria-current=true] { background:#172520; color:#f0faf6 }
 .editor-transcript-lines button[aria-current=true] time { color:var(--editor-mint) }
