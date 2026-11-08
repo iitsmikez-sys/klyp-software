@@ -14,5 +14,7 @@ export async function register() {
     startActivationEmailWorker();
     const { startReturnEmailWorker } = await import("@/lib/return-email-worker");
     startReturnEmailWorker();
+    const { startFeedbackEmailWorker } = await import("@/lib/feedback-email-worker");
+    startFeedbackEmailWorker();
   }
 }

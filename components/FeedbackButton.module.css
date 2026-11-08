@@ -1,0 +1,93 @@
+/* The "Something wrong?" button: a black circle with a white headset that grows into a pill on hover (the words stay on
+   one line), and a plain white form. Black and white on purpose, so it does not look like part of Klyp's own styling. */
+.fab {
+  position: fixed;
+  right: 16px;
+  bottom: 80px; /* clears the mobile bottom tab bar */
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  height: 48px;
+  max-width: 48px;
+  padding: 0;
+  border-radius: 999px;
+  background: #0b0b0c;
+  border: 1px solid #3a3a42;
+  color: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  transition: max-width 0.3s ease, background 0.2s ease;
+}
+@media (min-width: 768px) {
+  .fab { right: 20px; bottom: 20px; }
+}
+.fab svg { flex: none; margin: 0 12px; }
+.label {
+  flex: none;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  padding-right: 20px;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.08s;
+}
+.fab:hover, .fab:focus-visible { max-width: 240px; background: #161618; }
+.fab:hover .label, .fab:focus-visible .label { opacity: 1; }
+.fab:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* While the form is open the button stays a plain circle. */
+.fab[aria-expanded="true"], .fab[aria-expanded="true"]:hover { max-width: 48px; }
+.fab[aria-expanded="true"] .label { opacity: 0; }
+/* A touch screen has no hover: a tap must not leave the pill stuck open. */
+@media (hover: none) {
+  .fab:hover { max-width: 48px; background: #0b0b0c; }
+  .fab:hover .label { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fab, .label { transition: none; }
+}
+
+.panel {
+  position: fixed;
+  right: 16px;
+  bottom: 140px;
+  z-index: 60;
+  width: min(92vw, 360px);
+  box-sizing: border-box;
+  background: #fff;
+  color: #111;
+  border-radius: 18px;
+  padding: 18px;
+  font-family: inherit;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+@media (min-width: 768px) {
+  .panel { right: 20px; bottom: 80px; }
+}
+.top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.title { font-size: 16px; font-weight: 700; color: #111; margin: 0; }
+.close { border: 0; background: transparent; color: #8a8a93; font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.close:hover { color: #111; }
+.sub { font-size: 12px; color: #6b6b75; margin: 0 0 12px; }
+.fieldset { border: 1px solid #e6e6ea; border-radius: 12px; padding: 0; margin: 0 0 12px; overflow: hidden; }
+.option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; color: #222; cursor: pointer; border-top: 1px solid #efeff2; }
+.option:first-of-type { border-top: 0; }
+.option.on { background: #f5f5f7; }
+.radio { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; flex: none; border-radius: 50%; border: 1.5px solid #c4c4cc; background: #fff; cursor: pointer; }
+.radio:checked { border: 4px solid #111; }
+.radio:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+.text { display: block; width: 100%; box-sizing: border-box; border: 1px solid #e0e0e5; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.5; color: #111; background: #fff; resize: vertical; min-height: 72px; max-height: 180px; font-family: inherit; margin: 0 0 10px; }
+.text:focus { outline: 2px solid #111; outline-offset: 1px; }
+.note { font-size: 11px; color: #8a8a93; margin: 0 0 12px; }
+.send { width: 100%; border: 0; background: #111; color: #fff; font-size: 13px; font-weight: 700; padding: 11px; border-radius: 999px; cursor: pointer; font-family: inherit; }
+.send:disabled { opacity: 0.4; cursor: not-allowed; }
+.send:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+.error { font-size: 12px; color: #b42318; margin: 0 0 10px; }
+.done { text-align: center; padding: 6px 0 2px; }
+.tick { width: 40px; height: 40px; border-radius: 50%; background: #111; color: #fff; display: flex; align-items: center; justify-content: center; margin: 4px auto 12px; font-size: 18px; }
+.doneTitle { font-size: 16px; font-weight: 700; color: #111; margin: 0; }
+.doneText { font-size: 12px; color: #6b6b75; margin: 6px 0 14px; line-height: 1.6; }
+.secondary { width: 100%; border: 0; background: #f1f1f4; color: #111; font-size: 13px; font-weight: 700; padding: 11px; border-radius: 999px; cursor: pointer; font-family: inherit; }
