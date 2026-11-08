@@ -2,7 +2,19 @@ import type { TimedWord } from './clips';
 
 export type TranscriptParagraph = { text: string; start_ms: number; end_ms: number; words: TimedWord[] };
 
-/** Keep timestamps tied to the original words while presenting a readable transcript. */
+const SENTENCE_END = /[.!?]["')\]]*$/;
+/** A block may end at a sentence end once it has this many words. */
+const MIN_WORDS_FOR_SENTENCE_BREAK = 10;
+const MAX_WORDS = 42;
+const MAX_MS = 18000;
+/** When a block hits its limit, a sentence end this many words in or later is used as the break instead of cutting mid-sentence. */
+const MIN_WORDS_BEFORE_FALLBACK_BREAK = 8;
+
+/**
+ * Keep timestamps tied to the original words while presenting a readable transcript. A block ends at the end of a
+ * sentence whenever it has enough words, and when a block gets too long it is cut at the last sentence end inside it
+ * (only a long run with no sentence end at all is cut in the middle of a sentence).
+ */
 export function groupTranscriptParagraphs(words: readonly TimedWord[], visible: (word: TimedWord) => boolean = () => true): TranscriptParagraph[] {
   const paragraphs: TranscriptParagraph[] = [];
   let group: TimedWord[] = [];
@@ -21,8 +33,20 @@ export function groupTranscriptParagraphs(words: readonly TimedWord[], visible: 
     if (!visible(word)) { flush(); continue; }
     if (group.length && word.start - group[group.length - 1].end >= 2000) flush();
     group.push(word);
-    const sentenceEnd = /[.!?]["')\]]*$/.test(word.text);
-    if ((sentenceEnd && group.length >= 18) || group.length >= 42 || word.end - group[0].start >= 18000) flush();
+    if (SENTENCE_END.test(word.text) && group.length >= MIN_WORDS_FOR_SENTENCE_BREAK) { flush(); continue; }
+    if (group.length >= MAX_WORDS || word.end - group[0].start >= MAX_MS) {
+      let cut = -1;
+      for (let i = group.length - 2; i >= MIN_WORDS_BEFORE_FALLBACK_BREAK; i--) {
+        if (SENTENCE_END.test(group[i].text)) { cut = i; break; }
+      }
+      if (cut >= 0) {
+        const rest = group.splice(cut + 1);
+        flush();
+        group = rest;
+      } else {
+        flush();
+      }
+    }
   }
   flush();
   return paragraphs;
