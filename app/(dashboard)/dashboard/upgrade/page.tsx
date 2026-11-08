@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { trackEvent } from "@/lib/track";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
@@ -121,6 +122,14 @@ export default function UpgradePage() {
     return () => { cancelled = true; };
   }, [isPro]);
 
+  // One 'upgrade_view' per visit, once the account has loaded and only for people who are not already Pro.
+  const viewTracked = useRef(false);
+  useEffect(() => {
+    if (viewTracked.current || balance === null || isPro) return;
+    viewTracked.current = true;
+    void trackEvent("upgrade_view");
+  }, [balance, isPro]);
+
   const allowance = SPARKS_ALLOWANCE[tier];
   const used = balance !== null ? Math.min(allowance, Math.max(0, allowance - balance)) : 0;
   const usedPct = allowance > 0 ? Math.round((used / allowance) * 100) : 0;
@@ -129,16 +138,19 @@ export default function UpgradePage() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    const interval = yearly ? "year" : "month";
+    void trackEvent("upgrade_click", { interval, first_month: firstMonthCents !== null });
     try {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interval: yearly ? "year" : "month" }),
+        body: JSON.stringify({ interval }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.url) {
         throw new Error(data?.error ?? `Checkout failed (HTTP ${res.status}).`);
       }
+      void trackEvent("checkout_started", { interval });
       window.location.href = data.url;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Checkout failed.");

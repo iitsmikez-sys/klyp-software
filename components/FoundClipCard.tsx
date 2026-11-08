@@ -5,16 +5,19 @@ import type { SavedClip } from '@/lib/clip-ui';
 import { fmtTime, platformName } from '@/lib/clip-ui';
 import { backupState } from '@/lib/clip-backup-state';
 import { isMediaExpired } from '@/lib/clip-expiry';
+import { trackEvent } from '@/lib/track';
 
 /**
  * One found clip. One clear button (Download), a plain note about how long it takes and how long it is saved, and the
  * rest (Edit, raw download, Keep, Discard) tucked under "More" so a first-time visitor is not facing nine buttons.
  */
-export default function FoundClipCard({ clip, topPick = false, kept, busy, exporting, saving, rawSeconds, exportKind = 'raw', keptDays, onPreview, onCustomize, onRawExport, onReadyExport, onKeep, onDiscard }: {
+export default function FoundClipCard({ clip, topPick = false, kept, busy, exporting, saving, rawSeconds, exportKind = 'raw', keptDays, showWatermarkNudge = false, onPreview, onCustomize, onRawExport, onReadyExport, onKeep, onDiscard }: {
   clip: SavedClip; topPick?: boolean; kept: boolean; busy: boolean; exporting: boolean; saving: boolean; rawSeconds: number;
   exportKind?: 'ready' | 'raw';
   /** How many days this plan keeps results and clips (5 on Free, 30 on Pro). */
   keptDays: number;
+  /** Free accounts only: a quiet line under the download note that says free clips carry a watermark and links to Pro. */
+  showWatermarkNudge?: boolean;
   onPreview: () => void; onCustomize: () => void; onRawExport: () => void; onReadyExport: () => void;
   onKeep: () => void; onDiscard: () => void;
 }) {
@@ -31,6 +34,7 @@ export default function FoundClipCard({ clip, topPick = false, kept, busy, expor
     <div className="mt-auto pt-4">
       <button type="button" onClick={onReadyExport} disabled={busy} className="w-full rounded-lg bg-accent px-3 py-2.5 text-sm font-semibold text-background hover:bg-accent-dim disabled:opacity-50">{readyWorking ? `Preparing ${rawSeconds}s…` : 'Download'}</button>
       <p data-download-note className="mt-1.5 text-center text-[11px] text-foreground-muted">{readyWorking ? `Usually 1 to 3 minutes. Keep this page open.` : `Usually 1 to 3 minutes · Saved for ${keptDays} days`}</p>
+      {showWatermarkNudge && <p className="mt-1 text-center text-[11px]"><a href="/dashboard/upgrade" data-watermark-nudge onClick={() => void trackEvent('watermark_nudge_click')} className="text-accent hover:underline">Free clips include a Klyp watermark. Remove it with Pro</a></p>}
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-xs">
       <button type="button" onClick={onPreview} disabled={busy} className="min-h-8 font-medium text-foreground-muted hover:text-foreground disabled:opacity-50">Preview</button>
