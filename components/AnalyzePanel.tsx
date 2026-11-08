@@ -1239,7 +1239,7 @@ export default function AnalyzePanel() {
         <div className="min-w-0">
           <span className="mb-1.5 block text-xs font-medium text-foreground">Clips</span>
           <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-foreground-muted">
-            Finds your best moments, up to {shownClipCount}, included in the price. Only moments worth posting are returned, so you may get fewer.
+            Finds your best moments, up to {shownClipCount}, best first. Some may be weaker. Included in the price.
           </p>
         </div>
 

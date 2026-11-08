@@ -15,7 +15,8 @@ test("the screen names the ceiling for this video's length and never states a pl
   assert.doesNotMatch(src, />\{clipCount\} clips ·/);
   assert.doesNotMatch(src, /expectedClipCeiling|shownClips|upToClipsText/);
   assert.match(src, /bestMomentsText\(shownClipCount\)/);
-  assert.match(src, /Finds your best moments, up to \{shownClipCount\}/);
+  assert.match(src, /Finds your best moments, up to \{shownClipCount\}, best first\. Some may be weaker\. Included in the price\./);
+  assert.doesNotMatch(src, /Only moments worth posting are returned/, "no longer true: weaker moments now fill the list");
   assert.match(src, /clipCountForDuration\(/);
 });
 
