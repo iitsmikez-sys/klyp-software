@@ -1432,7 +1432,7 @@ export default function AnalyzePanel() {
           )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
             {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <FoundClipCard
-              key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy}
+              key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy} keptDays={resultsKeptDays(isPro)}
               saving={saving === i || saving === "all"} exporting={downloading === i}
               rawSeconds={downloading === i ? downloadElapsed : 0} exportKind={downloadKind}
               onReadyExport={() => void downloadClip(clip, i, undefined, false, true)}

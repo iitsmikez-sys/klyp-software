@@ -77,9 +77,14 @@ test("a real render is 1080x1920 with the video centred and a blurred, non-black
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("every place a clip is downloaded offers 'Download ready clip' as the main button", () => {
+test("every place a clip is downloaded offers one main download button", () => {
   const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
-  for (const file of ["components/FoundClipCard.tsx", "components/ResultsClipPreviewModal.tsx", "components/ClipPreviewModal.tsx", "components/CompactClipCard.tsx"]) {
+  // The results screen a first-time visitor sees says plainly "Download"; the library pages keep "Download ready clip".
+  for (const file of ["components/FoundClipCard.tsx", "components/ResultsClipPreviewModal.tsx"]) {
+    assert.match(read(file), /: ?['"]Download['"]/, file);
+    assert.doesNotMatch(read(file), /Download ready clip/, file);
+  }
+  for (const file of ["components/ClipPreviewModal.tsx", "components/CompactClipCard.tsx"]) {
     assert.match(read(file), /Download ready clip/, file);
   }
   // Edit is now the quiet button; Download Raw stays.
