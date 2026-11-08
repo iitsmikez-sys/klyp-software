@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { shouldRetryYouTubeOverIpv6 } from "./youtube-ipv6-fallback.ts";
 import { withYoutubeCookies } from "./youtube-cookies.ts";
+import { tryYoutubeClients, YOUTUBE_FALLBACK_CLIENTS } from "./youtube-client-fallback.ts";
 
 /**
  * Proof for the ffmpeg -9 kills on /api/preview (2026-08-08): the exact same
@@ -319,9 +320,14 @@ export async function runYtDlpCaptureWithIpv6Fallback(plainArgs: string[], opts:
     if (!shouldRetryYouTubeOverIpv6(args, message)) throw err;
     console.error("[yt-dlp] metadata request failed:", message);
     try {
-      return await runCapture(bin, ["--force-ipv6", ...args], opts);
+      const viaIpv6 = await runCapture(bin, ["--force-ipv6", ...args], opts);
+      console.log("[yt-dlp] YouTube's bot check was passed over IPv6 (metadata)");
+      return viaIpv6;
     } catch (ipv6Error) {
       console.error("[yt-dlp] IPv6 metadata retry failed:", ipv6Error);
+      // Then other kinds of YouTube app, two only: this runs while a person waits for the video's details.
+      const other = await tryYoutubeClients(args, message, (clientArgs) => runCapture(bin, clientArgs, opts), { clients: YOUTUBE_FALLBACK_CLIENTS.slice(0, 2) });
+      if (other.ok) return other.value;
       throw err;
     }
   }
@@ -415,9 +421,13 @@ export async function runYtDlpWithRetry(
         triedIpv6 = true;
         try {
           await run(bin, ["--force-ipv6", ...args], opts);
+          console.log("[yt-dlp] YouTube's bot check was passed over IPv6");
           return;
         } catch (ipv6Error) {
           console.error("[yt-dlp] IPv6 retry failed:", ipv6Error);
+          // Then try other kinds of YouTube app, one after the other (see lib/youtube-client-fallback.ts).
+          const other = await tryYoutubeClients(args, message, (clientArgs) => run(bin, clientArgs, opts));
+          if (other.ok) return;
           // Keep the original bot challenge so the UI can offer file upload.
         }
       }
