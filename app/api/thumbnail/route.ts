@@ -23,6 +23,7 @@ import { bearerToken, getProfileFromToken } from "@/lib/profile-token";
 import { withCors, corsPreflight } from "@/lib/cors";
 import { getArchivedClip, readArchivedObject } from "@/lib/clip-archive";
 import { canProcessClip, acquireUserProcessingSlot } from "@/lib/clip-access";
+import { isYouTubeRef, youtubeStoryboardFrame } from "@/lib/youtube-storyboard";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -182,6 +183,16 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       // re-cut at every keyframe (which took minutes per clip and held up the whole results page). This is the same small slice
       // the visual check uses (lib/vision-validation.ts); resolveSourceSegment checks that it really has a picture.
       const mid = frameTime(start, end);
+      // YouTube: take the picture from YouTube's own storyboard, one small download per video and no video at all. Any problem
+      // (a video without storyboards, a blocked request) falls through to cutting it from a slice of the video, below.
+      if (isYouTubeRef(url)) {
+        try {
+          await youtubeStoryboardFrame(url, mid, outPath);
+          if (existsSync(outPath) && (await stat(outPath)).size > 0) return;
+        } catch (err) {
+          console.log(`[thumbnail ${reqId}] storyboard not used, cutting from video:`, err instanceof Error ? err.message.slice(0, 200) : String(err));
+        }
+      }
       const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(
         url, Math.max(0, mid - FRAME_SLICE_BEFORE_SECONDS), mid + FRAME_SLICE_AFTER_SECONDS, FRAME_SLICE_HEIGHT, FRAME_SLICE_MAX_MS, profile.id);
       await extractFrame(sourcePath, mid - offsetSeconds, outPath);
