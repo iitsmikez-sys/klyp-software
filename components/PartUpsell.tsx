@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { CAPTION_STYLES, FREE_CAPTION_STYLES } from "@/lib/clips";
-import { clipCountForDuration } from "@/lib/sparks";
 import { resultsKeptDays } from "@/lib/results-retention";
 import { MONTHLY_PRICE_USD } from "@/lib/pricing";
 import { lengthWords } from "@/lib/length-words";
@@ -25,7 +24,7 @@ export default function PartUpsell({ totalSeconds, analyzedSeconds }: { totalSec
         </p>
         <ul className="mt-3 space-y-1.5 text-sm text-foreground">
           {[
-            `The whole stream, up to ${clipCountForDuration(totalSeconds)} clips`,
+            "The whole stream analyzed, not just 2 hours",
             "No Klyp watermark on your downloads",
             `${extraStyles} more caption styles`,
             `Clips kept ${resultsKeptDays(true)} days instead of ${resultsKeptDays(false)}`,

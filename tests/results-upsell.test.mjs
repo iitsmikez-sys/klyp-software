@@ -22,7 +22,9 @@ test("every number in the upgrade box comes from the app's own rules", () => {
   assert.equal(clipCountForDuration(3.2 * 3600), 12);
   assert.deepEqual({ ...RESULTS_KEPT_DAYS }, { free: 5, pro: 30 });
   const box = read("components/PartUpsell.tsx");
-  for (const piece of ["clipCountForDuration(totalSeconds)", "CAPTION_STYLES.length - FREE_CAPTION_STYLES.length", "resultsKeptDays(true)", "resultsKeptDays(false)", "MONTHLY_PRICE_USD"]) assert.ok(box.includes(piece), piece);
+  for (const piece of ["CAPTION_STYLES.length - FREE_CAPTION_STYLES.length", "resultsKeptDays(true)", "resultsKeptDays(false)", "MONTHLY_PRICE_USD"]) assert.ok(box.includes(piece), piece);
+  assert.doesNotMatch(box, /up to ${|clips`,|clipCountForDuration/, "no clip count is promised");
+  assert.ok(box.includes("The whole stream analyzed, not just 2 hours"));
 });
 
 test("the box makes no false promise: no 'unlimited', no price that might not apply", () => {
