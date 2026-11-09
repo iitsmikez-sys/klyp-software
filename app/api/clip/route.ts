@@ -340,6 +340,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   try {
     // A raw download of a saved clip goes through the same check as an export (ownership, window, not expired).
     if (raw && !clipId ? !await canDownloadRawMoment(profile.id, url, start, end) : !await canProcessClip(profile.id, clipId, url, start, end)) {
+      // What was asked for, so a refusal like this can be explained (no account details).
+      log("denied: not in saved clips or analysis results", url.slice(0, 100), `${start}-${end}s`, `clipId=${clipId ? "yes" : "no"}`, raw ? "raw" : "export");
       return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
     }
   } catch (err) {
