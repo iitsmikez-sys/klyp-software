@@ -26,6 +26,22 @@ function keyFor(clip: ThumbClip): string {
 const ready = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
+/**
+ * At most this many frames are fetched at once. A results page has a card per clip; asking for every frame at the same moment
+ * fills the account's few processing slots and makes a Download click wait or fail.
+ */
+const MAX_CONCURRENT_FRAMES = 2;
+let activeFrames = 0;
+const waitingFrames: Array<() => void> = [];
+function acquireFrameTurn(): Promise<() => void> {
+  const release = () => {
+    activeFrames--;
+    waitingFrames.shift()?.();
+  };
+  if (activeFrames < MAX_CONCURRENT_FRAMES) { activeFrames++; return Promise.resolve(release); }
+  return new Promise((resolve) => waitingFrames.push(() => { activeFrames++; resolve(release); }));
+}
+
 /** The frame for this clip if it has already been fetched, else null. */
 export function peekClipThumbnail(clip: ThumbClip): string | null {
   return ready.get(keyFor(clip)) ?? null;
@@ -49,6 +65,14 @@ export function loadClipThumbnail(clip: ThumbClip): Promise<string> {
   const pending = inflight.get(key);
   if (pending) return pending;
 
+  // Wait for a turn (see MAX_CONCURRENT_FRAMES) before the request and its 45 second clock start.
+  const request = acquireFrameTurn().then((release) => fetchThumbnail(clip, key).finally(release));
+  inflight.set(key, request);
+  request.then(() => inflight.delete(key), () => inflight.delete(key));
+  return request;
+}
+
+function fetchThumbnail(clip: ThumbClip, key: string): Promise<string> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout>;
   const deadline = new Promise<never>((_, reject) => {
@@ -82,12 +106,6 @@ export function loadClipThumbnail(clip: ThumbClip): Promise<string> {
       return objectUrl;
     })
 ;
-  const request = Promise.race([fetchFrame, deadline]).finally(() => {
-      clearTimeout(timer);
-      // Clear either way: a failure should be retryable on the next mount.
-      inflight.delete(key);
-    });
-
-  inflight.set(key, request);
-  return request;
+  // A failure clears the in-flight entry (in loadClipThumbnail), so it is retryable on the next mount.
+  return Promise.race([fetchFrame, deadline]).finally(() => clearTimeout(timer));
 }
