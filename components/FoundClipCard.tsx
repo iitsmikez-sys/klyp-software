@@ -3,7 +3,7 @@ import ClipThumbnail from './ClipThumbnail';
 import ScoreBadge from './ScoreBadge';
 import type { SavedClip } from '@/lib/clip-ui';
 import { fmtTime, platformName } from '@/lib/clip-ui';
-import { backupState } from '@/lib/clip-backup-state';
+import { backupState, backupTone } from '@/lib/clip-backup-state';
 import { isMediaExpired } from '@/lib/clip-expiry';
 import { trackEvent } from '@/lib/track';
 
@@ -38,7 +38,7 @@ export default function FoundClipCard({ clip, topPick = false, kept, busy, expor
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-xs">
       <button type="button" onClick={onPreview} disabled={busy} className="min-h-8 font-medium text-foreground-muted hover:text-foreground disabled:opacity-50">Preview</button>
-      {kept && <span role="status" className={backup.kind === 'saved' ? 'text-accent' : 'text-amber-300'}>{backup.message}</span>}
+      {kept && <span role="status" className={{ good: 'text-accent', quiet: 'text-foreground-muted', warn: 'text-amber-300' }[backupTone(backup.kind)]}>{backup.message}</span>}
     </div>
     <details data-more className="mt-1 text-xs">
       <summary className="min-h-8 cursor-pointer select-none py-1.5 font-medium text-foreground-muted hover:text-foreground">More</summary>

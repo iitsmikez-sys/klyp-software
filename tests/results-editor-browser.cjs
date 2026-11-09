@@ -33,7 +33,7 @@ await page.locator('button[type=submit]').click();
 await page.getByRole('heading',{name:'We found 2 great moments!',exact:false}).waitFor();
 await page.waitForTimeout(1400);
 assert.equal(await page.locator('article').count(),2);
-await page.getByRole('button',{name:/Retry thumbnail/}).first().click();
+// The first frame fails and is retried quietly in the background (no Retry button any more); wait for it below.
 await page.locator('article').first().locator('img').waitFor();
 await page.getByText('You saved 13 Sparks',{exact:false}).waitFor();
 await page.locator('article').first().scrollIntoViewIfNeeded();await page.screenshot({path:'work/stage-two-desktop.png',fullPage:true});
