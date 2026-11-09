@@ -109,23 +109,27 @@ export function defaultFilterPath(p: string): string {
  * Measure the audio file and return its loud moments. `ffmpeg` runs the loudness meter and writes the readings
  * to a file, which is read back; any failure returns no moments, so a measuring problem never fails an analysis.
  */
-export async function detectLoudMoments(
-  audioPath: string,
-  deps: {
-    run: (bin: string, args: string[], opts?: { maxRunMs?: number }) => Promise<unknown>;
-    readText: (path: string) => Promise<string>;
-    ffmpeg: string;
-    outPath: string;
-    /** Escapes a path for use inside an FFmpeg filter. The default handles Windows drive letters and backslashes. */
-    filterPath?: (path: string) => string;
-  },
-): Promise<LoudMoment[]> {
+export type LoudnessDeps = {
+  run: (bin: string, args: string[], opts?: { maxRunMs?: number }) => Promise<unknown>;
+  readText: (path: string) => Promise<string>;
+  ffmpeg: string;
+  outPath: string;
+  /** Escapes a path for use inside an FFmpeg filter. The default handles Windows drive letters and backslashes. */
+  filterPath?: (path: string) => string;
+};
+
+/** The raw loudness readings of an audio file (every 100 ms). Any failure returns no readings, never an error. */
+export async function readLoudSamples(audioPath: string, deps: LoudnessDeps): Promise<LoudSample[]> {
   try {
     await deps.run(deps.ffmpeg, ["-hide_banner", "-nostats", "-loglevel", "error", "-i", audioPath, "-vn",
       "-af", `aresample=16000,ebur128=metadata=1,ametadata=mode=print:key=lavfi.r128.M:file='${(deps.filterPath ?? defaultFilterPath)(deps.outPath)}'`,
       "-f", "null", "-"], { maxRunMs: 10 * 60_000 });
-    return findLoudMoments(parseLoudnessMetadata(await deps.readText(deps.outPath)));
+    return parseLoudnessMetadata(await deps.readText(deps.outPath));
   } catch {
     return [];
   }
+}
+
+export async function detectLoudMoments(audioPath: string, deps: LoudnessDeps): Promise<LoudMoment[]> {
+  return findLoudMoments(await readLoudSamples(audioPath, deps));
 }

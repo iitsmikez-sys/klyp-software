@@ -9,7 +9,7 @@ test("a free user who pastes a video over the Free limit gets a pop-up with an u
   assert.ok(panel.includes('aria-labelledby="cap-title"'));
   assert.ok(panel.includes("This video is {fmtTime(previewDuration ?? 0)} long"));
   assert.ok(panel.includes("Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours."));
-  assert.ok(panel.includes("Every great moment, not just the first two hours. More clips from the whole stream, with no watermark."));
+  assert.ok(panel.includes("Every great moment, not just the best two hours. More clips from the whole stream, with no watermark."));
   assert.ok(panel.includes('href="/dashboard/upgrade"'));
 });
 

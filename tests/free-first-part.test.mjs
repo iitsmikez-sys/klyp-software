@@ -23,13 +23,13 @@ test("the server only honours it for a Free account over the limit, and charges 
     assert.ok(route.includes(piece), piece);
   }
   assert.ok(route.includes("useDiscoveryV2 || partSeconds ? null"), "a saved full transcript is never reused for a part");
-  assert.ok(route.includes("partSeconds,\n              clipCount,"), "passed to the pipeline");
+  assert.ok(route.includes("partSeconds,\n              sourceSeconds: verifiedDuration,"), "passed to the pipeline");
 });
 
 test("the pipeline cuts the audio to the part and never records that transcript as full coverage", () => {
   const pipeline = read("lib/analyze-pipeline.ts");
-  assert.ok(pipeline.includes("trimAudioToPart(full, workDir, partSeconds)"));
-  assert.ok(pipeline.includes('["-y", "-i", audioPath, "-t", String(seconds), "-vn", "-c", "copy", outPath]'));
+  assert.ok(pipeline.includes("trimAudioToPart(full, workDir, windowStart, partSeconds)"));
+  assert.ok(pipeline.includes('["-y", "-ss", String(start), "-i", audioPath, "-t", String(seconds), "-vn", "-c", "copy", outPath]'));
   assert.ok(pipeline.includes('(windows.length || partSeconds ? "chat-sampled" : "full")'));
 });
 
@@ -44,6 +44,6 @@ test("the pop-up offers the free first part and the screen then prices and sends
 
 test("the price summary shows the part's length and price, not the whole video's, once the free part is chosen", () => {
   const panel = read("components/AnalyzePanel.tsx");
-  assert.ok(panel.includes("Analyze first part (${fmtTime(FREE_PART_SECONDS)})"));
+  assert.ok(panel.includes("Analyze best part (${fmtTime(FREE_PART_SECONDS)})"));
   assert.ok(panel.includes("{firstPart ? estimateSparks(FREE_PART_SECONDS) : estimatedSparks} Sparks"));
 });
