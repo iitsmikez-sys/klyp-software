@@ -33,6 +33,8 @@ import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError, userFacingClipError } from "@/lib/analyze-errors";
 import { FREE_PART_SECONDS, PLAN_LIMITS, UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
+import PartUpsell from "@/components/PartUpsell";
+import { lengthWords } from "@/lib/length-words";
 import { bestMomentsText } from "@/lib/clip-expectation";
 import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
@@ -151,6 +153,9 @@ export default function AnalyzePanel() {
   /** The link whose "too long for Free" pop-up the person closed, so it does not reopen for the same link. */
   const [capDismissedFor, setCapDismissedFor] = useState<string | null>(null);
   const capTrackedFor = useRef<string | null>(null);
+  /** The whole video's length when the finished run was a free "best 2 hours" run (shows the upgrade box under the clips), else null. */
+  const [partRunTotal, setPartRunTotal] = useState<number | null>(null);
+  const submittedPartTotal = useRef<number | null>(null);
   /** The link a free person chose to clip only the first 2 hours of (see FREE_PART_SECONDS in lib/plan-limits.ts). */
   const [firstPartFor, setFirstPartFor] = useState<string | null>(null);
   const [probeRevision, setProbeRevision] = useState(0);
@@ -502,6 +507,7 @@ export default function AnalyzePanel() {
       setEtaRemaining(null);
       setStageStartedAt(null);
       setClips(event.clips);
+      setPartRunTotal(submittedPartTotal.current);
       // Default each clip to the user's preferred style (Settings → Clip Defaults).
       const stored = localStorage.getItem("klyp-default-style");
       const defaultStyle: CaptionStyle =
@@ -603,6 +609,8 @@ export default function AnalyzePanel() {
   const runAnalysis = async () => {
     if (exportLock.current || savingRef.current) return;
     submittedEstimate.current = totalEstimate;
+    submittedPartTotal.current = firstPart && previewDuration ? previewDuration : null;
+    setPartRunTotal(null);
     submittedAnalysisCost.current = estimatedSparks;
     setLoading(true);
     setError(null);
@@ -1506,6 +1514,11 @@ export default function AnalyzePanel() {
               All clips discarded. Analyze another VOD to find more moments.
             </p>
           )}
+          {partRunTotal !== null && !isPro && clips.length > 0 && (
+            <p className="mb-4 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-foreground-muted">
+              These clips come from the best 2 hours of your stream, which is {lengthWords(partRunTotal)} long.
+            </p>
+          )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
             {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <FoundClipCard
               key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy} keptDays={resultsKeptDays(isPro)} showWatermarkNudge={!isPro}
@@ -1516,6 +1529,7 @@ export default function AnalyzePanel() {
               onRawExport={() => void downloadClip(clip, i, undefined, true)}
               onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} />)}
           </div>
+          {partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}
         </div>
       )}
 
