@@ -34,6 +34,7 @@ import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError, userFacingClipError } from "@/lib/analyze-errors";
 import { FREE_PART_SECONDS, PLAN_LIMITS, UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import PartUpsell from "@/components/PartUpsell";
+import ResultsUpsell from "@/components/ResultsUpsell";
 import { MONTHLY_PRICE_USD } from "@/lib/pricing";
 import { lengthWords } from "@/lib/length-words";
 import { bestMomentsText } from "@/lib/clip-expectation";
@@ -1533,6 +1534,9 @@ export default function AnalyzePanel() {
               onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} />)}
           </div>
           {partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}
+          {partRunTotal === null && !isPro && clips.some((_, i) => clipStatus[i] !== "discarded") && (
+            <ResultsUpsell clipCount={clips.filter((_, i) => clipStatus[i] !== "discarded").length} />
+          )}
         </div>
       )}
 
