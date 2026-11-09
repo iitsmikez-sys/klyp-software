@@ -116,3 +116,6 @@ body {
 @font-face { font-family: "Anton"; src: url("/fonts/Anton-Regular.ttf") format("truetype"); font-display: swap; }
 @font-face { font-family: "Noto Emoji"; src: url("/fonts/NotoEmoji.ttf") format("truetype"); font-display: swap; }
 @font-face { font-family: "Archivo Black"; src: url("/fonts/ArchivoBlack-Regular.ttf") format("truetype"); font-display: swap; }
+/* Our own show/hide eye (components/PasswordInput.tsx) replaces the browser's built-in one, so there is only one. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear { display: none; }
