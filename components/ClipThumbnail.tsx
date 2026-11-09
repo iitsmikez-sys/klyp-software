@@ -34,6 +34,16 @@ interface Props {
 
 type State = "idle" | "loading" | "ready" | "failed" | "gone";
 
+/** Waits before the quiet background retries of a frame that did not arrive. */
+const QUIET_RETRY_DELAYS_MS = [6_000, 15_000];
+
+/** A calm, unique-looking backdrop for a clip whose frame is not there (yet): a soft gradient picked from its title. */
+function posterBackdrop(title: string): string {
+  let h = 0;
+  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) % 360;
+  return `linear-gradient(135deg, hsl(${h} 32% 17%), hsl(${(h + 45) % 360} 28% 9%))`;
+}
+
 export default function ClipThumbnail({ clip, onPlay }: Props) {
   const gone = footageGone(clip);
   const [src, setSrc] = useState<string | null>(null);
@@ -51,6 +61,9 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
     if (gone) { setState("gone"); return; }
 
     let active = true;
+    // A frame that does not arrive is retried quietly in the background (a few seconds apart) and swapped in if it works.
+    let attempts = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     const load = () => {
       // Already fetched by another card or the preview dialog — paint at once.
@@ -67,7 +80,11 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
           setSrc(objectUrl);
           setState("ready");
         })
-        .catch(() => { if (active) setState("failed"); });
+        .catch(() => {
+          if (!active) return;
+          setState("failed");
+          if (attempts < QUIET_RETRY_DELAYS_MS.length) retryTimer = setTimeout(load, QUIET_RETRY_DELAYS_MS[attempts++]);
+        });
     };
 
     // rootMargin starts the work just before the card scrolls in, so the frame
@@ -85,6 +102,7 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
 
     return () => {
       active = false;
+      clearTimeout(retryTimer);
       observer.disconnect();
       // The object URL is owned by the shared cache, so it is not revoked here.
     };
@@ -115,16 +133,12 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
           className="w-full h-full object-cover transition-transform duration-300 group-hover/thumb:scale-[1.03]"
         />
       ) : (
-        <div className={`absolute inset-0 bg-surface-2 ${state === "loading" ? "motion-safe:animate-pulse" : ""}`}>
+        <div className={`absolute inset-0 bg-surface-2 ${state === "loading" || state === "idle" ? "motion-safe:animate-pulse" : ""}`}
+          style={state === "gone" ? undefined : { backgroundImage: posterBackdrop(clip.title) }}>
           {/* Bottom-left keeps this clear of the centred play button and the
               duration badge in the opposite corner. */}
           <span className="absolute bottom-2 left-2.5 flex items-center gap-1.5 text-xs text-muted">
-            {state === "loading" ? (
-              <>
-                <span className="w-3 h-3 rounded-full border border-muted border-t-transparent animate-spin" />
-                Loading frame…
-              </>
-            ) : state === "gone" ? (
+            {state === "gone" ? (
               <>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
@@ -132,15 +146,7 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
                 </svg>
                 Footage no longer available
               </>
-            ) : state === "failed" ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="23 7 16 12 23 17 23 7" />
-                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                </svg>
-                No preview frame
-              </>
-            ) : null}
+            ) : state === "failed" ? "Press play to preview" : null}
           </span>
         </div>
       )}
@@ -167,9 +173,6 @@ export default function ClipThumbnail({ clip, onPlay }: Props) {
         {fmtTime(clipDuration(clip))}
       </span>
     </div>
-    {state === "failed" && <button type="button" onClick={() => setRetry((value) => value + 1)}
-      className="absolute right-2 top-2 z-10 rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-      aria-label={`Retry thumbnail for ${clip.title}`}>Retry thumbnail</button>}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import ClipThumbnail from "./ClipThumbnail";
 import ScoreBadge from "./ScoreBadge";
 import type { RawDownloadState } from "./useRawClipDownloads";
 import { type SavedClip, fmtTime, platformName, footageGone, vodLinkAt } from "@/lib/clip-ui";
-import { backupState } from "@/lib/clip-backup-state";
+import { backupState, backupTone } from "@/lib/clip-backup-state";
 import { isMediaExpired } from "@/lib/clip-expiry";
 
 export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawState, onDownloadReady, readyState, more, compact = false }: {
@@ -48,7 +48,7 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
       <span>{fmtTime(clip.start_seconds)} in VOD</span>
       {clip.clip_type && <><span aria-hidden="true">·</span><span>{clip.clip_type.replaceAll("_", " ")}</span></>}
     </div>
-    <p role="status" className={`mt-2 text-xs ${backup.kind === 'saved' ? 'text-accent' : 'text-amber-300'}`}>{backup.message}</p>
+    <p role="status" className={`mt-2 text-xs ${{ good: 'text-accent', quiet: 'text-foreground-muted', warn: 'text-amber-300' }[backupTone(backup.kind)]}`}>{backup.message}</p>
     {clip.archive_status === 'stored' && clip.media_expires_at && !gone &&
       <p className="mt-1 text-xs text-foreground-muted">Saved until {new Date(clip.media_expires_at).toLocaleDateString()}</p>}
     <div className={`mt-auto ${compact ? "pt-3" : "pt-4"}`}>
