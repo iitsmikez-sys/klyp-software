@@ -15,7 +15,7 @@ import type { CaptionFont } from "./clip-edit-draft.ts";
 import type { TextPlacement } from "./text-placement.ts";
 import { captionAssMotion, captionAssMotionAt } from "./caption-template-motion.ts";
 import { captionTextWidthPx } from "./caption-text-metrics.ts";
-import { MARKER_BOX, isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, wordLook, activeWordScale, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
+import { boxColorFor, isBoxStyle, isHighlightStyle, highlightColor, isOneWordStyle, isUppercaseStyle, hasFixedPalette, wordLook, activeWordScale, EMOJI_FONT, emojiForText, assColorOf } from "./caption-looks.ts";
 import type { TimedWord, CaptionStyle } from "./clips";
 
 export type PlayRes = { w: number; h: number };
@@ -159,6 +159,8 @@ const STYLE_PARAMS: Record<
   DUO: { fontSize: 62, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 3 },
   // White phrase with a purple box behind the word being said.
   MARKER: { fontSize: 82, color: "&H00FFFFFF", bold: 1, outline: 5, shadow: 0 },
+  // All capitals, white with a thick black outline; the word being said is black on a yellow box.
+  HIGHLIGHTER: { fontSize: 84, color: "&H00FFFFFF", bold: 1, outline: 7, shadow: 0 },
 };
 
 /**
@@ -274,13 +276,13 @@ function roundedRectDrawing(w: number, h: number, r: number): string {
  * Word positions come from the font's real letter widths (caption-text-metrics.ts), so the box lines up with the text.
  * It is drawn on layer 0 and the text on layer 1.
  */
-function markerBoxEvent(startMs: number, endMs: number, line: { text: string; x: number; y: number }, words: string[], index: number, fontSize: number, font: CaptionFont): string {
+function markerBoxEvent(startMs: number, endMs: number, line: { text: string; x: number; y: number }, words: string[], index: number, fontSize: number, font: CaptionFont, style: CaptionStyle = "MARKER"): string {
   const before = words.slice(0, index).join(" ") + (index > 0 ? " " : "");
   const padX = fontSize * 0.12, above = fontSize * 0.4, boxHeight = fontSize * 0.82, radius = Math.max(2, Math.round(fontSize * 0.06));
   const left = Math.round(line.x - captionTextWidthPx(line.text, fontSize, font) / 2 + captionTextWidthPx(before, fontSize, font) - padX);
   const top = Math.round(line.y - above);
   const w = Math.round(captionTextWidthPx(words[index], fontSize, font) + 2 * padX), h = Math.round(boxHeight);
-  return dialogue(startMs, endMs, `{\\an7\\pos(${left},${top})\\p1\\bord0\\shad0\\1c${MARKER_BOX.ass}}${roundedRectDrawing(w, h, radius)}{\\p0}`, "Default", 0);
+  return dialogue(startMs, endMs, `{\\an7\\pos(${left},${top})\\p1\\bord0\\shad0\\1c${boxColorFor(style).ass}}${roundedRectDrawing(w, h, radius)}{\\p0}`, "Default", 0);
 }
 
 /**
@@ -304,8 +306,8 @@ export function generateAss(
 ): string {
   const bottomInset = typeof bottomInsetOrOptions === 'number' ? bottomInsetOrOptions : 0;
   const options = typeof bottomInsetOrOptions === 'number' ? captionOptions : bottomInsetOrOptions;
-  // Marker needs exact word positions for its box, so it is laid out like the editor export.
-  if (style === "MARKER") {
+  // Marker and Highlighter need exact word positions for their box, so they are laid out like the editor export.
+  if (isBoxStyle(style)) {
     const position = options?.position ?? "BOTTOM";
     const timed = buildCaptionCues(words, clipStartMs, clipEndMs, CUE_MAX_WORDS).map((cue) => ({ start_ms: cue.startMs, end_ms: cue.endMs, text: cue.text }));
     return generateTimedCueAss(timed, style, captionAppearance({ caption_color: "white", caption_position: position === "TOP" ? "top" : position === "CENTER" ? "center" : "bottom" }),
@@ -501,7 +503,28 @@ export function generateTimedCueAss(
  const styles = hasFixedPalette(style) ? styleBlock(style, res, 0, undefined, font, textScale)
    : styleBlock(style, res, 0, undefined, font, textScale).replace(STYLE_PARAMS[style].color, appearance.assColor);
  const sections = [assHeader(res), "", styles, "", EVENTS_HEADER];
- for (const cue of normalizeTimedCues(cues)) {
+ // Highlighter never wraps to a second line: a long phrase is split into chunks that each fit on one line,
+ // shown one after another, so the yellow keeps moving at speaking pace.
+ const oneLine = (cue: { id?: string; start_ms: number; end_ms: number; text: string }) => {
+  if (style !== "HIGHLIGHTER") return [cue];
+  const area = typeof safeArea === 'function' ? safeArea(cue) : safeArea;
+  const words = cue.text.split(/\s+/).filter(Boolean);
+  const chunks: string[][] = [];
+  for (const word of words) {
+   const current = chunks[chunks.length - 1];
+   if (current && layoutTimedCaption([...current, word].join(" "), style, appearance, res, area, font).lines.length <= 1) current.push(word);
+   else chunks.push([word]);
+  }
+  if (chunks.length <= 1) return [cue];
+  let used = 0;
+  return chunks.map((chunk) => {
+   const start = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * used / words.length);
+   used += chunk.length;
+   const end = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * used / words.length);
+   return { ...cue, start_ms: start, end_ms: end, text: chunk.join(" ") };
+  });
+ };
+ for (const cue of normalizeTimedCues(cues).flatMap(oneLine)) {
   const layout = layoutTimedCaption(cue.text, style, appearance, res, typeof safeArea === 'function' ? safeArea(cue) : safeArea, font);
   if (isHighlightStyle(style)) {
    const emoji = style === "FIRE" ? emojiForText(layout.lines.map(line => line.text).join(" ")) : null;
@@ -514,8 +537,8 @@ export function generateTimedCueAss(
     for (const line of layout.lines) {
      const words = line.text.split(/\s+/).filter(Boolean);
      const last = line === layout.lines[layout.lines.length - 1];
-     if (style === "MARKER" && index - offset >= 0 && index - offset < words.length) sections.push(markerBoxEvent(start, end, line, words, index - offset, layout.fontSize, font));
-     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset, style, last ? emoji : null, cue.start_ms)}`, "Default", style === "MARKER" ? 1 : 0));
+     if (isBoxStyle(style) && index - offset >= 0 && index - offset < words.length) sections.push(markerBoxEvent(start, end, line, words, index - offset, layout.fontSize, font, style));
+     sections.push(dialogue(start, end, `${captionAssMotionAt(style, line.x, line.y, res.h)}${keywordAssText([line.text], index - offset, style, last ? emoji : null, cue.start_ms)}`, "Default", isBoxStyle(style) ? 1 : 0));
      offset += words.length;
     }
    }
@@ -540,7 +563,7 @@ export function layoutTimedCaption(text: string, style: CaptionStyle, appearance
  const p = STYLE_PARAMS[style];
  const fontSize = Math.round(p.fontSize * res.h / DEFAULT_RES.h * (appearance.transform?.scale ?? 1));
  const lineHeight = Math.round(fontSize * 1.2);
- const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "FOCUS" || style === "DUO" ? text.toUpperCase() : text);
+ const normalized = sanitizeAssText(style === "KLYP" || style === "POP" || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "FOCUS" || style === "DUO" || style === "HIGHLIGHTER" ? text.toUpperCase() : text);
  const lines = wrapCaptionText(normalized, style, appearance.transform ? Math.max(7,Math.floor((style === "CLEAN" ? 28 : style === "TRICOLOR" ? 26 : style === "FOCUS" ? 16 : 20)/appearance.transform.scale)) : undefined);
  const outline = Math.max(2, Math.round(p.outline * res.h / DEFAULT_RES.h * OUTLINE_BOOST * (appearance.transform?.scale ?? 1)));
  const edgeMargin = Math.max(6,Math.round(20*res.h/DEFAULT_RES.h));

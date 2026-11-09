@@ -243,6 +243,8 @@
 .caption-template-card[data-style=duo] .caption-template-sample em { color:#ff1f2a; font-style:normal; font-size:1.6em }
 .caption-template-card[data-style=marker] .caption-template-sample b { font-size:14px; line-height:1.15; text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000 }
 .caption-template-card[data-style=marker] .caption-template-sample em { font-style:normal; background:#7c4dff; padding:1px 4px; border-radius:3px }
+.caption-template-card[data-style=highlighter] .caption-template-sample b { font-size:14px; line-height:1.2; text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 2px 0 #000 }
+.caption-template-card[data-style=highlighter] .caption-template-sample em { font-style:normal; color:#ffe14d }
 .caption-template-card[data-style=pop] .caption-template-sample b { color:#ffe94a; font-size:26px; text-shadow:-3px -3px 0 #000,3px -3px 0 #000,-3px 3px 0 #000,3px 3px 0 #000,0 5px 0 #000 }
 .editor-fixed-palette { padding:8px 10px; border:1px solid #365449; border-radius:7px; background:#14271f; color:#bcebd4!important }
 .caption-template-meta { display:flex; align-items:center; justify-content:space-between; gap:4px; width:100%; padding:9px 10px; color:#e6f5f2 }

@@ -21,6 +21,8 @@ const HIGHLIGHT: Partial<Record<CaptionStyle, { css: string; ass: string }>> = {
   DUO: highlight("#1FFF3A"),
   // Marker: the whole phrase stays white and a purple box sits behind the word being said (drawn separately).
   MARKER: highlight("#FFFFFF"),
+  // Highlighter: the phrase stays white and the word being said turns yellow.
+  HIGHLIGHTER: highlight("#FFE14D"),
 };
 
 /** Tri-color's active word alternates bright green, bright red as the phrase is spoken. */
@@ -51,6 +53,12 @@ export const hasFixedPalette = (style: CaptionStyle) => style === "COMIC" || isH
 
 /** The purple box behind the word in the Marker style. */
 export const MARKER_BOX = { css: "#7C4DFF", ass: "&H00FF4D7C&" } as const;
+/** Highlighter: no box, the word being said turns this yellow. */
+export const HIGHLIGHTER_YELLOW = { css: "#FFE14D", ass: "&H004DE1FF&" } as const;
+
+/** Styles that draw a box behind the word being said, and the box's colour. */
+export const isBoxStyle = (style: CaptionStyle) => style === "MARKER";
+export const boxColorFor = (_style: CaptionStyle) => MARKER_BOX;
 
 export const EMOJI_FONT = "Noto Emoji";
 const EMOJIS: { char: string; color: string; words: string[] }[] = [
@@ -82,4 +90,4 @@ export function emojiForText(text: string): { char: string; color: string } | nu
 export const assColorOf = (css: string) => "&H00" + css.slice(5, 7) + css.slice(3, 5) + css.slice(1, 3) + "&";
 
 /** Styles whose captions are drawn in capitals (the one-word styles plus Hype and Fire). */
-export const isUppercaseStyle = (style: CaptionStyle) => isOneWordStyle(style) || style === "HYPE" || style === "FIRE" || style === "TRICOLOR";
+export const isUppercaseStyle = (style: CaptionStyle) => isOneWordStyle(style) || style === "HYPE" || style === "FIRE" || style === "TRICOLOR" || style === "HIGHLIGHTER";

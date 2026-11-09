@@ -3,7 +3,7 @@ import { z } from "zod";
 /** Word-level timestamp from AssemblyAI (milliseconds). */
 export type TimedWord = { text: string; start: number; end: number };
 
-export const CAPTION_STYLES = ["BOLD", "CLEAN", "KLYP", "PULSE", "SLIDE", "SPARK", "BOUNCE", "GLOW", "COMIC", "KEYWORD", "HYPE", "POP", "FIRE", "TRICOLOR", "FOCUS", "DUO", "MARKER"] as const;
+export const CAPTION_STYLES = ["BOLD", "CLEAN", "KLYP", "PULSE", "SLIDE", "SPARK", "BOUNCE", "GLOW", "COMIC", "KEYWORD", "HYPE", "POP", "FIRE", "TRICOLOR", "FOCUS", "DUO", "MARKER", "HIGHLIGHTER"] as const;
 export type CaptionStyle = (typeof CAPTION_STYLES)[number];
 
 /** Export aspect ratios: TikTok/Reels/Shorts, Instagram feed, YouTube/LinkedIn — plus Original (no crop). */
@@ -200,7 +200,7 @@ export type AnalyzeEvent =
   | { type: "error"; stage: AnalyzeStage | "validate"; error: string };
 
 /** Caption styles every account can export. The rest are Pro only: Free can preview them, but exports use Bold. */
-export const FREE_CAPTION_STYLES = ["BOLD", "KLYP", "SPARK", "PULSE"] as const;
+export const FREE_CAPTION_STYLES = ["BOLD", "KLYP", "SPARK", "PULSE", "HIGHLIGHTER"] as const;
 export const FREE_FALLBACK_CAPTION_STYLE: CaptionStyle = "BOLD";
 export const isProCaptionStyle = (style: CaptionStyle) => !(FREE_CAPTION_STYLES as readonly string[]).includes(style);
 export function resolveCaptionStyle(style: CaptionStyle, isPro: boolean): CaptionStyle {
