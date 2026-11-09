@@ -40,8 +40,8 @@ test("the analyze route sets the count from the verified length, and the finder 
   assert.ok(pipeline.includes("deduped.filter(clip => clip.viral_score >= 65).slice(0, clipCount)"));
   assert.match(pipeline, /max_tokens: clipCount > 10 \? 20000 : 16000/);
   const route = read("app/api/analyze/route.ts");
-  assert.match(route, /clipCount = clipCountForDuration\(verifiedDuration\);/);
-  assert.ok(route.indexOf("clipCount = clipCountForDuration(verifiedDuration)") < route.indexOf("const upfrontCost"));
+  assert.match(route, /clipCount = clipCountForDuration\(analysisSeconds\);/);
+  assert.ok(route.indexOf("clipCount = clipCountForDuration(analysisSeconds)") < route.indexOf("const upfrontCost"));
   assert.equal(discoveryPoolSize(10), 10);
   assert.equal(discoveryPoolSize(12), 20);
   assert.equal(discoveryPoolSize(15), 20);

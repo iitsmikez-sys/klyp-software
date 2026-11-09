@@ -9,6 +9,7 @@ import {
   CLIP_COUNT_COST,
   DEFAULT_CLIP_COUNT,
   clipCountForDuration,
+  estimateSparks,
   type ClipCount,
 } from "@/lib/sparks";
 import PasteBoxHint from "./PasteBoxHint";
@@ -31,7 +32,7 @@ import { processingFetch, processingUrl, processingAuthToken } from "@/lib/proce
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError, userFacingClipError } from "@/lib/analyze-errors";
-import { PLAN_LIMITS, UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
+import { FREE_PART_SECONDS, PLAN_LIMITS, UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import { bestMomentsText } from "@/lib/clip-expectation";
 import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
@@ -150,6 +151,8 @@ export default function AnalyzePanel() {
   /** The link whose "too long for Free" pop-up the person closed, so it does not reopen for the same link. */
   const [capDismissedFor, setCapDismissedFor] = useState<string | null>(null);
   const capTrackedFor = useRef<string | null>(null);
+  /** The link a free person chose to clip only the first 2 hours of (see FREE_PART_SECONDS in lib/plan-limits.ts). */
+  const [firstPartFor, setFirstPartFor] = useState<string | null>(null);
   const [probeRevision, setProbeRevision] = useState(0);
   const [keyword, setKeyword] = useState("");
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
@@ -184,21 +187,23 @@ export default function AnalyzePanel() {
   const outOfSparks = balance !== null && balance < MIN_ANALYZE_COST;
   const animateHint = !urlFocused && url === "" && !loading && !reduceMotion;
   // Full estimate = VOD length cost (probed) + clip count cost.
-  const totalEstimate = estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
+  const firstPart = firstPartFor === url && !!planBlock && !isPro;
+  const totalEstimate = firstPart ? estimateSparks(FREE_PART_SECONDS) + CLIP_COUNT_COST[clipCount]
+    : estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   /** The ceiling shown on screen: longer videos look for more clips (the server sets the real number from the verified length). */
-  const shownClipCount = clipCountForDuration(inputMode === "file" ? uploadedFile?.durationSeconds ?? 0 : previewDuration ?? 0);
+  const shownClipCount = clipCountForDuration(inputMode === "file" ? uploadedFile?.durationSeconds ?? 0 : firstPart ? FREE_PART_SECONDS : previewDuration ?? 0);
   // What the screen promises: the ceiling, lowered for short videos. Wording only; the request is unchanged.
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
-  const showCapPopup = !!planBlock && !isPro && previewDuration !== null && !estimating && capDismissedFor !== url;
+  const showCapPopup = !!planBlock && !isPro && !firstPart && previewDuration !== null && !estimating && capDismissedFor !== url;
   useEffect(() => {
     if (!showCapPopup || capTrackedFor.current === url) return;
     capTrackedFor.current = url;
     // Counts how many free people run into the 2 hour limit (best effort, never shown).
     void trackEvent("long_video_limit", { hours: Math.round(((previewDuration ?? 0) / 3600) * 10) / 10, source: platformName(url) });
   }, [showCapPopup, url, previewDuration]);
-  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !planBlock && !busy && !loading && !outOfSparks && !cantAfford;
+  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && (!planBlock || firstPart) && !busy && !loading && !outOfSparks && !cantAfford;
 
   const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
     id: savedIds[index] ?? "", url: analyzedUrl, title: clip.title, clip_type: clip.type,
@@ -611,7 +616,7 @@ export default function AnalyzePanel() {
     setReconnectAttempt(null);
     const requestBody = inputMode === "file" && uploadedFile
       ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType, keyword: keyword.trim() || undefined }
-      : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined };
+      : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined, firstPartOnly: firstPart || undefined };
     let jobId = crypto.randomUUID();
     try {
       const saved = JSON.parse(localStorage.getItem("klyp-active-analysis-job") ?? "null");
@@ -1083,9 +1088,14 @@ export default function AnalyzePanel() {
           <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-7 shadow-2xl">
             <h3 id="cap-title" className="font-syne text-xl font-bold text-foreground">This video is {fmtTime(previewDuration ?? 0)} long</h3>
             <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours.</p>
-            <div className="mt-5 rounded-xl border border-accent/40 bg-accent-glow p-4">
+            <div className="mt-5 rounded-xl border border-border bg-background/50 p-4">
+              <p className="text-sm font-semibold text-foreground">Clip the first {PLAN_LIMITS.free.youtube / 3600} hours <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the best moments in the first {PLAN_LIMITS.free.youtube / 3600} hours. Uses your free Sparks.</p>
+              <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the first {PLAN_LIMITS.free.youtube / 3600} hours</button>
+            </div>
+            <div className="mt-3 rounded-xl border border-accent/40 bg-accent-glow p-4">
               <p className="text-sm font-semibold text-foreground">Analyze the whole video with Pro</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Every great moment from the whole stream. More clips, with no watermark.</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Every great moment, not just the first two hours. More clips from the whole stream, with no watermark.</p>
               <a href="/dashboard/upgrade" className="mt-3 flex min-h-10 items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
             </div>
             <button type="button" onClick={() => setCapDismissedFor(url)} className="mt-3 w-full text-center text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">Not now</button>
@@ -1160,7 +1170,12 @@ export default function AnalyzePanel() {
                 <span>{estimateError}</span>
                 <button type="button" onClick={() => setProbeRevision((value) => value + 1)} className="font-semibold underline underline-offset-2">Retry</button>
               </div>}
-              {planBlock && previewDuration !== null && !estimating && (
+              {firstPart && previewDuration !== null && !estimating && (
+                <p className="mt-2 rounded-lg border border-accent/30 bg-accent-glow px-3 py-2 text-xs text-foreground">
+                  Clipping the first {PLAN_LIMITS.free.youtube / 3600} hours of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
+                </p>
+              )}
+              {planBlock && !firstPart && previewDuration !== null && !estimating && (
                 <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
                   <p className="text-sm font-semibold text-foreground">This video is {fmtTime(previewDuration)}</p>
                   <p className="text-xs leading-relaxed text-amber-100/80">{planBlock}</p>

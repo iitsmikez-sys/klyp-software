@@ -81,6 +81,15 @@ export async function downloadAudio(url: string, dir: string, largeVod = false):
   return path.join(dir, audioFile);
 }
 
+/** Keep only the first `seconds` of an audio file (a straight copy, no re-encoding). */
+async function trimAudioToPart(audioPath: string, dir: string, seconds: number): Promise<string> {
+  const ext = path.extname(audioPath) || ".m4a";
+  const outPath = path.join(dir, `part${ext}`);
+  await run(resolveBin("ffmpeg"), ["-y", "-i", audioPath, "-t", String(seconds), "-vn", "-c", "copy", outPath],
+    { stallTimeoutMs: 60_000, maxRunMs: 10 * 60_000 });
+  return outPath;
+}
+
 /* ── Stage 2 (upload flow): extract audio from an uploaded file with FFmpeg ── */
 export async function extractAudio(sourcePath: string, dir: string): Promise<string> {
   const outPath = path.join(dir, "audio.m4a");
@@ -748,6 +757,8 @@ export async function runAnalysisPipeline(opts: {
   userId?: string;
   client?: SupabaseClient;
   onProgress?: PipelineProgress;
+  /** Analyze only the first N seconds of a longer video (the free "first 2 hours" choice). The transcript is then never treated as full coverage. */
+  partSeconds?: number;
   cachedTranscript?: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" };
   onTranscript?: (transcript: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" }) => Promise<void>;
   onAnalysis?: (result: PipelineResult) => Promise<void>;
@@ -758,7 +769,7 @@ export async function runAnalysisPipeline(opts: {
 }): Promise<PipelineResult> {
   // Check before downloading or transcribing, both of which can incur costs.
   anthropicCreditGate.assertAvailable();
-  const { uploadedPath, url, durationHint, clipCount, workDir, onProgress } = opts;
+  const { uploadedPath, url, durationHint, clipCount, workDir, onProgress, partSeconds } = opts;
   const cachedTranscript = opts.cachedTranscript?.coverageMode === "full" ? opts.cachedTranscript : undefined;
   const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
   const keyword = opts.keyword;
@@ -817,9 +828,12 @@ export async function runAnalysisPipeline(opts: {
         throw new Error(`This VOD needs an estimated $${budget.projectedUsd.toFixed(2)} processing budget, above the $${ceiling.toFixed(2)} limit. No audio was dropped; review the budget before continuing.`);
       }
     }
-    const audioPath = await withMem("download", () =>
-      uploadedPath ? extractAudio(uploadedPath, workDir) : downloadAudio(url, workDir, !!durationHint && durationHint >= SEGMENT_MIN_VOD_S)
-    );
+    const audioPath = await withMem("download", async () => {
+      if (uploadedPath) return extractAudio(uploadedPath, workDir);
+      // The source is longer than the part being analyzed, so it is downloaded as a long video and cut down afterwards.
+      const full = await downloadAudio(url, workDir, partSeconds ? true : !!durationHint && durationHint >= SEGMENT_MIN_VOD_S);
+      return partSeconds ? trimAudioToPart(full, workDir, partSeconds) : full;
+    });
     progress("download", "done");
     // Gaming streamers can play well and say little, so measure the audio's loud moments too. It runs on this
     // server for free, and a failure here only means no hints.
@@ -838,7 +852,7 @@ export async function runAnalysisPipeline(opts: {
   const quietStream = isQuietStream(words.length, durationSeconds);
   const nonEnglish = !isMostlyEnglish(words);
   if (quietStream) console.log(`[analyze] quiet stream: ${words.length} words in ${Math.round(durationSeconds / 60)} min`);
-  const coverageMode = cachedTranscript?.coverageMode ?? (windows.length ? "chat-sampled" : "full");
+  const coverageMode = cachedTranscript?.coverageMode ?? (windows.length || partSeconds ? "chat-sampled" : "full");
   if (!cachedTranscript) await opts.onTranscript?.({ words, durationSeconds, coverageMode });
   if (opts.costRunId) console.log(`[analysis-usage] ${JSON.stringify({ runId: opts.costRunId, vodSeconds: durationSeconds, mode: coverageMode })}`);
   console.log(`[mem] transcribe produced ${words.length} words`);
