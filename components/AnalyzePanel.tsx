@@ -30,7 +30,7 @@ import { openFeedback } from "./FeedbackButton";
 import { processingFetch, processingUrl, processingAuthToken } from "@/lib/processing-api";
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
-import { isYouTubeBotBlockError } from "@/lib/analyze-errors";
+import { isYouTubeBotBlockError, userFacingClipError } from "@/lib/analyze-errors";
 import { UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import { bestMomentsText } from "@/lib/clip-expectation";
 import { resultsKeptDays } from "@/lib/results-retention";
@@ -749,7 +749,7 @@ export default function AnalyzePanel() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      throw new Error(data?.error ?? `Clip generation failed (HTTP ${res.status}).`);
+      throw new Error(userFacingClipError(data?.error ?? `Clip generation failed (HTTP ${res.status}).`));
     }
     return { blob: await res.blob(), warning: res.headers.get("X-Klyp-Layout-Warning") };
     } catch (err) {

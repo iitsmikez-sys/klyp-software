@@ -14,3 +14,14 @@ export function userFacingAnalysisError(stage: string, url: string, message: str
 export function isYouTubeBotBlockError(message: string | null): boolean {
   return message?.startsWith("YouTube blocked the server from downloading this VOD.") ?? false;
 }
+
+/** A clip download that fails because of the video site: plain words instead of raw yt-dlp output. */
+export function userFacingClipError(message: string): string {
+  if (/sign in to confirm you(?:['’]re| are) not a bot/i.test(message)) {
+    return "YouTube is blocking this video right now. Try again in a few minutes, or use a Twitch or Kick link.";
+  }
+  if (/^yt-dlp exited with code/i.test(message)) {
+    return "This video couldn't be downloaded right now. Try again in a few minutes.";
+  }
+  return message;
+}

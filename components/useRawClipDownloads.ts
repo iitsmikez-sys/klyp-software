@@ -1,4 +1,5 @@
 "use client";
+import { userFacingClipError } from '@/lib/analyze-errors';
 
 import { useEffect, useRef, useState } from "react";
 import { processingFetch } from "@/lib/processing-api";
@@ -44,7 +45,7 @@ export function useRawClipDownloads() {
       });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
-        throw new Error(body?.error ?? `${kind === "ready" ? "Download" : "Raw download"} failed (HTTP ${response.status}).`);
+        throw new Error(userFacingClipError(body?.error ?? `${kind === "ready" ? "Download" : "Raw download"} failed (HTTP ${response.status}).`));
       }
       const total = Number(response.headers.get("Content-Length")) || 0;
       let blob: Blob;

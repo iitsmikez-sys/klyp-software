@@ -36,3 +36,14 @@ test("explains exhausted Anthropic credits without exposing provider JSON", () =
   assert.match(message, /No Sparks were charged/i);
   assert.doesNotMatch(message, /request_id|Plans & Billing|400/);
 });
+
+test("a failed clip download says what to do without yt-dlp output", () => {
+  const live = "yt-dlp exited with code 1: utube] No title found in player responses\nERROR: [youtube] plN7JMbadRg: Sign in to confirm you’re not a bot. Use --cookies-from-browser";
+  const blocked = analyzeErrors.userFacingClipError(live);
+  assert.match(blocked, /YouTube is blocking this video/);
+  assert.doesNotMatch(blocked, /yt-dlp|cookies/);
+  const other = analyzeErrors.userFacingClipError("yt-dlp exited with code 1: ERROR: Video unavailable");
+  assert.match(other, /couldn't be downloaded right now/);
+  assert.doesNotMatch(other, /yt-dlp/);
+  assert.equal(analyzeErrors.userFacingClipError("Clips are capped at 3 minutes."), "Clips are capped at 3 minutes.");
+});
