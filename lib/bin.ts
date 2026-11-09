@@ -318,8 +318,9 @@ export async function runYtDlpCaptureWithIpv6Fallback(plainArgs: string[], opts:
     return await runCapture(bin, args, opts);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // Always log why a metadata request failed, whatever the reason (otherwise only bot checks showed up in the logs).
+    console.error("[yt-dlp] metadata request failed:", message.slice(0, 600));
     if (!shouldRetryYouTubeOverIpv6(args, message)) throw err;
-    console.error("[yt-dlp] metadata request failed:", message);
     try {
       const viaIpv6 = await runCapture(bin, ["--force-ipv6", ...args], opts);
       console.log("[yt-dlp] YouTube's bot check was passed over IPv6 (metadata)");
