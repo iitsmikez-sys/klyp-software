@@ -20,7 +20,8 @@ test("with cookies set, a YouTube link gets --cookies and a private file with th
   const dir = mkdtempSync(path.join(tmpdir(), "klyp-ck-"));
   const args = withYoutubeCookies(YT, { YOUTUBE_COOKIES_B64: b64 }, dir);
   assert.equal(args[0], "--cookies");
-  assert.deepEqual(args.slice(2), YT);
+  assert.deepEqual(args.slice(2, 4), ["--js-runtimes", `node:${process.execPath}`], "yt-dlp is told which JavaScript runtime to use");
+  assert.deepEqual(args.slice(4), YT);
   assert.ok(existsSync(args[1]));
   assert.equal(readFileSync(args[1], "utf8"), COOKIES);
 });
