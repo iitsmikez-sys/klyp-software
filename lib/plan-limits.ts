@@ -20,6 +20,12 @@ export const PLAN_LIMITS = {
   pro: { youtube: 8 * HOUR, twitch: 8 * HOUR, kick: 8 * HOUR, upload: 8 * HOUR, autoClip: true },
 } as const satisfies Record<PlanName, { youtube: number; twitch: number; kick: number; upload: number; autoClip: boolean }>;
 
+/**
+ * "Clip the first 2 hours": a free person who pastes a longer video can analyze just the start of it. 119 minutes, not 120,
+ * because from 2 hours up a video costs 65 Sparks and Free has 60 (see estimateSparks in lib/sparks.ts).
+ */
+export const FREE_PART_SECONDS = 119 * 60;
+
 /** Pro needs a real subscription or complimentary access — the raw tier flag alone is not trusted. */
 export function planOf(profile: Pick<Profile, "tier" | "stripe_subscription_id" | "complimentary_pro">): PlanName {
   return hasProAccess(profile) ? "pro" : "free";

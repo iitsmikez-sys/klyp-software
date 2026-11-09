@@ -48,7 +48,7 @@ import { createOrLoadAnalysisJob, getAnalysisJob, claimAnalysisJob, checkpointAn
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { MAX_ANALYSES_PER_HOUR, startedAnalysesLastHour } from "@/lib/analysis-limits";
-import { UPLOAD_PRO_MESSAGE, analysisModelFor, checkSourceLimit, planOf, sourceKindOf, transcriberFor, uploadsAllowed } from "@/lib/plan-limits";
+import { FREE_PART_SECONDS, UPLOAD_PRO_MESSAGE, analysisModelFor, checkSourceLimit, planOf, sourceKindOf, transcriberFor, uploadsAllowed } from "@/lib/plan-limits";
 import { checkFreeCapacity, recordPlanAtStart } from "@/lib/free-capacity";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
@@ -115,6 +115,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let contentType: ContentType = DEFAULT_CONTENT_TYPE;
   let keyword: string | undefined; // optional — weights matching transcript moments higher (see lib/analyze-pipeline.ts)
   let requestedJobId: string | undefined;
+  let firstPartOnly = false; // a free person chose "clip the first 2 hours" of a video that is over their limit
   try {
     const body = await req.json();
     if (typeof body.jobId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.jobId)) requestedJobId = body.jobId;
@@ -122,6 +123,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     url = String(body.url ?? "").trim();
     const rawUploadId = String(body.uploadId ?? "").trim();
     if (rawUploadId) uploadId = rawUploadId;
+    firstPartOnly = body.firstPartOnly === true;
     const hint = Number(body.durationHint);
     if (Number.isFinite(hint) && hint > 0) durationHint = hint;
     if ((CLIP_COUNT_OPTIONS as readonly number[]).includes(Number(body.clipCount))) {
@@ -229,7 +231,12 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
   // The plan's length limit for this import method (Free: YouTube 4h, Twitch 1h; Pro: 8h).
   // Separate from the Sparks balance below and from the per-run provider budget.
-  const lengthCheck = checkSourceLimit(plan, sourceKind, verifiedDuration);
+  const fullLengthCheck = checkSourceLimit(plan, sourceKind, verifiedDuration);
+  // Over the Free limit and they chose the first part: analyze only the start (never for Pro, uploads or videos within the limit).
+  const partSeconds = firstPartOnly && plan === "free" && !uploadedPath && !fullLengthCheck.ok && fullLengthCheck.status === 413
+    ? FREE_PART_SECONDS : undefined;
+  const analysisSeconds = partSeconds ?? verifiedDuration;
+  const lengthCheck = partSeconds ? checkSourceLimit(plan, sourceKind, analysisSeconds) : fullLengthCheck;
   if (!lengthCheck.ok) {
     releaseSlot();
     return fail("validate", lengthCheck.message, lengthCheck.status);
@@ -237,7 +244,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // Free-plan daily capacity for long runs (a breaker against many throwaway accounts; Pro and
   // short Free runs are never affected). Refused before anything is claimed or paid for.
   const capacity = await checkFreeCapacity({
-    plan, durationSeconds: verifiedDuration,
+    plan, durationSeconds: analysisSeconds,
     alreadyCounted: (job as { plan_at_start?: string | null }).plan_at_start === "free",
   });
   if (!capacity.ok) {
@@ -245,13 +252,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return fail("validate", capacity.message, capacity.status);
   }
   // Longer videos have more good moments, so they look for more clips (the job's saved intent stays at the default).
-  clipCount = clipCountForDuration(verifiedDuration);
-  const upfrontCost = estimateSparks(verifiedDuration) + CLIP_COUNT_COST[clipCount];
+  clipCount = clipCountForDuration(analysisSeconds);
+  const upfrontCost = estimateSparks(analysisSeconds) + CLIP_COUNT_COST[clipCount];
   if (profile.sparks < upfrontCost) {
     releaseSlot();
     return fail("validate", `Not enough Sparks — this will cost ${upfrontCost}⚡ but you only have ${profile.sparks}⚡ remaining. Upgrade to Pro.`, 402);
   }
-  durationHint = verifiedDuration;
+  durationHint = analysisSeconds;
   // Hourly cap on analyses that actually started (counted from analysis_jobs, so it
   // survives restarts). A failed count never blocks a customer; it is logged.
   const startedLastHour = await startedAnalysesLastHour(profile.id).catch((error) => {
@@ -273,7 +280,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return observeRunningJob(profile.id, jobId);
   }
   // Remember the plan and expected cost for the Free capacity breaker (best effort, never fatal).
-  await recordPlanAtStart((changes) => checkpointAnalysisJob(jobId, runToken!, changes), plan, verifiedDuration);
+  await recordPlanAtStart((changes) => checkpointAnalysisJob(jobId, runToken!, changes), plan, analysisSeconds);
   let workDir: string;
   try { workDir = await mkdtemp(path.join(tmpdir(), "klyp-")); }
   catch (err) {
@@ -325,7 +332,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
         // /api/preview, so the container never runs more than
         // MAX_CONCURRENT_JOBS yt-dlp+ffmpeg pipelines at once regardless of
         // which route they came from.
-        const cachedTranscript = job.analysis_clips || useDiscoveryV2 ? null
+        const cachedTranscript = job.analysis_clips || useDiscoveryV2 || partSeconds ? null
           : await loadJobTranscript(token!, jobId) ?? await findReusableFullTranscript(token!, sourceKey, verifiedDuration);
         const pipelineResult = job.analysis_clips ? {
           clips: job.analysis_clips, skipped: 0, durationSeconds: job.analysis_duration_seconds!,
@@ -337,6 +344,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               uploadedPath,
               url,
               durationHint,
+              partSeconds,
               clipCount,
               sourceKey,
               userId: profile.id,
