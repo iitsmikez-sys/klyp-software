@@ -49,9 +49,9 @@ const ANALYZE_RETRY_DELAYS_MS = [1000, 2000];
 
 /** Pipeline steps shown in the full-screen progress overlay. */
 const PIPELINE_STEPS: { key: AnalyzeStage | "done"; label: string }[] = [
-  { key: "download", label: "Downloading audio…" },
-  { key: "transcribe", label: "Transcribing audio…" },
-  { key: "analyze", label: "Finding viral moments…" },
+  { key: "download", label: "Getting the audio" },
+  { key: "transcribe", label: "Transcribing" },
+  { key: "analyze", label: "Finding viral moments" },
   { key: "done", label: "Done! Here are your clips" },
 ];
 
@@ -100,6 +100,8 @@ export default function AnalyzePanel() {
   const [loading, setLoading] = useState(false);
   const [sparksDialog, setSparksDialog] = useState(false);
   const [stages, setStages] = useState<StageStates>(INITIAL_STAGES);
+  /** Steps the server skipped because it already had a saved copy of the video's transcript. */
+  const [reusedStages, setReusedStages] = useState<Record<string, boolean>>({});
   const [etaRemaining, setEtaRemaining] = useState<number | null>(null);
   /** When the current stage started, so we can show real elapsed time instead
    *  of a countdown that just sits at "almost done…" once its estimate runs out. */
@@ -471,6 +473,7 @@ export default function AnalyzePanel() {
       // Real forward motion — the only thing that should reset the stall watchdog.
       rearmProgressWatchdog.current?.();
       setStages((prev) => ({ ...prev, [event.stage]: event.status }));
+      if (event.reused) setReusedStages((prev) => ({ ...prev, [event.stage]: true }));
       if (event.status === "running") {
         setEtaRemaining(event.etaSeconds ?? null);
         setStageStartedAt(Date.now());
@@ -591,6 +594,7 @@ export default function AnalyzePanel() {
     setClips(null);
     setAnalysisNote(null);
     setStages({ ...INITIAL_STAGES });
+    setReusedStages({});
     setEtaRemaining(null);
     setStageStartedAt(null);
     setStageElapsed(0);
@@ -997,14 +1001,22 @@ export default function AnalyzePanel() {
             )}
 
             <ol className="space-y-5">
-              {PIPELINE_STEPS.map((step) => {
+              <style>{`@keyframes klypTick{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:1}}`}</style>
+              {PIPELINE_STEPS.map((step, stepIndex) => {
                 const status = stages[step.key];
+                // When the server reuses saved work, steps finish at once. Each tick still pops in, one after another.
+                const tickDelay = reusedStages[step.key] ? stepIndex * 0.35 : 0;
+                const doneNote = status !== "done" ? null
+                  : step.key === "download" && reusedStages.download ? "Found a saved copy of this video, so no download needed."
+                  : step.key === "transcribe" && reusedStages.transcribe ? "Reused the saved transcript, so no transcribing needed."
+                  : step.key === "transcribe" && previewDuration ? `${Math.max(1, Math.round(previewDuration / 60))} minutes transcribed`
+                  : null;
                 return (
-                  <li key={step.key} className="flex items-center gap-4">
+                  <li key={step.key} className="flex items-start gap-4">
                     {/* Status icon */}
                     <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
                       {status === "done" ? (
-                        <span className="w-7 h-7 rounded-full bg-accent-glow border border-accent/40 flex items-center justify-center">
+                        <span className="w-7 h-7 rounded-full bg-accent-glow border border-accent/40 flex items-center justify-center" style={{ animation: `klypTick .35s ease-out ${tickDelay}s both` }}>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#00E5A0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
@@ -1021,7 +1033,7 @@ export default function AnalyzePanel() {
                       <p
                         className={`text-sm font-medium transition-colors ${
                           status === "done"
-                            ? "text-foreground-muted line-through decoration-accent/40"
+                            ? "text-foreground-muted"
                             : status === "running"
                             ? "text-foreground"
                             : "text-subtle"
@@ -1029,15 +1041,14 @@ export default function AnalyzePanel() {
                       >
                         {step.label}
                       </p>
+                      {doneNote && <p className="text-xs text-foreground-muted mt-0.5">{doneNote}</p>}
                       {status === "running" && step.key !== "done" && (
                         <p className="text-xs text-accent mt-0.5">
                           {/* Once the estimate runs out, show real elapsed time.
                               The old "almost done…" was a static string that sat
                               there indefinitely — it read as progress while the
                               backend was wedged, which is worse than no text. */}
-                          {etaRemaining !== null && etaRemaining > 0
-                            ? `≈ ${etaRemaining >= 60 ? `${Math.ceil(etaRemaining / 60)} min` : `${etaRemaining}s`} remaining`
-                            : stageElapsed >= 60
+                          {stageElapsed >= 60
                             ? `still working — ${Math.floor(stageElapsed / 60)}m ${stageElapsed % 60}s elapsed`
                             : stageElapsed > 0
                             ? `still working — ${stageElapsed}s elapsed`

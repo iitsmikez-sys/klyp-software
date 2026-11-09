@@ -183,7 +183,7 @@ export type AnalyzeStage = "download" | "transcribe" | "analyze";
 /** Events streamed by POST /api/analyze (Server-Sent Events). */
 export type AnalyzeEvent =
   | { type: "job"; jobId: string }
-  | { type: "progress"; stage: AnalyzeStage; status: "running" | "done"; etaSeconds?: number }
+  | { type: "progress"; stage: AnalyzeStage; status: "running" | "done"; etaSeconds?: number; /** This step was skipped because Klyp already had a saved copy of the video's transcript. */ reused?: boolean }
   | {
       type: "result";
       clips: ClipWithWords[];
