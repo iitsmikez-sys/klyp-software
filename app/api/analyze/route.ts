@@ -360,14 +360,14 @@ async function handlePOST(req: NextRequest): Promise<Response> {
                 await checkpointAnalysisJob(jobId, runToken, { stage: "analyze", analysis_clips: clips,
                   analysis_duration_seconds: durationSeconds, transcript_chars: transcriptChars });
               },
-              onProgress: (progressStage: AnalyzeStage, status: "running" | "done", etaSeconds?: number) => {
+              onProgress: (progressStage: AnalyzeStage, status: "running" | "done", etaSeconds?: number, reused?: boolean) => {
                 if (status === "running") {
                   stage = progressStage;
                   stageStarted = Date.now();
                 } else {
                   log(`${progressStage}: done in`, elapsed());
                 }
-                send({ type: "progress", stage: progressStage, status, etaSeconds });
+                send({ type: "progress", stage: progressStage, status, etaSeconds, ...(reused ? { reused: true } : {}) });
                 if (status === "running") void checkpointAnalysisJob(jobId, runToken, { stage: progressStage }).catch((error) => log("progress checkpoint failed", error));
               },
             };

@@ -672,7 +672,7 @@ After your main list, fill "also_consider" with the next-best moments that score
   return { clips, skipped };
 }
 
-export type PipelineProgress = (stage: AnalyzeStage, status: "running" | "done", etaSeconds?: number) => void;
+export type PipelineProgress = (stage: AnalyzeStage, status: "running" | "done", etaSeconds?: number, reused?: boolean) => void;
 
 export type PipelineResult = {
   clips: (Clip & { words: TimedWord[] })[];
@@ -786,8 +786,8 @@ export async function runAnalysisPipeline(opts: {
   if (cachedTranscript) {
     words = cachedTranscript.words;
     durationSeconds = cachedTranscript.durationSeconds;
-    progress("download", "done");
-    progress("transcribe", "done");
+    progress("download", "done", undefined, true);
+    progress("transcribe", "done", undefined, true);
   } else if (windows.length > 0) {
     const totalWindowS = windows.reduce((sum, w) => sum + (w.end - w.start), 0);
     console.log(
