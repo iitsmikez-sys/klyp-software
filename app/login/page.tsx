@@ -4,6 +4,7 @@ import { useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
+import PasswordInput from "@/components/PasswordInput";
 import { createClient } from "@/lib/supabase/client";
 import { CLAIM_NEXT_COOKIE, safeClaimNext } from "@/lib/claim-next";
 
@@ -192,8 +193,7 @@ export default function LoginPage() {
               <label className="block text-xs font-medium text-foreground-muted mb-1.5">
                 Password
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

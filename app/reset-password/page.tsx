@@ -4,6 +4,7 @@ import { useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
+import PasswordInput from "@/components/PasswordInput";
 import { createClient } from "@/lib/supabase/client";
 import { CLAIM_AFTER_RESET_COOKIE, CLAIM_NEXT_COOKIE, safeClaimNext } from "@/lib/claim-next";
 
@@ -71,8 +72,7 @@ export default function ResetPasswordPage() {
             <form onSubmit={handleSubmit} className="space-y-4 mt-6">
               <div>
                 <label className="block text-xs font-medium text-foreground-muted mb-1.5">New password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   required
                   minLength={8}
                   value={password}
@@ -84,8 +84,7 @@ export default function ResetPasswordPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-foreground-muted mb-1.5">Type it again</label>
-                <input
-                  type="password"
+                <PasswordInput
                   required
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
