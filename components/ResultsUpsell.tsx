@@ -9,8 +9,8 @@ import { trackEvent } from "@/lib/track";
 
 /**
  * Shown under the clips after any free run that was not a "best 2 hours" run (that one has its own box, PartUpsell): they have
- * just seen what Klyp does, so this is when to say what Pro changes. Every line comes from the app's own rules, with no clip
- * counts and no "unlimited".
+ * just seen what Klyp does, so this is when to say what Pro changes. Every line comes from the app's own rules, and nothing here
+ * promises a number of clips or makes a claim the product cannot keep.
  */
 export default function ResultsUpsell({ clipCount }: { clipCount: number }) {
   useEffect(() => { void trackEvent("results_upsell_view", { kind: "normal" }); }, []);
