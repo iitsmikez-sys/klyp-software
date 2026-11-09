@@ -12,7 +12,8 @@ import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { isMostlyEnglish, languageSection } from "@/lib/language-hint";
-import { detectLoudMoments, formatLoudMomentsForPrompt, isQuietStream, type LoudMoment } from "@/lib/loud-moments";
+import { detectLoudMoments, formatLoudMomentsForPrompt, isQuietStream, readLoudSamples, type LoudMoment } from "@/lib/loud-moments";
+import { bestWindowStart } from "@/lib/best-window";
 import { logAnthropicRateLimits } from "@/lib/anthropic-rate-limits";
 import { AssemblyAI } from "assemblyai";
 import {
@@ -81,11 +82,11 @@ export async function downloadAudio(url: string, dir: string, largeVod = false):
   return path.join(dir, audioFile);
 }
 
-/** Keep only the first `seconds` of an audio file (a straight copy, no re-encoding). */
-async function trimAudioToPart(audioPath: string, dir: string, seconds: number): Promise<string> {
+/** Keep `seconds` of an audio file starting at `start` (a straight copy, no re-encoding). */
+async function trimAudioToPart(audioPath: string, dir: string, start: number, seconds: number): Promise<string> {
   const ext = path.extname(audioPath) || ".m4a";
   const outPath = path.join(dir, `part${ext}`);
-  await run(resolveBin("ffmpeg"), ["-y", "-i", audioPath, "-t", String(seconds), "-vn", "-c", "copy", outPath],
+  await run(resolveBin("ffmpeg"), ["-y", "-ss", String(start), "-i", audioPath, "-t", String(seconds), "-vn", "-c", "copy", outPath],
     { stallTimeoutMs: 60_000, maxRunMs: 10 * 60_000 });
   return outPath;
 }
@@ -757,8 +758,14 @@ export async function runAnalysisPipeline(opts: {
   userId?: string;
   client?: SupabaseClient;
   onProgress?: PipelineProgress;
-  /** Analyze only the first N seconds of a longer video (the free "first 2 hours" choice). The transcript is then never treated as full coverage. */
+  /**
+   * Analyze only the best N seconds of a longer video (the free "best 2 hours" choice, "Smart pick"). The loudest, most active
+   * stretch is found from the audio; everything after that stays on the video's own timeline, so clip times point at the right
+   * place. The transcript is then never treated as full coverage.
+   */
   partSeconds?: number;
+  /** The whole video's length in seconds, needed with partSeconds to know how far the window can slide. */
+  sourceSeconds?: number;
   cachedTranscript?: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" };
   onTranscript?: (transcript: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" }) => Promise<void>;
   onAnalysis?: (result: PipelineResult) => Promise<void>;
@@ -770,6 +777,10 @@ export async function runAnalysisPipeline(opts: {
   // Check before downloading or transcribing, both of which can incur costs.
   anthropicCreditGate.assertAvailable();
   const { uploadedPath, url, durationHint, clipCount, workDir, onProgress, partSeconds } = opts;
+  /** Where the analyzed part starts on the video's own timeline (0 unless Smart pick found a better stretch). */
+  let windowStart = 0;
+  /** The length of the analyzed part, once transcribed. */
+  let partLength: number | undefined;
   const cachedTranscript = opts.cachedTranscript?.coverageMode === "full" ? opts.cachedTranscript : undefined;
   const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
   const keyword = opts.keyword;
@@ -832,26 +843,40 @@ export async function runAnalysisPipeline(opts: {
       if (uploadedPath) return extractAudio(uploadedPath, workDir);
       // The source is longer than the part being analyzed, so it is downloaded as a long video and cut down afterwards.
       const full = await downloadAudio(url, workDir, partSeconds ? true : !!durationHint && durationHint >= SEGMENT_MIN_VOD_S);
-      return partSeconds ? trimAudioToPart(full, workDir, partSeconds) : full;
+      if (!partSeconds) return full;
+      // Smart pick: read the whole audio's loudness (free, on this server) and take the liveliest stretch. Any problem means the start.
+      const samples = await readLoudSamples(full, { run, readText: (p) => readFile(p, "utf8"), ffmpeg: resolveBin("ffmpeg"), outPath: path.join(workDir, "smartpick-loudness.txt") });
+      windowStart = bestWindowStart(samples, opts.sourceSeconds ?? partSeconds, partSeconds);
+      console.log(`[analyze] smart pick: part starts at ${windowStart}s of ${opts.sourceSeconds ?? "?"}s (${samples.length} loudness readings)`);
+      return trimAudioToPart(full, workDir, windowStart, partSeconds);
     });
     progress("download", "done");
     // Gaming streamers can play well and say little, so measure the audio's loud moments too. It runs on this
     // server for free, and a failure here only means no hints.
     if (contentType === "gaming") {
-      loudMoments = await withMem("loud-moments", () => detectLoudMoments(audioPath, {
+      const measured = await withMem("loud-moments", () => detectLoudMoments(audioPath, {
         run, readText: (p) => readFile(p, "utf8"), ffmpeg: resolveBin("ffmpeg"), outPath: path.join(workDir, "loudness.txt"),
       }));
+      // Measured on the analyzed part, so put them back onto the video's own timeline.
+      loudMoments = measured.map((m) => ({ ...m, start_seconds: m.start_seconds + windowStart, end_seconds: m.end_seconds + windowStart, peak_seconds: m.peak_seconds + windowStart }));
       console.log(`[analyze] loud moments: ${loudMoments.length}`);
     }
 
     progress("transcribe", "running", durationHint ? Math.max(20, Math.round(durationHint * 0.25)) : undefined);
     const result = await withMem("transcribe", () => transcribe(audioPath, opts.costRunId, true, opts.transcriber));
-    words = result.words;
-    durationSeconds = result.durationSeconds;
+    if (partSeconds) {
+      // Back onto the video's own timeline: the part's transcript starts at zero, the part itself did not.
+      words = result.words.map((w) => ({ ...w, start: w.start + windowStart * 1000, end: w.end + windowStart * 1000 }));
+      partLength = result.durationSeconds;
+      durationSeconds = windowStart + result.durationSeconds;
+    } else {
+      words = result.words;
+      durationSeconds = result.durationSeconds;
+    }
   }
-  const quietStream = isQuietStream(words.length, durationSeconds);
+  const quietStream = isQuietStream(words.length, partLength ?? durationSeconds);
   const nonEnglish = !isMostlyEnglish(words);
-  if (quietStream) console.log(`[analyze] quiet stream: ${words.length} words in ${Math.round(durationSeconds / 60)} min`);
+  if (quietStream) console.log(`[analyze] quiet stream: ${words.length} words in ${Math.round((partLength ?? durationSeconds) / 60)} min`);
   const coverageMode = cachedTranscript?.coverageMode ?? (windows.length || partSeconds ? "chat-sampled" : "full");
   if (!cachedTranscript) await opts.onTranscript?.({ words, durationSeconds, coverageMode });
   if (opts.costRunId) console.log(`[analysis-usage] ${JSON.stringify({ runId: opts.costRunId, vodSeconds: durationSeconds, mode: coverageMode })}`);
@@ -879,6 +904,8 @@ export async function runAnalysisPipeline(opts: {
     console.log(`[analyze] keyword="${keyword}" matched ${keywordMatchSeconds.length} time(s) in transcript`);
   }
   const priorWindows = opts.priorWindows ?? [];
+  // With a part, only that stretch was transcribed: the clip finder is told so and only keeps clips inside it.
+  const observedPart = partSeconds ? [{ start: windowStart, end: durationSeconds }] : undefined;
   const poolSize = discoveryPoolSize(clipCount);
   const cacheInput = { sourceKey: opts.sourceKey ?? "", durationSeconds, contentType,
     keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
@@ -894,7 +921,7 @@ export async function runAnalysisPipeline(opts: {
   if (judged === null) {
     const selected = await withMem("find-clips", () =>
       findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish));
+        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, observedPart, opts.model, loudMoments, quietStream, nonEnglish));
     judged = selected.clips;
     skipped = selected.skipped;
     await cache?.save(judged);
@@ -920,7 +947,7 @@ export async function runAnalysisPipeline(opts: {
     if (nextJudged === null) {
       const next = await withMem("find-clips-more", () =>
         findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, undefined, opts.model, loudMoments, quietStream, nonEnglish));
+          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, observedPart, opts.model, loudMoments, quietStream, nonEnglish));
       nextJudged = next.clips;
       skipped += next.skipped;
       await nextCache.save(nextJudged);

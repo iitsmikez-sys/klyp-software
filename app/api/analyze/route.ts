@@ -345,6 +345,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               url,
               durationHint,
               partSeconds,
+              sourceSeconds: verifiedDuration,
               clipCount,
               sourceKey,
               userId: profile.id,
@@ -401,7 +402,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
 
         // A single database transaction filters clips sold in other requests,
         // records new windows, and charges only for the accepted result.
-        const result = await accountAnalysisJob(token!, jobId, runToken, clipsWithWords, durationSeconds, clipCount);
+        const result = await accountAnalysisJob(token!, jobId, runToken, clipsWithWords, durationSeconds, clipCount, partSeconds);
         if (result.type !== "result") throw new Error("Accounting returned an invalid result.");
         log("accounted", `${result.clips.length} new clips`, `${result.sparksSpent} Sparks`);
         send({ ...result, quiet: pipelineResult.quiet === true });

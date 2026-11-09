@@ -1089,13 +1089,13 @@ export default function AnalyzePanel() {
             <h3 id="cap-title" className="font-syne text-xl font-bold text-foreground">This video is {fmtTime(previewDuration ?? 0)} long</h3>
             <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours.</p>
             <div className="mt-5 rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-semibold text-foreground">Clip the first {PLAN_LIMITS.free.youtube / 3600} hours <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the best moments in the first {PLAN_LIMITS.free.youtube / 3600} hours. Uses your free Sparks.</p>
-              <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the first {PLAN_LIMITS.free.youtube / 3600} hours</button>
+              <p className="text-sm font-semibold text-foreground">Clip the best {PLAN_LIMITS.free.youtube / 3600} hours <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the most active {PLAN_LIMITS.free.youtube / 3600} hours of the video and clips the best moments in them. Uses your free Sparks.</p>
+              <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the best {PLAN_LIMITS.free.youtube / 3600} hours</button>
             </div>
             <div className="mt-3 rounded-xl border border-accent/40 bg-accent-glow p-4">
               <p className="text-sm font-semibold text-foreground">Analyze the whole video with Pro</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Every great moment, not just the first two hours. More clips from the whole stream, with no watermark.</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Every great moment, not just the best two hours. More clips from the whole stream, with no watermark.</p>
               <a href="/dashboard/upgrade" className="mt-3 flex min-h-10 items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
             </div>
             <button type="button" onClick={() => setCapDismissedFor(url)} className="mt-3 w-full text-center text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">Not now</button>
@@ -1172,7 +1172,7 @@ export default function AnalyzePanel() {
               </div>}
               {firstPart && previewDuration !== null && !estimating && (
                 <p className="mt-2 rounded-lg border border-accent/30 bg-accent-glow px-3 py-2 text-xs text-foreground">
-                  Clipping the first {PLAN_LIMITS.free.youtube / 3600} hours of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
+                  Clipping the best {PLAN_LIMITS.free.youtube / 3600} hours of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
                 </p>
               )}
               {planBlock && !firstPart && previewDuration !== null && !estimating && (
@@ -1363,7 +1363,7 @@ export default function AnalyzePanel() {
                 </p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
-                <p className="text-xs text-foreground-muted">{firstPart ? `Analyze first part (${fmtTime(FREE_PART_SECONDS)})` : `Analyze VOD ${previewDuration ? `(${fmtTime(previewDuration)})` : ""}`}</p>
+                <p className="text-xs text-foreground-muted">{firstPart ? `Analyze best part (${fmtTime(FREE_PART_SECONDS)})` : `Analyze VOD ${previewDuration ? `(${fmtTime(previewDuration)})` : ""}`}</p>
                 <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{firstPart ? estimateSparks(FREE_PART_SECONDS) : estimatedSparks} Sparks</p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">

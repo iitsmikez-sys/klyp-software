@@ -73,10 +73,13 @@ export async function failAnalysisJob(jobId: string, runToken: string, message: 
 }
 /** The clip counts the database function accepts (record_analysis_clips). A count it does not list, like 15, is sent as the next one up; the finder itself is still held to the real count. */
 const DB_REQUESTED_CLIP_VALUES = [1, 2, 3, 5, 7, 10, 12, 20];
-export async function accountAnalysisJob(token: string, jobId: string, runToken: string, clips: ClipWithWords[], durationSeconds: number, clipCount: ClipCount): Promise<AnalyzeEvent> {
+export async function accountAnalysisJob(token: string, jobId: string, runToken: string, clips: ClipWithWords[], durationSeconds: number, clipCount: ClipCount, billedSeconds?: number): Promise<AnalyzeEvent> {
   const { data, error } = await tokenClient(token).rpc("record_analysis_job_clips", {
     p_job_id: jobId, p_run_token: runToken, p_clips: clips,
     p_duration_seconds: durationSeconds, p_requested_clips: DB_REQUESTED_CLIP_VALUES.find((value) => value >= clipCount) ?? 20,
+    // Only sent for a part of a longer video (Smart pick), priced by the part's length; needs migration 050. Left out otherwise.
+    // (Also left out when the part starts at the very beginning, where the two lengths agree, so those runs work without it.)
+    ...(billedSeconds && durationSeconds - billedSeconds > 120 ? { p_billed_seconds: billedSeconds } : {}),
   });
   if (error) throw new Error(`Could not save or charge clips: ${error.message}`);
   return data as AnalyzeEvent;
