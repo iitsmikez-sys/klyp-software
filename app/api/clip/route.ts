@@ -399,7 +399,9 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
 
   log("start", url.slice(0, 100), `${start}-${end}s`, `format=${format}`, raw ? "raw" : "", upscale ? "upscale" : "");
-  const releaseSlot = acquireUserProcessingSlot(profile.id);
+  // Downloads have their own small budget: the page's frame and preview jobs share the account's main 3, and when those were all
+  // busy a Download click was refused with "Too many clip requests".
+  const releaseSlot = acquireUserProcessingSlot(profile.id, { scope: "export", max: 2 });
   if (!releaseSlot) return NextResponse.json({ error: "Too many clip requests are processing. Try again shortly." }, { status: 429 });
   let clipPath: string | null = null;
   let assDir: string | null = null;
