@@ -41,3 +41,9 @@ test("the pop-up offers the free first part and the screen then prices and sends
   assert.ok(panel.includes("(!planBlock || firstPart)"));
   assert.ok(panel.includes('trackEvent("long_video_first_part"'));
 });
+
+test("the price summary shows the part's length and price, not the whole video's, once the free part is chosen", () => {
+  const panel = read("components/AnalyzePanel.tsx");
+  assert.ok(panel.includes("Analyze first part (${fmtTime(FREE_PART_SECONDS)})"));
+  assert.ok(panel.includes("{firstPart ? estimateSparks(FREE_PART_SECONDS) : estimatedSparks} Sparks"));
+});

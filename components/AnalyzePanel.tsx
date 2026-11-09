@@ -1363,8 +1363,8 @@ export default function AnalyzePanel() {
                 </p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
-                <p className="text-xs text-foreground-muted">Analyze VOD {previewDuration ? `(${fmtTime(previewDuration)})` : ""}</p>
-                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{estimatedSparks} Sparks</p>
+                <p className="text-xs text-foreground-muted">{firstPart ? `Analyze first part (${fmtTime(FREE_PART_SECONDS)})` : `Analyze VOD ${previewDuration ? `(${fmtTime(previewDuration)})` : ""}`}</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{firstPart ? estimateSparks(FREE_PART_SECONDS) : estimatedSparks} Sparks</p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
                 <p className="text-xs text-foreground-muted">Best moments</p>
