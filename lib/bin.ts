@@ -5,7 +5,7 @@ import path from "path";
 import { shouldRetryYouTubeOverIpv6 } from "./youtube-ipv6-fallback.ts";
 import { withYoutubeCookies } from "./youtube-cookies.ts";
 import { tryYoutubeClients, YOUTUBE_FALLBACK_CLIENTS } from "./youtube-client-fallback.ts";
-import { forgetBlockedVideo, recentlyBlockedMessage, rememberBlockedVideo } from "./youtube-block-memory.ts";
+import { forgetBlockedVideo, isYoutubeRateLimit, isYoutubeRequest, recentlyBlockedMessage, rememberBlockedVideo, startYoutubeCooldown, youtubeCooldownActive, YOUTUBE_COOLDOWN_MESSAGE } from "./youtube-block-memory.ts";
 
 /**
  * Proof for the ffmpeg -9 kills on /api/preview (2026-08-08): the exact same
@@ -314,10 +314,16 @@ export function runCapture(bin: string, args: string[], opts: RunOptions = {}): 
 export async function runYtDlpCaptureWithIpv6Fallback(plainArgs: string[], opts: RunOptions = {}): Promise<string> {
   const bin = resolveBin("yt-dlp");
   const args = withYoutubeCookies(plainArgs); // only when YOUTUBE_COOKIES_B64 is set, and only for YouTube links
+  if (youtubeCooldownActive(args)) throw new Error(YOUTUBE_COOLDOWN_MESSAGE);
   try {
     return await runCapture(bin, args, opts);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (isYoutubeRequest(args) && isYoutubeRateLimit(message)) {
+      console.error("[yt-dlp] YouTube said too many requests: pausing YouTube requests for a while");
+      startYoutubeCooldown();
+      throw new Error(YOUTUBE_COOLDOWN_MESSAGE);
+    }
     // Always log why a metadata request failed, whatever the reason (otherwise only bot checks showed up in the logs).
     console.error("[yt-dlp] metadata request failed:", message.slice(0, 600));
     if (!shouldRetryYouTubeOverIpv6(args, message)) throw err;
@@ -410,6 +416,7 @@ export async function runYtDlpWithRetry(
   const args = withYoutubeCookies(plainArgs); // only when YOUTUBE_COOKIES_B64 is set, and only for YouTube links
   let triedIpv6 = false;
   // A video YouTube refused moments ago is not tried all the different ways again (see lib/youtube-block-memory.ts).
+  if (youtubeCooldownActive(args)) throw new Error(YOUTUBE_COOLDOWN_MESSAGE);
   const refusedBefore = recentlyBlockedMessage(args);
   if (refusedBefore) {
     console.error("[yt-dlp] skipped, YouTube refused this video moments ago");
@@ -426,6 +433,11 @@ export async function runYtDlpWithRetry(
       // replaces it, and without this line the real cause never reaches the
       // logs at all — which is exactly what made a Twitch 403 undiagnosable.
       console.error("[yt-dlp] attempt", attempt + 1, "failed:", message);
+      // YouTube is rate limiting us: every extra try only lengthens the cooldown, so stop and pause YouTube.
+      if (isYoutubeRequest(args) && isYoutubeRateLimit(message)) {
+        startYoutubeCooldown();
+        throw new Error(YOUTUBE_COOLDOWN_MESSAGE);
+      }
       if (!triedIpv6 && shouldRetryYouTubeOverIpv6(args, message)) {
         triedIpv6 = true;
         try {

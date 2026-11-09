@@ -35,3 +35,29 @@ test("the downloader checks the memory first and records a refusal", () => {
   assert.ok(bin.includes("recentlyBlockedMessage(args)"));
   assert.ok(bin.includes("rememberBlockedVideo(args, message)"));
 });
+
+import { RATE_LIMIT_COOLDOWN_MS, YOUTUBE_COOLDOWN_MESSAGE, endYoutubeCooldown, isYoutubeRateLimit, isYoutubeRequest, startYoutubeCooldown, youtubeCooldownActive } from "../lib/youtube-block-memory.ts";
+
+test("a 429 from YouTube pauses every YouTube link for ten minutes and nothing else", () => {
+  const yt = ["https://www.youtube.com/watch?v=plN7JMbadRg"], twitch = ["https://www.twitch.tv/videos/123"];
+  assert.equal(isYoutubeRateLimit("yt-dlp exited with code 1: webpage: HTTP Error 429: Too Many Requests"), true);
+  assert.equal(isYoutubeRateLimit("Sign in to confirm you're not a bot"), false);
+  assert.equal(isYoutubeRequest(yt), true);
+  assert.equal(isYoutubeRequest(twitch), false);
+  const t = 5_000_000;
+  endYoutubeCooldown();
+  assert.equal(youtubeCooldownActive(yt, t), false);
+  startYoutubeCooldown(t);
+  assert.equal(youtubeCooldownActive(yt, t + 1000), true);
+  assert.equal(youtubeCooldownActive(["https://youtu.be/AAAAAAAAAAA"], t + 1000), true, "other YouTube videos too");
+  assert.equal(youtubeCooldownActive(twitch, t + 1000), false, "Twitch and Kick are never held back");
+  assert.equal(youtubeCooldownActive(yt, t + RATE_LIMIT_COOLDOWN_MS + 1), false, "resumes by itself");
+  endYoutubeCooldown();
+  assert.match(YOUTUBE_COOLDOWN_MESSAGE, /Twitch or Kick/);
+});
+
+test("both downloaders pause on a 429 instead of retrying, and honour the pause first", () => {
+  const bin = readFileSync(new URL("../lib/bin.ts", import.meta.url), "utf8");
+  assert.equal(bin.split("youtubeCooldownActive(args)").length - 1, 2, "checked before the metadata check and before the download");
+  assert.equal(bin.split("startYoutubeCooldown();").length - 1, 2, "started by both");
+});

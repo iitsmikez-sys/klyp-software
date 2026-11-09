@@ -40,3 +40,29 @@ export function forgetBlockedVideo(args: readonly string[]): void {
   const id = youtubeVideoId(args);
   if (id) blocked.delete(id);
 }
+
+/**
+ * When YouTube answers "429 Too Many Requests", every further request only makes the cooldown longer. Klyp stops asking
+ * YouTube for a while (all YouTube links, not just that video) and gives the plain message straight away.
+ */
+export const RATE_LIMIT_COOLDOWN_MS = 10 * 60_000;
+export const YOUTUBE_COOLDOWN_MESSAGE = "YouTube is limiting downloads right now. Try again in a few minutes, or use a Twitch or Kick link.";
+const RATE_LIMITED = /HTTP Error 429|Too Many Requests/i;
+const YOUTUBE_LINK = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i;
+let cooldownUntil = 0;
+
+export const isYoutubeRateLimit = (message: string): boolean => RATE_LIMITED.test(message);
+export const isYoutubeRequest = (args: readonly string[]): boolean => args.some((arg) => YOUTUBE_LINK.test(arg));
+
+export function startYoutubeCooldown(now = Date.now()): void {
+  cooldownUntil = now + RATE_LIMIT_COOLDOWN_MS;
+}
+
+/** True while Klyp is pausing YouTube requests. Other sites are never held back. */
+export function youtubeCooldownActive(args: readonly string[], now = Date.now()): boolean {
+  return isYoutubeRequest(args) && now < cooldownUntil;
+}
+
+export function endYoutubeCooldown(): void {
+  cooldownUntil = 0;
+}
