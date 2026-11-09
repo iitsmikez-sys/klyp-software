@@ -1183,7 +1183,12 @@ export default function AnalyzePanel() {
                     {!isPro && (
                       <a href="/dashboard/upgrade" className="flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
                     )}
-                    <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
+                    {isPro ? (
+                      <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
+                    ) : (
+                      // Free: instead of sending them away, Klyp takes the liveliest 2 hours of the video (Smart pick).
+                      <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the best {PLAN_LIMITS.free.youtube / 3600} hours, free</button>
+                    )}
                   </div>
                 </div>
               )}

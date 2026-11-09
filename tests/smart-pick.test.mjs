@@ -80,3 +80,13 @@ test("the pop-up now says best 2 hours", () => {
   assert.ok(panel.includes("Use the best {PLAN_LIMITS.free.youtube / 3600} hours"));
   assert.ok(panel.includes("Clipping the best {PLAN_LIMITS.free.youtube / 3600} hours of this"));
 });
+
+test("on the warning box a free person gets Smart pick instead of being sent away; Pro still gets 'Try a shorter video'", () => {
+  const panel = read("components/AnalyzePanel.tsx");
+  const start = panel.indexOf("{isPro ? (\n                      <button type=\"button\" onClick={() => setUrl(\"\")}");
+  assert.ok(start > 0, "the Pro branch keeps the old button");
+  const block = panel.slice(start, start + 1100);
+  assert.ok(block.includes("Try a shorter video"));
+  assert.ok(block.includes("setFirstPartFor(url)"));
+  assert.ok(block.includes("Clip the best {PLAN_LIMITS.free.youtube / 3600} hours, free"));
+});
