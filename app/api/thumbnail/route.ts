@@ -35,6 +35,12 @@ export const OPTIONS = corsPreflight;
  */
 const THUMB_VERSION = "v1";
 
+/** The slice of source video a frame is cut from: a few seconds around the middle of the clip, at the size the poster is shown at. */
+const FRAME_SLICE_BEFORE_SECONDS = 1;
+const FRAME_SLICE_AFTER_SECONDS = 3;
+const FRAME_SLICE_HEIGHT = 360;
+const FRAME_SLICE_MAX_MS = 90_000;
+
 /** 16:9 at a size that stays sharp on a 2x display at the card's width. */
 const THUMB_WIDTH = 640;
 const THUMB_HEIGHT = 360;
@@ -172,10 +178,13 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       // Another request for the same clip may have produced it while this one
       // waited for a queue slot.
       if (existsSync(outPath) && (await stat(outPath)).size > 0) return;
-      // Share the preview's 480p segment. The older 360p cache on Railway
-      // included audio-only MP4s that cannot produce a still frame.
-      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(url, start, end, 720, 10 * 60_000, profile.id);
-      await extractFrame(sourcePath, frameTime(start, end) - offsetSeconds, outPath);
+      // One still picture only needs a few seconds of low-quality video around the middle of the clip, not the whole clip at 720p
+      // re-cut at every keyframe (which took minutes per clip and held up the whole results page). This is the same small slice
+      // the visual check uses (lib/vision-validation.ts); resolveSourceSegment checks that it really has a picture.
+      const mid = frameTime(start, end);
+      const { path: sourcePath, offsetSeconds } = await resolveSourceSegment(
+        url, Math.max(0, mid - FRAME_SLICE_BEFORE_SECONDS), mid + FRAME_SLICE_AFTER_SECONDS, FRAME_SLICE_HEIGHT, FRAME_SLICE_MAX_MS, profile.id);
+      await extractFrame(sourcePath, mid - offsetSeconds, outPath);
     });
     return serve();
   } catch (err) {
