@@ -1,4 +1,5 @@
 "use client";
+import { userFacingClipError } from '@/lib/analyze-errors';
 
 /**
  * Shared clip-export state for any page that lists clips (My Clips, the
@@ -61,7 +62,7 @@ export function useClipExports(onSparksSpent?: () => void) {
         });
         if (!res.ok) {
           const data = await res.json().catch(() => null);
-          throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
+          throw new Error(userFacingClipError(data?.error ?? `Export failed (HTTP ${res.status}).`));
         }
         const blob = await res.blob();
         if ((revisionRef.current[clip.id] ?? 0) !== revision) return null;

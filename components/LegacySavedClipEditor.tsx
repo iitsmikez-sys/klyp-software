@@ -1,4 +1,5 @@
 "use client";
+import { userFacingClipError } from '@/lib/analyze-errors';
 
 /**
  * Inline editing panel for a saved clip (My Clips page). Mirrors the dashboard
@@ -741,7 +742,7 @@ export default function LegacySavedClipEditor({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
+        throw new Error(userFacingClipError(data?.error ?? `Export failed (HTTP ${res.status}).`));
       }
       const blob = await res.blob();
       const safe = clip.title.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_").slice(0, 60);

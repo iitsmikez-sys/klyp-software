@@ -1,4 +1,5 @@
 "use client";
+import { userFacingClipError } from '@/lib/analyze-errors';
 import {timelineExportPayload} from '@/lib/editor-compatibility';
 import {canUseExportFormat} from '@/lib/clips';
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
@@ -214,7 +215,7 @@ export default function ClipTimelineEditor({ clip, compatibilityNotice }: {
         const checked = validateClipEditDraft(draft, clip);
         const res = await processingFetch('/api/clip', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ ...timelineExportPayload(clip, checked as ClipEditDraftV3, pro), handle: getStoredHandle() }) });
         if (!res.ok)
-            throw new Error((await res.json()).error ?? 'Export failed');
+            throw new Error(userFacingClipError((await res.json()).error ?? 'Export failed'));
         setNotice(readLayoutExportWarning(res));
         const url = URL.createObjectURL(await res.blob());
         const a = document.createElement('a');

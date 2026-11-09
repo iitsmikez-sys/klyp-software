@@ -5,6 +5,7 @@ import path from "path";
 import { shouldRetryYouTubeOverIpv6 } from "./youtube-ipv6-fallback.ts";
 import { withYoutubeCookies } from "./youtube-cookies.ts";
 import { tryYoutubeClients, YOUTUBE_FALLBACK_CLIENTS } from "./youtube-client-fallback.ts";
+import { forgetBlockedVideo, recentlyBlockedMessage, rememberBlockedVideo } from "./youtube-block-memory.ts";
 
 /**
  * Proof for the ffmpeg -9 kills on /api/preview (2026-08-08): the exact same
@@ -407,9 +408,16 @@ export async function runYtDlpWithRetry(
   const bin = resolveBin("yt-dlp");
   const args = withYoutubeCookies(plainArgs); // only when YOUTUBE_COOKIES_B64 is set, and only for YouTube links
   let triedIpv6 = false;
+  // A video YouTube refused moments ago is not tried all the different ways again (see lib/youtube-block-memory.ts).
+  const refusedBefore = recentlyBlockedMessage(args);
+  if (refusedBefore) {
+    console.error("[yt-dlp] skipped, YouTube refused this video moments ago");
+    throw new Error(refusedBefore);
+  }
   for (let attempt = 0; ; attempt++) {
     try {
       await run(bin, args, opts);
+      forgetBlockedVideo(args);
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -429,6 +437,7 @@ export async function runYtDlpWithRetry(
           const other = await tryYoutubeClients(args, message, (clientArgs) => run(bin, clientArgs, opts));
           if (other.ok) return;
           // Keep the original bot challenge so the UI can offer file upload.
+          rememberBlockedVideo(args, message);
         }
       }
       // Check disk-full FIRST. A download that wedges because the drive is

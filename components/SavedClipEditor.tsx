@@ -1,4 +1,5 @@
 "use client";
+import { userFacingClipError } from '@/lib/analyze-errors';
 
 /**
  * Inline editing panel for a saved clip (My Clips page). Mirrors the dashboard
@@ -272,7 +273,7 @@ export default function SavedClipEditor({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error ?? `Export failed (HTTP ${res.status}).`);
+        throw new Error(userFacingClipError(data?.error ?? `Export failed (HTTP ${res.status}).`));
       }
       const warning = readLayoutExportWarning(res);
       if (warning) setSaveNotice(warning);
