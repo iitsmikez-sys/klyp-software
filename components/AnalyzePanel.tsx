@@ -31,7 +31,7 @@ import { processingFetch, processingUrl, processingAuthToken } from "@/lib/proce
 import { getStoredHandle } from "@/lib/streamer-handle";
 import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError, userFacingClipError } from "@/lib/analyze-errors";
-import { UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
+import { PLAN_LIMITS, UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import { bestMomentsText } from "@/lib/clip-expectation";
 import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
@@ -147,6 +147,9 @@ export default function AnalyzePanel() {
   const [estimateError, setEstimateError] = useState<string | null>(null);
   /** The plan's length limit was hit for this link (shown as an upgrade card, not an error). */
   const [planBlock, setPlanBlock] = useState<string | null>(null);
+  /** The link whose "too long for Free" pop-up the person closed, so it does not reopen for the same link. */
+  const [capDismissedFor, setCapDismissedFor] = useState<string | null>(null);
+  const capTrackedFor = useRef<string | null>(null);
   const [probeRevision, setProbeRevision] = useState(0);
   const [keyword, setKeyword] = useState("");
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
@@ -188,6 +191,13 @@ export default function AnalyzePanel() {
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
+  const showCapPopup = !!planBlock && !isPro && previewDuration !== null && !estimating && capDismissedFor !== url;
+  useEffect(() => {
+    if (!showCapPopup || capTrackedFor.current === url) return;
+    capTrackedFor.current = url;
+    // Counts how many free people run into the 2 hour limit (best effort, never shown).
+    void trackEvent("long_video_limit", { hours: Math.round(((previewDuration ?? 0) / 3600) * 10) / 10, source: platformName(url) });
+  }, [showCapPopup, url, previewDuration]);
   const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !planBlock && !busy && !loading && !outOfSparks && !cantAfford;
 
   const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
@@ -1064,6 +1074,21 @@ export default function AnalyzePanel() {
             <p className="mt-7 pt-5 border-t border-border text-xs text-foreground-muted text-center">
               Long VODs take a few minutes — feel free to grab a coffee ☕
             </p>
+          </div>
+        </div>
+      )}
+
+      {showCapPopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="cap-title">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-7 shadow-2xl">
+            <h3 id="cap-title" className="font-syne text-xl font-bold text-foreground">This video is {fmtTime(previewDuration ?? 0)} long</h3>
+            <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours.</p>
+            <div className="mt-5 rounded-xl border border-accent/40 bg-accent-glow p-4">
+              <p className="text-sm font-semibold text-foreground">Analyze the whole video with Pro</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Every great moment from the whole stream. More clips, with no watermark.</p>
+              <a href="/dashboard/upgrade" className="mt-3 flex min-h-10 items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
+            </div>
+            <button type="button" onClick={() => setCapDismissedFor(url)} className="mt-3 w-full text-center text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">Not now</button>
           </div>
         </div>
       )}
