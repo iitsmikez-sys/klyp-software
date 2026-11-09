@@ -47,3 +47,10 @@ test("a failed clip download says what to do without yt-dlp output", () => {
   assert.doesNotMatch(other, /yt-dlp/);
   assert.equal(analyzeErrors.userFacingClipError("Clips are capped at 3 minutes."), "Clips are capped at 3 minutes.");
 });
+
+test("a failed length check on a YouTube link says YouTube is limiting downloads, other links keep the generic message", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../components/AnalyzePanel.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("YouTube is limiting downloads right now, so Klyp can’t read this video. Try again later, or use a Twitch or Kick link."));
+  assert.ok(src.includes("Couldn’t confirm the VOD length or Sparks cost. Check the link and try again."));
+});

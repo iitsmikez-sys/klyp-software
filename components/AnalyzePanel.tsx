@@ -274,7 +274,9 @@ export default function AnalyzePanel() {
           }
         }
       } catch {
-        if (!cancelled) setEstimateError("Couldn’t confirm the VOD length or Sparks cost. Check the link and try again.");
+        if (!cancelled) setEstimateError(/^https?://(?:www.|m.)?(?:youtube.com|youtu.be)//i.test(url)
+          ? "YouTube is limiting downloads right now, so Klyp can’t read this video. Try again later, or use a Twitch or Kick link."
+          : "Couldn’t confirm the VOD length or Sparks cost. Check the link and try again.");
       } finally {
         if (!cancelled) setEstimating(false);
       }
