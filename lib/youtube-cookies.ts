@@ -35,5 +35,8 @@ export function youtubeCookiesFile(env: Record<string, string | undefined> = pro
 export function withYoutubeCookies(args: string[], env: Record<string, string | undefined> = process.env, dir = tmpdir()): string[] {
   if (args.includes("--cookies") || !args.some((arg) => YOUTUBE_URL.test(arg))) return args;
   const file = youtubeCookiesFile(env, dir);
-  return file ? ["--cookies", file, ...args] : args;
+  // With cookies, yt-dlp can no longer use the app-style YouTube clients and must solve YouTube's "n challenge" with a
+  // JavaScript runtime. The server has Node (it is running this code), so point yt-dlp at it. Without this every
+  // YouTube link failed with "n challenge solving failed".
+  return file ? ["--cookies", file, "--js-runtimes", `node:${process.execPath}`, ...args] : args;
 }
