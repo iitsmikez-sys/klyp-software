@@ -9,7 +9,12 @@ test("a free user who pastes a video over the Free limit gets a pop-up with an u
   assert.ok(panel.includes('aria-labelledby="cap-title"'));
   assert.ok(panel.includes("This video is {fmtTime(previewDuration ?? 0)} long"));
   assert.ok(panel.includes("Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours."));
-  assert.ok(panel.includes("Every great moment, not just the best two hours. More clips from the whole stream, with no watermark."));
+  assert.ok(panel.includes("Klyp looks at all {lengthWords(previewDuration ?? 0)}, so more of your stream's great moments become clips. No watermark."));
+  assert.ok(panel.includes("Get the whole video with Pro"));
+  assert.ok(panel.includes("Limited: only {PLAN_LIMITS.free.youtube / 3600} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark."));
+  assert.ok(panel.includes("Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks."));
+  assert.ok(panel.includes("Get Pro, ${MONTHLY_PRICE_USD} a month"));
+  assert.ok(!/up to d+ clips|up to 1[052] clips/i.test(panel.slice(panel.indexOf('aria-labelledby="cap-title"'), panel.indexOf('aria-labelledby="cap-title"') + 3000)), "the pop-up never promises a clip count");
   assert.ok(panel.includes('href="/dashboard/upgrade"'));
 });
 
