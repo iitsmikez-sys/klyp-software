@@ -266,7 +266,7 @@ export default function AnalyticsPage() {
           </section>
 
           <p className="text-[13px] text-foreground-muted -mt-1">
-            The score is Klyp&apos;s own estimate of how strong a clip is, made when the clip
+            The Virality Score is Klyp&apos;s own estimate of how strong a clip is, made when the clip
             was found. It is not a measurement of how the clip performed.
           </p>
 
@@ -355,7 +355,7 @@ export default function AnalyticsPage() {
                       {clip.clip_type}
                     </span>
                     <span
-                      title="Klyp's estimate of how strong this clip is"
+                      title="Virality Score: Klyp's estimate of how strong this clip is"
                       className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-glow border border-accent/30 text-accent text-[13px] font-bold tabular-nums"
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">

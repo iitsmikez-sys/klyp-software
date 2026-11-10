@@ -75,7 +75,7 @@ const plans: Plan[] = [
     price: { kind: "free" },
     features: [
       { kind: "check", text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days` },
-      { kind: "check", text: "AI clipping with clip scores" },
+      { kind: "check", text: "AI clipping with Virality Score" },
       { kind: "check", text: "Up to 1080p rendered clips" },
       { kind: "check", text: "9:16 vertical and Original (no crop) exports" },
       { kind: "check", text: "AI captions: Bold, Klyp, Spark and Pulse" },

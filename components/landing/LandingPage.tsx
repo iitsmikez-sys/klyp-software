@@ -126,7 +126,7 @@ const features: {
       </svg>
     ),
     title: "Your clipping stats",
-    desc: "Average clip score, your most common clip types, and weekly output in one view.",
+    desc: "Average Virality Score, your most common clip types, and weekly output in one view.",
     preview: (
       <div className="flex items-end gap-1.5 h-9">
         {[40, 70, 55, 90, 65, 80].map((h, i) => (

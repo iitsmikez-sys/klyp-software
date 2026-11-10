@@ -39,7 +39,7 @@ function Warn() {
 
 const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days` },
-  { ok: true, text: "AI clipping with clip scores" },
+  { ok: true, text: "AI clipping with Virality Score" },
   { ok: true, text: "Clip editor: trim, split and edit captions" },
   { ok: true, text: "9:16 vertical and Original (no crop) exports" },
   { ok: true, text: "AI captions: Bold, Klyp, Spark and Pulse" },
@@ -51,7 +51,7 @@ const FREE_FEATURES: { ok: boolean; text: string }[] = [
 /** `pro` marks a line that gets the Pro diamond instead of a check; `soon` marks a feature that is not live yet. */
 const PRO_FEATURES: { text: string; pro?: boolean; soon?: boolean }[] = [
   { text: `${SPARKS_ALLOWANCE.pro} Sparks every 30 days` },
-  { text: "AI clipping with clip scores" },
+  { text: "AI clipping with Virality Score" },
   { text: "No watermark. Clean clips, your brand only" },
   { text: "Full editor" },
   { text: "More caption styles", pro: true },
