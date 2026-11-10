@@ -7,6 +7,7 @@ test("reads duration and display metadata from one existing yt-dlp probe", () =>
     durationSeconds: 8100,
     title: "An evening of Just Chatting",
     thumbnail: "https://example.com/thumb.jpg",
+    videoAvailable: true,
   });
 });
 
@@ -15,6 +16,7 @@ test("keeps valid duration when optional metadata is absent or unsafe", () => {
     durationSeconds: 120,
     title: null,
     thumbnail: null,
+    videoAvailable: true,
   });
 });
 

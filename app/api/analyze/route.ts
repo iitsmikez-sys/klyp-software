@@ -58,6 +58,11 @@ import { preferencesForToken } from "@/lib/creator-feedback-data";
 
 export const runtime = "nodejs";
 // Allow up to 5 minutes — download + transcription of a long VOD is slow.
+/** Same text and rule as AUDIO_ONLY_MESSAGE / hasVideoStream in lib/vod-probe.ts (kept here so this route needs no extra import; a test keeps them equal). */
+const AUDIO_ONLY_MESSAGE =
+  "This video only offers its sound to Klyp (a Twitch video can be subscriber-only or restricted), so Klyp can't cut clips from it. Try another video, or upload the file.";
+const hasVideoStream = (vcodec: unknown): boolean => !(typeof vcodec === "string" && /^(none|audio only)$/i.test(vcodec.trim()));
+
 export const maxDuration = 300;
 
 export const OPTIONS = corsPreflight;
@@ -216,18 +221,30 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // before any paid transcription or AI call, then pass that length to the
   // pipeline so long-VOD window planning cannot rely on a shortened hint.
   let verifiedDuration: number;
+  let audioOnlySource = false;
   try {
     const output = await runQueued(`duration:${profile.id}`, () => uploadedPath
       ? runCapture(resolveBin("ffprobe"), ["-v", "error", "-show_entries", "format=duration",
           "-of", "default=noprint_wrappers=1:nokey=1", uploadedPath], { maxRunMs: 20_000 })
-      : runYtDlpCaptureWithIpv6Fallback(["--print", "duration", "--skip-download", "--no-playlist", url]));
-    verifiedDuration = Math.round(Number.parseFloat(output.trim()));
+      : runYtDlpCaptureWithIpv6Fallback(["--print", "duration", "--print", "%(vcodec)j", "--skip-download", "--no-playlist", url]));
+    const [durationLine, vcodecLine] = output.trim().split("\n").map((line) => line.trim());
+    verifiedDuration = Math.round(Number.parseFloat(durationLine ?? ""));
     if (!Number.isFinite(verifiedDuration) || verifiedDuration <= 0) {
       throw new Error("The VOD duration is unavailable.");
+    }
+    if (!uploadedPath) {
+      let vcodec: unknown = null;
+      try { vcodec = vcodecLine === undefined ? null : JSON.parse(vcodecLine); } catch { /* unclear counts as available */ }
+      if (!hasVideoStream(vcodec)) audioOnlySource = true;
     }
   } catch (err) {
     releaseSlot();
     return fail("validate", err instanceof Error ? `Could not verify VOD duration: ${err.message}` : "Could not verify VOD duration.", 503);
+  }
+  // A source that offers only sound (e.g. a subscriber-only Twitch VOD) can be analyzed but no clip can be cut from it: stop here, before anything is charged.
+  if (audioOnlySource) {
+    releaseSlot();
+    return fail("validate", AUDIO_ONLY_MESSAGE, 422);
   }
   // The plan's length limit for this import method (Free: YouTube 4h, Twitch 1h; Pro: 8h).
   // Separate from the Sparks balance below and from the per-run provider budget.
