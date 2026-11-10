@@ -1,4 +1,12 @@
-export type VodProbe = { durationSeconds: number; title: string | null; thumbnail: string | null };
+export type VodProbe = { durationSeconds: number; title: string | null; thumbnail: string | null; /** False when the source offers only sound (for example a subscriber-only Twitch VOD): moments can be found but no video clip can be cut. */ videoAvailable: boolean };
+
+export const AUDIO_ONLY_MESSAGE =
+  "This video only offers its sound to Klyp (a Twitch video can be subscriber-only or restricted), so Klyp can't cut clips from it. Try another video, or upload the file.";
+
+/** True unless the downloader says the best choice has no picture ("none" / "audio only"). Anything unclear counts as available. */
+export function hasVideoStream(vcodec: unknown): boolean {
+  return !(typeof vcodec === "string" && /^(none|audio only)$/i.test(vcodec.trim()));
+}
 
 export function parseVodProbe(raw: string): VodProbe {
   // The metadata command prints only these three JSON-encoded fields. Full
@@ -21,5 +29,5 @@ export function parseVodProbe(raw: string): VodProbe {
       if (parsed.protocol === "https:") thumbnail = parsed.toString();
     } catch { /* No usable thumbnail. */ }
   }
-  return { durationSeconds, title: title || null, thumbnail };
+  return { durationSeconds, title: title || null, thumbnail, videoAvailable: hasVideoStream(read(3)) };
 }

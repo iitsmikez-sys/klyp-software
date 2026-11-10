@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
         "--print", "%(duration)j",
         "--print", "%(title)j",
         "--print", "%(thumbnail)j",
+        "--print", "%(vcodec)j",
         "--skip-download",
         "--no-playlist",
         url,
@@ -94,6 +95,7 @@ export async function GET(req: NextRequest) {
       })(),
       title: probe.title,
       thumbnail: probe.thumbnail,
+      videoAvailable: probe.videoAvailable,
     })
   );
 }

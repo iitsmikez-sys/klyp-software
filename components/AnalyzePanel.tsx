@@ -34,6 +34,7 @@ import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError, userFacingClipError } from "@/lib/analyze-errors";
 import { FREE_PART_SECONDS, PLAN_LIMITS, UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import PartUpsell from "@/components/PartUpsell";
+import { AUDIO_ONLY_MESSAGE } from "@/lib/vod-probe";
 import ResultsUpsell from "@/components/ResultsUpsell";
 import { MONTHLY_PRICE_USD } from "@/lib/pricing";
 import { lengthWords } from "@/lib/length-words";
@@ -152,6 +153,8 @@ export default function AnalyzePanel() {
   const [estimateError, setEstimateError] = useState<string | null>(null);
   /** The plan's length limit was hit for this link (shown as an upgrade card, not an error). */
   const [planBlock, setPlanBlock] = useState<string | null>(null);
+  /** The link's video offers only sound (e.g. a subscriber-only Twitch VOD): no clip can be cut, so Analyze stays off. */
+  const [audioOnly, setAudioOnly] = useState(false);
   /** The link whose "too long for Free" pop-up the person closed, so it does not reopen for the same link. */
   const [capDismissedFor, setCapDismissedFor] = useState<string | null>(null);
   const capTrackedFor = useRef<string | null>(null);
@@ -210,7 +213,7 @@ export default function AnalyzePanel() {
     // Counts how many free people run into the 2 hour limit (best effort, never shown).
     void trackEvent("long_video_limit", { hours: Math.round(((previewDuration ?? 0) / 3600) * 10) / 10, source: platformName(url) });
   }, [showCapPopup, url, previewDuration]);
-  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && (!planBlock || firstPart) && !busy && !loading && !outOfSparks && !cantAfford;
+  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !audioOnly && (!planBlock || firstPart) && !busy && !loading && !outOfSparks && !cantAfford;
 
   const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
     id: savedIds[index] ?? "", url: analyzedUrl, title: clip.title, clip_type: clip.type,
@@ -273,6 +276,7 @@ export default function AnalyzePanel() {
     setPreviewImageFailed(false);
     setEstimateError(null);
     setPlanBlock(null);
+    setAudioOnly(false);
     if (!VOD_URL_PATTERN.test(url)) {
       setEstimating(false);
       return;
@@ -292,6 +296,7 @@ export default function AnalyzePanel() {
           setEstimatedForUrl(url);
           setPreviewDuration(data.durationSeconds);
           setPreviewMeta({ title: typeof data.title === "string" ? data.title : null, thumbnail: typeof data.thumbnail === "string" ? data.thumbnail : null });
+          setAudioOnly(data.videoAvailable === false);
           // The plan's length limit for this link (the server enforces it again on Analyze).
           if (data.planLimit && data.planLimit.ok === false && typeof data.planLimit.message === "string") {
             setPlanBlock(data.planLimit.message);
@@ -1186,6 +1191,12 @@ export default function AnalyzePanel() {
                 <p className="mt-2 rounded-lg border border-accent/30 bg-accent-glow px-3 py-2 text-xs text-foreground">
                   Clipping the best {PLAN_LIMITS.free.youtube / 3600} hours of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
                 </p>
+              )}
+              {audioOnly && previewDuration !== null && !estimating && (
+                <div role="alert" className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs text-red-300">
+                  <span>{AUDIO_ONLY_MESSAGE}</span>
+                  <button type="button" onClick={() => setUrl("")} className="font-semibold underline underline-offset-2">Try another link</button>
+                </div>
               )}
               {planBlock && !firstPart && previewDuration !== null && !estimating && (
                 <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
