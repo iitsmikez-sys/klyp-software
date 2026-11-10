@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { CAPTION_STYLES, FREE_CAPTION_STYLES } from "@/lib/clips";
 import { resultsKeptDays } from "@/lib/results-retention";
 import { trackEvent } from "@/lib/track";
 
@@ -16,7 +15,7 @@ export default function DashboardUpsell() {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-foreground">Your free clips are kept for {resultsKeptDays(false)} days.</p>
         <p className="mt-0.5 text-[13px] leading-relaxed text-foreground-muted">
-          Pro keeps them {resultsKeptDays(true)} days, removes the Klyp watermark from your downloads, and adds {CAPTION_STYLES.length - FREE_CAPTION_STYLES.length} more caption styles.
+          Pro keeps them {resultsKeptDays(true)} days and removes the Klyp watermark from your downloads.
         </p>
       </div>
       <a
