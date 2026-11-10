@@ -6,7 +6,8 @@ const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").re
 
 test("the dashboard line says only what the app's rules say, shows no price and promises no results", () => {
   const box = read("components/DashboardUpsell.tsx");
-  for (const piece of ["resultsKeptDays(false)", "resultsKeptDays(true)", "CAPTION_STYLES.length - FREE_CAPTION_STYLES.length", "Klyp watermark", 'href="/dashboard/upgrade"']) assert.ok(box.includes(piece), piece);
+  for (const piece of ["resultsKeptDays(false)", "resultsKeptDays(true)", "Klyp watermark", 'href="/dashboard/upgrade"']) assert.ok(box.includes(piece), piece);
+  assert.doesNotMatch(box, /caption styles/i, "the caption-styles line is gone");
   assert.doesNotMatch(box, /\$\d|unlimited|∞|viral|guarantee/i);
 });
 

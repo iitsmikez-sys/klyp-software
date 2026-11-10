@@ -48,6 +48,6 @@ test("screen readers get the plain wording through the box's own description", (
 });
 
 test("the paste box keeps its size: the hint is laid over the box, not added to it", () => {
-  assert.match(panel, /<div className="relative">\s*<input/);
-  assert.match(hint, /absolute inset-y-0 left-3 right-3/);
+  assert.match(panel, /<div className="relative min-w-0 flex-1">\s*<input/);
+  assert.match(hint, /absolute inset-y-0 left-4 right-4/);
 });
