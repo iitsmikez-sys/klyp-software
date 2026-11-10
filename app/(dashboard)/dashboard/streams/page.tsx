@@ -672,7 +672,7 @@ export default function StreamsPage() {
         )}
 
         <p className="text-[13px] text-foreground-muted mt-4">
-          AI scores are Klyp&apos;s own estimates of viral potential, not measured performance.
+          Scores show how strong Klyp thinks each clip is. They&apos;re estimates, not a promise of views.
         </p>
       </section>
     </div>

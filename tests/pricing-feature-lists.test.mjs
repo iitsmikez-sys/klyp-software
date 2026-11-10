@@ -13,9 +13,9 @@ test("the Sparks lines no longer say how many VODs", () => {
   }
 });
 
-test("both cards say AI clipping with Virality Score", () => {
-  assert.equal(upgrade.split("AI clipping with Virality Score").length - 1, 2, "Free and Pro on the upgrade page");
-  assert.ok(landing.includes("AI clipping with Virality Score"));
+test("both cards say AI clipping with clip scores", () => {
+  assert.equal(upgrade.split("AI clipping with clip scores").length - 1, 2, "Free and Pro on the upgrade page");
+  assert.ok(landing.includes("AI clipping with clip scores"));
 });
 
 test("Free lists the four free caption styles and Pro lists more styles with the diamond and a full editor", () => {
