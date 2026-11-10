@@ -26,7 +26,7 @@ export default function PasteBoxHint() {
     <span
       aria-hidden="true"
       data-paste-hint
-      className="pointer-events-none absolute inset-y-0 left-3 right-3 flex items-center gap-1 overflow-hidden whitespace-nowrap text-[13px] text-foreground-muted"
+      className="pointer-events-none absolute inset-y-0 left-4 right-4 flex items-center gap-1 overflow-hidden whitespace-nowrap text-[15px] text-foreground-muted"
     >
       <span>Paste a link from</span>
       <span key={platform.name} className={`${styles.word} ${platform.className}`}>{platform.name}</span>

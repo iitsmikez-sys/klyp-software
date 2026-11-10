@@ -1151,7 +1151,8 @@ export default function AnalyzePanel() {
         <form onSubmit={analyze} className="min-w-0">
           {inputMode === "url" ? (
             <div>
-              <div className="relative">
+              <div className="paste-bar" data-empty={url === "" ? "true" : "false"}>
+              <div className="relative min-w-0 flex-1">
                 <input
                   type="url"
                   required
@@ -1163,10 +1164,14 @@ export default function AnalyzePanel() {
                   onBlur={() => setUrlFocused(false)}
                   placeholder={animateHint ? "" : PASTE_PLACEHOLDER}
                   disabled={loading}
-                  className="min-h-10 w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground placeholder:text-foreground-muted transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 disabled:opacity-50"
+                  className="min-h-12 w-full min-w-0 rounded-xl border-0 bg-transparent px-4 py-3 text-[15px] text-foreground placeholder:text-foreground-muted focus:outline-none focus:ring-0 disabled:opacity-50"
                 />
                 {animateHint && <PasteBoxHint />}
                 <span id="vod-url-hint" className="sr-only">{PASTE_PLACEHOLDER}</span>
+              </div>
+              <button type="submit" disabled={!canSubmit && !outOfSparks} onClick={(e) => { if (outOfSparks) { e.preventDefault(); setSparksDialog(true); } }} className="paste-bar-button w-full sm:w-auto">
+                {loading ? "Analyzing…" : "✦ Find Clips"}
+              </button>
               </div>
               {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch, Kick and YouTube videos up to 2 hours.</p>}
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
@@ -1413,12 +1418,12 @@ export default function AnalyzePanel() {
             )}
           </div>
         )}
-        <div className="mt-3 flex justify-end">
+        {inputMode === "file" && <div className="mt-3 flex justify-end">
           <button type="submit" disabled={!canSubmit && !outOfSparks} onClick={(e) => { if (outOfSparks) { e.preventDefault(); setSparksDialog(true); } }}
             className="flex min-h-10 w-full items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45 sm:w-48">
             {loading ? "Analyzing…" : "Find Clips"}
           </button>
-        </div>
+        </div>}
 
         {/* Processing server unreachable — set by the background health poll, clears itself */}
         {serverOffline && !loading && (
