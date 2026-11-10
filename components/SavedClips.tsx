@@ -9,12 +9,16 @@ import CompactClipCard from "./CompactClipCard";
 import { useRawClipDownloads } from "./useRawClipDownloads";
 import { useClipExports } from "./useClipExports";
 import { downloadExport } from "@/lib/clip-export";
+import { useSparks } from "./SparksProvider";
+import DashboardUpsell from "./DashboardUpsell";
 
 const LIMIT = 4;
 export default function SavedClips() {
   const [clips, setClips] = useState<SavedClip[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // balance is null until the account has loaded, so a Pro member never sees the free-plan line flash by.
+  const { balance, tier } = useSparks();
   const { rawDownloads, downloadRaw, readyDownloads, downloadReady } = useRawClipDownloads();
   const { exports, createClip, invalidateClip } = useClipExports();
   useEffect(() => {
@@ -52,6 +56,7 @@ export default function SavedClips() {
         key={clip.id} clip={clip} compact onPreview={() => setPreviewId(clip.id)}
         rawState={rawDownloads[clip.id]} onDownloadRaw={() => void downloadRaw(clip)}
         readyState={readyDownloads[clip.id]} onDownloadReady={() => void downloadReady(clip)} />)}</div>}
+    {!loading && clips.length > 0 && balance !== null && tier !== "pro" && <DashboardUpsell />}
     {previewClip && <ClipPreviewModal key={previewClip.id} clip={previewClip} onClose={() => setPreviewId(null)}
       onClipSaved={draft => { invalidateClip(previewClip.id); setClips(items => items.map(item => item.id === previewClip.id ? { ...item, edit_draft: draft } : item)); }}
       exportState={exports[previewClip.id]} onCreateClip={() => { void createClip(previewClip); }}
