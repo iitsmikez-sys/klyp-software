@@ -672,7 +672,7 @@ export default function StreamsPage() {
         )}
 
         <p className="text-[13px] text-foreground-muted mt-4">
-          AI scores are Klyp&apos;s own estimates of viral potential, not measured performance.
+          Virality Score is Klyp&apos;s own estimate of how strong each clip is. It&apos;s an estimate, not a promise of views.
         </p>
       </section>
     </div>

@@ -127,7 +127,7 @@ export default function DashboardStats() {
         {
           label: "Avg. clip score",
           value: avgScore === null ? "—" : String(avgScore),
-          sub: avgScore === null ? "no clips yet" : "viral score",
+          sub: avgScore === null ? "no clips yet" : "virality score",
           icon: ICONS.score,
         },
         {
@@ -151,7 +151,7 @@ export default function DashboardStats() {
       (label, i) => ({
         label,
         value: null,
-        sub: ["this month", "total", "viral score", "active"][i],
+        sub: ["this month", "total", "virality score", "active"][i],
         icon: Object.values(ICONS)[i],
       })
     ) as Stat[]);

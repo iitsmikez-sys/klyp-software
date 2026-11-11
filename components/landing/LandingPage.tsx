@@ -126,7 +126,7 @@ const features: {
       </svg>
     ),
     title: "Your clipping stats",
-    desc: "Average viral score, your most common clip types, and weekly output in one view.",
+    desc: "Average Virality Score, your most common clip types, and weekly output in one view.",
     preview: (
       <div className="flex items-end gap-1.5 h-9">
         {[40, 70, 55, 90, 65, 80].map((h, i) => (
@@ -437,7 +437,7 @@ export default function LandingPage({ beforeAfter = false }: { beforeAfter?: boo
         <FadeIn className="relative z-10 text-center max-w-3xl mx-auto">
           <h2 className="font-geist text-4xl md:text-6xl font-bold text-white leading-tight tracking-tight mb-6">
             Start turning streams into{" "}
-            <span className="text-accent">viral clips</span> today
+            <span className="text-accent">clips you can post</span> today
           </h2>
           <p className="text-foreground-muted text-lg mb-10 max-w-xl mx-auto leading-relaxed">
             Paste your first VOD and see what Klyp pulls out of it. The free plan

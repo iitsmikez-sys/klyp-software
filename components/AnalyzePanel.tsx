@@ -57,7 +57,7 @@ const ANALYZE_RETRY_DELAYS_MS = [1000, 2000];
 const PIPELINE_STEPS: { key: AnalyzeStage | "done"; label: string }[] = [
   { key: "download", label: "Getting the audio" },
   { key: "transcribe", label: "Transcribing" },
-  { key: "analyze", label: "Finding viral moments" },
+  { key: "analyze", label: "Finding your best moments" },
   { key: "done", label: "Done! Here are your clips" },
 ];
 

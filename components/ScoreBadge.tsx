@@ -12,7 +12,7 @@ export default function ScoreBadge({ score }: { score: number | null | undefined
   return (
     <span
       data-score-badge
-      title={`Klyp's own estimate of this moment's viral potential, not a measured result. ${top ? "Moments scoring 65 or more are top picks." : "Below the 65 top-pick bar."}`}
+      title={`Virality Score: Klyp's own estimate of how strong this moment is, not a measured result. ${top ? "Moments scoring 65 or more are top picks." : "Below the 65 top-pick bar."}`}
       className="pointer-events-none absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-lg border border-accent/60 bg-background/80 px-2 py-0.5 text-[13px] font-semibold tabular-nums text-accent backdrop-blur-sm"
     >
       <span aria-hidden="true">★</span>

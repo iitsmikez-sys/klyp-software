@@ -513,7 +513,7 @@ export default function ClipPreviewModal({
             <div className="pt-3 text-sm text-foreground-muted">
               {/* Every clip shows its score, top picks and near-miss extras alike. */}
               {Number.isFinite(clip.viral_score) && (
-                <p className="mb-3 flex items-center gap-2.5" title={`Klyp's own estimate of this moment's viral potential, not a measured result. ${isTopPick(clip) ? "Moments scoring 65 or more are top picks." : "Below the 65 top-pick bar."}`}>
+                <p className="mb-3 flex items-center gap-2.5" title={`Virality Score: Klyp's own estimate of how strong this moment is, not a measured result. ${isTopPick(clip) ? "Moments scoring 65 or more are top picks." : "Below the 65 top-pick bar."}`}>
                   <span className="inline-flex items-center gap-1 rounded-lg bg-accent px-2.5 py-0.5 text-[13px] font-semibold tabular-nums text-background">
                     <span aria-hidden="true">★</span>{Math.round(clip.viral_score)}
                   </span>
