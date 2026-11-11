@@ -38,6 +38,22 @@ function Warn() {
   );
 }
 
+/** Colored circles beside the sign-up count: pure CSS, no images. */
+function AvatarStack() {
+  const colors = ["#8b5cf6", "#00E5A0", "#f59e0b", "#38bdf8"];
+  return (
+    <span className="inline-flex items-center mr-2 align-middle">
+      {colors.map((c, i) => (
+        <span
+          key={c}
+          className="w-5 h-5 rounded-full border-2 border-surface inline-block"
+          style={{ backgroundColor: c, marginLeft: i === 0 ? 0 : -7, opacity: 0.9 }}
+        />
+      ))}
+    </span>
+  );
+}
+
 /** Hover style shared by every feature row. */
 const FEATURE_ROW =
   "flex items-start gap-2.5 rounded-lg -mx-2 px-2 py-1 transition-colors hover:bg-surface-2";
@@ -353,7 +369,8 @@ export default function UpgradePage() {
 
           {/* Social proof */}
           <p className="text-center text-[11px] text-foreground-muted mt-3">
-            <span className="text-foreground font-semibold">150+ creators</span> have signed up for Klyp
+            <AvatarStack />
+            Join <span className="text-foreground font-semibold">100+ streamers</span> clipping with Klyp
           </p>
           {!isPro && (
             <p className="text-center text-[11px] text-subtle mt-1">

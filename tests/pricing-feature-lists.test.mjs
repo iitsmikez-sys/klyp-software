@@ -47,10 +47,10 @@ test("Kick is named, and nothing says unlimited or promises what the product can
   assert.doesNotMatch(landing + upgrade, /Unlimited exports/);
 });
 
-test("the upgrade page's social line is a true number and has no made-up faces", () => {
-  assert.ok(!upgrade.includes("300+ streamers"));
-  assert.ok(!upgrade.includes("AvatarStack"));
-  assert.ok(upgrade.includes("150+ creators</span> have signed up for Klyp"));
+test("the upgrade page's social line says 100+, a number that is true (166 have signed up), with the colored circles kept", () => {
+  assert.ok(!upgrade.includes("300+"), "the old 300+ is gone");
+  assert.ok(upgrade.includes("100+ streamers</span> clipping with Klyp"));
+  assert.ok(upgrade.includes("<AvatarStack />") && upgrade.includes("function AvatarStack()"));
 });
 
 test("the Pro card lists YouTube post scheduling as coming soon, on both pages", () => {
