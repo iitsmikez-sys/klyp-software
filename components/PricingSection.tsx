@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import FadeIn from "./FadeIn";
-import { SPARKS_ALLOWANCE } from "@/lib/tier";
+import { FREE_FEATURES, PRO_FEATURES } from "@/lib/plan-features";
 import { MONTHLY_PRICE_USD, YEARLY_PER_MONTH_USD, YEARLY_PRICE_USD, YEARLY_SAVE_PERCENT } from "@/lib/pricing";
 
 /* ─── Icons ─── */
@@ -73,17 +73,7 @@ const plans: Plan[] = [
     name: "FREE",
     tagline: "Free forever",
     price: { kind: "free" },
-    features: [
-      { kind: "check", text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days` },
-      { kind: "check", text: "AI clipping with Virality Score" },
-      { kind: "check", text: "Up to 1080p rendered clips" },
-      { kind: "check", text: "9:16 vertical and Original (no crop) exports" },
-      { kind: "check", text: "AI captions: Bold, Klyp, Spark and Pulse" },
-      { kind: "check", text: "Save clips to your library" },
-      { kind: "check", text: "YouTube and Twitch videos up to 2 hours" },
-      { kind: "warn",  text: "No direct uploads or automatic clipping" },
-      { kind: "warn",  text: "Watermark on all clips" },
-    ],
+    features: FREE_FEATURES.map((f): FeatureItem => ({ kind: f.ok ? "check" : "warn", text: f.text })),
     cta: { label: "Create an account", href: "/login" },
   },
   {
@@ -93,16 +83,7 @@ const plans: Plan[] = [
     price: { kind: "fixed", amount: "$28" },
     features: [
       { kind: "divider", text: "Everything in Free, plus:" },
-      { kind: "check",   text: "No watermark" },
-      { kind: "check",   text: "More caption styles" },
-      { kind: "check",   text: "Unlimited exports" },
-      { kind: "check",   text: "500 Sparks every 30 days" },
-      { kind: "check",   text: "Longer VODs from Twitch and YouTube, plus direct video uploads" },
-      { kind: "check",   text: "Automatic clipping when your Twitch stream ends" },
-      { kind: "check",   text: "Download clips for TikTok, Reels & Shorts" },
-      { kind: "check",   text: "All formats: 9:16, Original, 1:1, 16:9" },
-      { kind: "check",   text: "Full editor" },
-      { kind: "check",   text: "Post scheduling to YouTube (coming soon)" },
+      ...PRO_FEATURES.map((f): FeatureItem => ({ kind: "check", text: f.soon ? `${f.text} (coming soon)` : f.text })),
     ],
     cta: { label: "Get Klyp Pro", subtext: "Cancel anytime", href: "/login" },
     highlighted: true,
