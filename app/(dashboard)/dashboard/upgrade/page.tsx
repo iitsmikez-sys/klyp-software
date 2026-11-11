@@ -5,6 +5,7 @@ import { trackEvent } from "@/lib/track";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
+import { FREE_FEATURES, PRO_FEATURES } from "@/lib/plan-features";
 import { ProDiamond } from "@/components/ProDiamond";
 import CancelFlow from "@/components/CancelFlow";
 import { DEFAULT_PACK_ID, SPARK_PACKS, packById } from "@/lib/spark-packs";
@@ -37,54 +38,9 @@ function Warn() {
   );
 }
 
-const FREE_FEATURES: { ok: boolean; text: string }[] = [
-  { ok: true, text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days` },
-  { ok: true, text: "AI clipping with Virality Score" },
-  { ok: true, text: "Clip editor: trim, split and edit captions" },
-  { ok: true, text: "9:16 vertical and Original (no crop) exports" },
-  { ok: true, text: "AI captions: Bold, Klyp, Spark and Pulse" },
-  { ok: true, text: "YouTube and Twitch videos up to 2 hours" },
-  { ok: false, text: "No direct video uploads or automatic clipping (Pro)" },
-  { ok: false, text: "Animated Klyp watermark on free exports" },
-];
-
-/** `pro` marks a line that gets the Pro diamond instead of a check; `soon` marks a feature that is not live yet. */
-const PRO_FEATURES: { text: string; pro?: boolean; soon?: boolean }[] = [
-  { text: `${SPARKS_ALLOWANCE.pro} Sparks every 30 days` },
-  { text: "AI clipping with Virality Score" },
-  { text: "No watermark. Clean clips, your brand only" },
-  { text: "Full editor" },
-  { text: "More caption styles", pro: true },
-  { text: "All export formats: 9:16, Original, 1:1 and 16:9" },
-  { text: "Raw exports: edit clips yourself in CapCut" },
-  { text: "Streamer handle overlay on exports" },
-  { text: "Longer VODs from Twitch and YouTube, plus direct video uploads" },
-  { text: "Automatic clipping when your Twitch stream ends" },
-  { text: "Twitch chat spike detection" },
-  { text: "Download all clips as ZIP" },
-  { text: "Post scheduling to YouTube", soon: true },
-  { text: "Priority support" },
-];
-
 /** Hover style shared by every feature row. */
 const FEATURE_ROW =
   "flex items-start gap-2.5 rounded-lg -mx-2 px-2 py-1 transition-colors hover:bg-surface-2";
-
-/** Fake avatar stack for social proof — pure CSS, no images. */
-function AvatarStack() {
-  const colors = ["#8b5cf6", "#00E5A0", "#f59e0b", "#38bdf8"];
-  return (
-    <span className="inline-flex items-center mr-2 align-middle">
-      {colors.map((c, i) => (
-        <span
-          key={c}
-          className="w-5 h-5 rounded-full border-2 border-surface inline-block"
-          style={{ backgroundColor: c, marginLeft: i === 0 ? 0 : -7, opacity: 0.9 }}
-        />
-      ))}
-    </span>
-  );
-}
 
 export default function UpgradePage() {
   const { tier, balance, complimentaryPro } = useSparks();
@@ -397,8 +353,7 @@ export default function UpgradePage() {
 
           {/* Social proof */}
           <p className="text-center text-[11px] text-foreground-muted mt-3">
-            <AvatarStack />
-            Join <span className="text-foreground font-semibold">300+ streamers</span> clipping with Klyp
+            <span className="text-foreground font-semibold">150+ creators</span> have signed up for Klyp
           </p>
           {!isPro && (
             <p className="text-center text-[11px] text-subtle mt-1">
