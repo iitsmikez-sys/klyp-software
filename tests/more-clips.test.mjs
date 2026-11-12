@@ -44,3 +44,10 @@ test("the panel offers Auto, uses the detected type, and a pinned choice always 
   assert.ok(panel.includes('(["auto", ...CONTENT_TYPES] as const).map'));
   assert.ok(panel.includes("detectContentType(inputMode === \"file\" ? uploadedFile?.name : previewMeta?.title)"));
 });
+
+test("the roleplay section lists the patterns that make standalone GTA RP clips, and keeps same-scene moments separate", () => {
+  const pipeline = read("lib/analyze-pipeline.ts");
+  for (const piece of ["a diss built on an absurdly specific phrase", "a character trying to help and making it worse", "a fake flex", "a contradiction played completely straight", "a flirting mix-up", "a boast with an absurd number", "Return each distinct moment separately"]) {
+    assert.ok(pipeline.includes(piece), piece);
+  }
+});

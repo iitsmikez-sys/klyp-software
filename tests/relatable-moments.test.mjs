@@ -20,7 +20,8 @@ test("relatable confessions count as a clip signal, not only one-liners", () => 
 
 test("scoring has a share trigger: who would send, save or comment, and why", () => {
   assert.match(pipeline, /SHARE TRIGGER: ask who would send this to a friend, save it, or comment on it, and why/);
-  assert.match(pipeline, /say who would share or save it and why/);
+  assert.ok(pipeline.includes("say what a viewer would DO with it (comment, tag a friend, use the line as a sound or a meme, rewatch) and who, and why"));
+  assert.ok(pipeline.includes("quote the exact punchline line that lands"));
 });
 
 test("the target length is 15-35 seconds, short single-thought clips are welcome, and nothing is ever under 15", () => {
