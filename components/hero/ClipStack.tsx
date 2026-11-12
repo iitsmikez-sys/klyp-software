@@ -10,8 +10,8 @@ export type HeroClip = {
   poster: string;
   /** The clip type, like RAGE or FUNNY. */
   label: string;
-  /** Klyp's real AI score for this clip. */
-  score: number;
+  /** Only set a score if Klyp really gave this clip that score. The landing page shows none. */
+  score?: number;
 };
 
 type Props = {
@@ -99,7 +99,7 @@ export default function ClipStack({ clips, autoAdvanceMs = 6500 }: Props) {
                 className="pointer-events-none h-full w-full object-cover"
               />
               <span className="pointer-events-none absolute left-2 top-2 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-accent">
-                {clip.label} {clip.score}
+                {clip.score === undefined ? clip.label : `${clip.label} ${clip.score}`}
               </span>
             </motion.div>
           );
