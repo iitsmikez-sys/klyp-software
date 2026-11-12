@@ -1,4 +1,5 @@
 import { NavigationGuardProvider } from "@/components/NavigationGuardProvider";
+import { YOUTUBE_ENABLED } from "@/lib/youtube-switch";
 import type { Metadata } from "next";
 import { Syne, DM_Sans } from "next/font/google";
 import localFont from "next/font/local";
@@ -28,8 +29,8 @@ const geist = localFont({
 export const metadata: Metadata = {
   title: "Klyp — AI Video Clips for Streamers",
   description:
-    "Paste a YouTube or Twitch VOD link to find, review, save, and export clips with Klyp.",
-  keywords: ["streaming", "clips", "AI", "Twitch", "YouTube", "content creation"],
+    `Paste a ${YOUTUBE_ENABLED ? "YouTube or Twitch" : "Twitch or Kick"} VOD link to find, review, save, and export clips with Klyp.`,
+  keywords: ["streaming", "clips", "AI", "Twitch", ...(YOUTUBE_ENABLED ? ["YouTube"] : ["Kick"]), "content creation"],
   verification: { google: "dWdc8Wy30rS6xoA9lavXIfFNSlqerWilbgldW_dfX-Q" },
 };
 

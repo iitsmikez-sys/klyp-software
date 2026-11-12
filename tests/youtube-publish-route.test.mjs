@@ -76,7 +76,7 @@ function setup({ pro = true, complimentary = true, ownsClip = true, saveFails = 
   vm.runInNewContext(code, { exports, require: name => {
     if (!(name in modules)) throw new Error(`Unexpected import ${name}`);
     return modules[name];
-  }, process: { env: { DEPLOYMENT_TARGET: 'processing' } }, Buffer, URL, Date, Request, Response, JSON, console });
+  }, process: { env: { NEXT_PUBLIC_YOUTUBE_ENABLED: '1', DEPLOYMENT_TARGET: 'processing' } }, Buffer, URL, Date, Request, Response, JSON, console });
   const request = new Request('https://processing.example/api/youtube/publish', {
     method: 'POST', headers: { Authorization: 'Bearer token' },
     body: JSON.stringify({ requestKey, clipPayload: { clip_id: clip, raw: true, upscale: true },

@@ -70,6 +70,10 @@ export const OPTIONS = corsPreflight;
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
+const YOUTUBE_ON = process.env.NEXT_PUBLIC_YOUTUBE_ENABLED === "1";
+const YOUTUBE_LINK = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i;
+const YOUTUBE_OFF_MESSAGE = "YouTube links aren't supported right now. Paste a Twitch or Kick VOD link instead. No Sparks are charged.";
+
 type FailStage = Extract<AnalyzeResponse, { ok: false }>["stage"];
 
 function fail(stage: FailStage, error: string, status = 500) {
@@ -143,6 +147,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     return fail("validate", "Request body must be JSON: { \"url\": \"...\" } or { \"uploadId\": \"...\" }", 400);
   }
 
+  if (!uploadId && !YOUTUBE_ON && YOUTUBE_LINK.test(url)) return fail("validate", YOUTUBE_OFF_MESSAGE, 400);
   const sourceKey = vodSourceKey(url, uploadId);
   if ((!uploadId && !VOD_URL_PATTERN.test(url)) || !sourceKey) {
     return fail("validate", "Please provide a valid YouTube, Twitch, or Kick VOD URL.", 400);

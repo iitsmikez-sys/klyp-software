@@ -58,7 +58,7 @@ function routeHarness({ duration = '7200', sparks = 20 } = {}) {
   vm.runInNewContext(code, { exports, require: name => {
     if (!(name in modules)) throw new Error(`Unexpected import: ${name}`);
     return modules[name];
-  }, process: { env: { DEPLOYMENT_TARGET: 'processing', ASSEMBLYAI_API_KEY: 'fixture',
+  }, process: { env: { NEXT_PUBLIC_YOUTUBE_ENABLED: '1', DEPLOYMENT_TARGET: 'processing', ASSEMBLYAI_API_KEY: 'fixture',
     ANTHROPIC_API_KEY: 'fixture' } }, Response, TextEncoder, ReadableStream, setInterval,
     clearInterval, console, Math, Number, String, Date, Error });
   return { post: () => exports.POST({ json: async () => ({

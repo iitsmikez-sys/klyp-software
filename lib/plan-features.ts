@@ -5,6 +5,7 @@
 import { SPARKS_ALLOWANCE } from "./tier.ts";
 import { PLAN_LIMITS } from "./plan-limits.ts";
 import { CAPTION_STYLES, FREE_CAPTION_STYLES, type CaptionStyle } from "./clips.ts";
+import { YOUTUBE_ENABLED } from "./youtube-switch.ts";
 
 /** How each free caption style is named for people. Adding a free style without a name here fails a test. */
 export const FREE_STYLE_NAMES: Partial<Record<CaptionStyle, string>> = {
@@ -27,7 +28,7 @@ export const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: "9:16 vertical and Original (no crop) exports" },
   { ok: true, text: `AI captions: ${freeCaptionList}` },
   { ok: true, text: "Save clips to your library" },
-  { ok: true, text: `YouTube, Twitch and Kick videos up to ${freeHours} hours` },
+  { ok: true, text: `${YOUTUBE_ENABLED ? "YouTube, Twitch and Kick videos" : "Twitch and Kick VODs"} up to ${freeHours} hours` },
   { ok: false, text: "No direct video uploads or automatic clipping (Pro)" },
   { ok: false, text: "Animated Klyp watermark on free exports" },
 ];
@@ -42,7 +43,7 @@ export const PRO_FEATURES: { text: string; pro?: boolean; soon?: boolean }[] = [
   { text: "All export formats: 9:16, Original, 1:1 and 16:9" },
   { text: "Raw exports: edit clips yourself in CapCut" },
   { text: "Streamer handle overlay on exports" },
-  { text: `Longer videos from Twitch, Kick and YouTube (up to ${proHours} hours), plus direct video uploads` },
+  { text: `Longer videos from ${YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"} (up to ${proHours} hours), plus direct video uploads` },
   { text: "Automatic clipping when your Twitch stream ends" },
   { text: "Twitch chat spike detection" },
   { text: "Download all clips as ZIP" },

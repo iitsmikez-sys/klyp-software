@@ -43,9 +43,11 @@ import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
 import UnsavedClipsDialog from "./UnsavedClipsDialog";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
+import { YOUTUBE_ENABLED, YOUTUBE_LINK, YOUTUBE_OFF_MESSAGE } from "@/lib/youtube-switch";
 
-const VOD_URL_PATTERN =
-  /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
+const VOD_URL_PATTERN = YOUTUBE_ENABLED
+  ? /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i
+  : /^https?:\/\/(www\.)?(twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
 /** Export can include a first-time source download + full-quality burn — generous but finite. */
 const EXPORT_TIMEOUT_MS = 10 * 60_000;
@@ -88,7 +90,7 @@ function fmtBytes(bytes: number) {
 }
 
 /** The paste box's plain wording: shown when the animation is off, and read out to screen readers. */
-const PASTE_PLACEHOLDER = "Paste a YouTube, Twitch, or Kick VOD link";
+const PASTE_PLACEHOLDER = YOUTUBE_ENABLED ? "Paste a YouTube, Twitch, or Kick VOD link" : "Paste a Twitch or Kick VOD link";
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB — keep in sync with /api/upload
 const UPLOAD_EXT_PATTERN = /\.(mp4|mov|avi|mkv|webm|m4v)$/i;
 
@@ -1173,7 +1175,7 @@ export default function AnalyzePanel() {
                 {loading ? "Analyzing…" : "✦ Find Clips"}
               </button>
               </div>
-              {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">Free: Twitch, Kick and YouTube videos up to 2 hours.</p>}
+              {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">{"Free: "}{YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"}{" videos up to 2 hours."}</p>}
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
                 <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
               </div>}
@@ -1220,7 +1222,7 @@ export default function AnalyzePanel() {
                   </div>
                 </div>
               )}
-              {url && !VOD_URL_PATTERN.test(url) && <p className="mt-2 text-xs text-foreground-muted">Use a Twitch, Kick, or YouTube VOD link to get started.</p>}
+              {url && !VOD_URL_PATTERN.test(url) && <p className="mt-2 text-xs text-foreground-muted">{YOUTUBE_ENABLED ? "Use a Twitch, Kick, or YouTube VOD link to get started." : YOUTUBE_LINK.test(url) ? YOUTUBE_OFF_MESSAGE : "Use a Twitch or Kick VOD link to get started."}</p>}
             </div>
           ) : (
             <>
