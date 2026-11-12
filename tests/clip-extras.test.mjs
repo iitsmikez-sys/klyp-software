@@ -50,10 +50,10 @@ test("only scores from 40 up to (not including) 65 count as extras", () => {
   assert.deepEqual(extras.map((c) => c.viral_score).sort((a, b) => a - b), [40, 64.9]);
 });
 
-test("extras never overlap, or start within 60s of, a top pick, an earlier extra or a moment already delivered", () => {
+test("extras never overlap, or start within 30s of, a top pick, an earlier extra or a moment already delivered", () => {
   const extras = pickExtras({
     mainPicks: [clip(1000, 80)], requestedCount: 10, priorWindows: [{ start_seconds: 3000, end_seconds: 3030 }],
-    candidates: [clip(1040, 63), clip(1500, 62), clip(1520, 61), clip(3020, 60), clip(4000, 59)],
+    candidates: [clip(1020, 63), clip(1500, 62), clip(1520, 61), clip(3020, 60), clip(4000, 59)],
   });
   assert.deepEqual(extras.map((c) => c.start_seconds), [1500, 4000]);
 });

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, FormEvent } from "re
 import { useRouter } from "next/navigation";
 import type { AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
 import { CAPTION_STYLES, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, resolveExportFormat } from "@/lib/clips";
+import { detectContentType } from "@/lib/detect-content-type";
 import {
   MIN_ANALYZE_COST,
   CLIP_COUNT_COST,
@@ -167,13 +168,16 @@ export default function AnalyzePanel() {
   const [firstPartFor, setFirstPartFor] = useState<string | null>(null);
   const [probeRevision, setProbeRevision] = useState(0);
   const [keyword, setKeyword] = useState("");
-  const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
+  // "auto" reads the video's title and picks Gaming or IRL; a pinned choice is always respected.
+  const [contentChoice, setContentChoice] = useState<ContentType | "auto">("auto");
   const [zipProgress, setZipProgress] = useState<{ done: number; total: number } | null>(null);
   // File upload flow ("Upload file" mode)
   const [inputMode, setInputMode] = useState<"url" | "file">("url");
   const [dragActive, setDragActive] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const detectedContent = detectContentType(inputMode === "file" ? uploadedFile?.name : previewMeta?.title);
+  const contentType: ContentType = contentChoice === "auto" ? detectedContent ?? DEFAULT_CONTENT_TYPE : contentChoice;
   const [fileError, setFileError] = useState<string | null>(null);
   const [proGateOpen, setProGateOpen] = useState(false);
   const [clipCount, setClipCount] = useState<ClipCount>(DEFAULT_CLIP_COUNT);
@@ -258,12 +262,12 @@ export default function AnalyzePanel() {
   // unrelated VOD would be a confusing default).
   useEffect(() => {
     const storedContentType = localStorage.getItem("klyp-content-type");
-    if ((CONTENT_TYPES as readonly string[]).includes(storedContentType ?? "")) {
-      setContentType(storedContentType as ContentType);
+    if (storedContentType === "auto" || (CONTENT_TYPES as readonly string[]).includes(storedContentType ?? "")) {
+      setContentChoice(storedContentType as ContentType | "auto");
     }
   }, []);
-  const updateContentType = (value: ContentType) => {
-    setContentType(value);
+  const updateContentType = (value: ContentType | "auto") => {
+    setContentChoice(value);
     localStorage.setItem("klyp-content-type", value);
   };
 
@@ -1323,7 +1327,7 @@ export default function AnalyzePanel() {
 
         <details className="group mt-3 rounded-lg border border-border bg-background/35">
           <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-foreground-muted marker:content-none hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-            <span className="min-w-0"><span className="font-semibold text-foreground">Clip Settings</span><span className="ml-2 font-normal text-foreground-muted">{bestMomentsText(shownClipCount)} ·{CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · topic added" : ""}</span></span>
+            <span className="min-w-0"><span className="font-semibold text-foreground">Clip Settings</span><span className="ml-2 font-normal text-foreground-muted">{bestMomentsText(shownClipCount)} ·{contentChoice === "auto" ? `Auto (${CONTENT_TYPE_LABELS[contentType]})` : CONTENT_TYPE_LABELS[contentType]}{keyword.trim() ? " · topic added" : ""}</span></span>
             <svg aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m5 7.5 5 5 5-5" /></svg>
           </summary>
           <div className="grid gap-3 border-t border-border px-3 py-3 lg:grid-cols-2">
@@ -1345,20 +1349,20 @@ export default function AnalyzePanel() {
             Content type <span className="text-foreground-muted">ⓘ</span>
           </span>
           <div className="flex gap-1 rounded-lg border border-border bg-surface-2 p-1">
-            {CONTENT_TYPES.map((ct) => (
+            {(["auto", ...CONTENT_TYPES] as const).map((ct) => (
               <button
                 key={ct}
                 type="button"
                 onClick={() => updateContentType(ct)}
                 disabled={loading}
-                aria-pressed={contentType === ct}
+                aria-pressed={contentChoice === ct}
                 className={`min-h-8 rounded-md px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
-                  contentType === ct
+                  contentChoice === ct
                     ? "bg-accent/15 text-accent"
                     : "text-foreground-muted hover:text-foreground"
                 }`}
               >
-                {CONTENT_TYPE_LABELS[ct]}
+                {ct === "auto" ? "Auto" : CONTENT_TYPE_LABELS[ct]}
               </button>
             ))}
           </div>

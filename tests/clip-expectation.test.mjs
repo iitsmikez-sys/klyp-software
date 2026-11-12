@@ -20,17 +20,15 @@ test("the screen names the ceiling for this video's length and never states a pl
   assert.match(src, /clipCountForDuration\(/);
 });
 
-test("longer videos look for more clips: 10 up to 2 hours, 12 up to 4 hours, 15 beyond (the cap)", async () => {
+test("longer videos look for more clips: 15 up to 2 hours, 20 beyond (20 is the most the database takes)", async () => {
   const { clipCountForDuration } = await import("../lib/sparks.ts");
-  assert.equal(clipCountForDuration(15 * 60), 10);
-  assert.equal(clipCountForDuration(2 * 3600), 10);
-  assert.equal(clipCountForDuration(2 * 3600 + 1), 12);
-  assert.equal(clipCountForDuration(4 * 3600), 12);
-  assert.equal(clipCountForDuration(4 * 3600 + 1), 15);
-  assert.equal(clipCountForDuration(8 * 3600), 15);
-  assert.equal(clipCountForDuration(24 * 3600), 15, "never more than 15");
-  assert.equal(clipCountForDuration(Number.NaN), 10);
-  assert.equal(clipCountForDuration(0), 10);
+  assert.equal(clipCountForDuration(15 * 60), 15);
+  assert.equal(clipCountForDuration(2 * 3600), 15);
+  assert.equal(clipCountForDuration(2 * 3600 + 1), 20);
+  assert.equal(clipCountForDuration(8 * 3600), 20);
+  assert.equal(clipCountForDuration(24 * 3600), 20, "never more than 20");
+  assert.equal(clipCountForDuration(Number.NaN), 15);
+  assert.equal(clipCountForDuration(0), 15);
 });
 
 test("the analyze route sets the count from the verified length, and the finder is asked for the top clipCount", () => {
@@ -38,7 +36,7 @@ test("the analyze route sets the count from the verified length, and the finder 
   assert.ok(pipeline.includes("Find up to ${clipCount} clippable moments"));
   assert.ok(pipeline.includes("return the TOP ${clipCount} by viral_score"));
   assert.ok(pipeline.includes("deduped.filter(clip => clip.viral_score >= 65).slice(0, clipCount)"));
-  assert.match(pipeline, /max_tokens: clipCount > 10 \? 20000 : 16000/);
+  assert.ok(pipeline.includes("max_tokens: clipCount > 15 ? 24000 : clipCount > 10 ? 20000 : 16000,"));
   const route = read("app/api/analyze/route.ts");
   assert.match(route, /clipCount = clipCountForDuration\(analysisSeconds\);/);
   assert.ok(route.indexOf("clipCount = clipCountForDuration(analysisSeconds)") < route.indexOf("const upfrontCost"));
