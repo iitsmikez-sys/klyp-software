@@ -441,7 +441,8 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     model,
     // 20 clips (long videos) write about twice as much, so they get more room. Kept under the size where the
     // SDK refuses a non-streaming request.
-    max_tokens: clipCount > 15 ? 24000 : clipCount > 10 ? 20000 : 16000,
+    // 16,000 is the most the cost guard (lib/provider-budget-core.ts) will price, and 20 clips need only about 5,000 (about 250 tokens each).
+    max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
 
