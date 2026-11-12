@@ -694,7 +694,7 @@ export default function LegacySavedClipEditor({
         setLoadError(
           timedOut
             ? `Preview timed out after ${Math.round(PREVIEW_TIMEOUT_MS / 60_000)} minutes. The source VOD may still be downloading in the background — hit Retry in a bit.`
-            : err.message
+            : userFacingClipError(err.message)
         );
         setLoadingPreview(false);
       });

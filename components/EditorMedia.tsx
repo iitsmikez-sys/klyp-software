@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
 import { processingFetch } from '@/lib/processing-api';
+import { userFacingClipError } from '@/lib/analyze-errors';
 import { previewSourceStart, decodeEditedPeaks, nextComposedPlaybackPosition, sampleVideoFrames, type EditorThumbnail } from '@/lib/editor-preview';
 import type { SourceSegment } from '@/lib/editor-timeline';
 import { composedAtOutputTime } from '@/lib/editor-timeline';
@@ -37,7 +38,7 @@ export default function EditorMedia({ clip, segments, inserts=[], suppressTime=f
   processingFetch('/api/preview', {method:'POST', headers:{'Content-Type':'application/json'},body:JSON.stringify({clip_id:clip.id,url:clip.url,start_seconds:clip.start_seconds,end_seconds:clip.end_seconds,crop:false}),signal:controller.signal})
    .then(async response => { if(!response.ok) throw new Error((await response.json()).error || 'Preview failed'); return {blob:await response.blob(),sourceStart:previewSourceStart(clip.start_seconds,response.headers.get('X-Klyp-Source'))}; })
    .then(({blob,sourceStart})=>{if(!active || controller.signal.aborted)return;url=URL.createObjectURL(blob);setMedia({url,blob,sourceStart});})
-   .catch((e)=>{if(active){setError(timedOut ? 'Preview timed out. Retry to load footage.' : `${e instanceof Error?e.message:'Preview unavailable.'} Retry to load footage.`);callbacks.current.onPlayingChange(false);}})
+   .catch((e)=>{if(active){setError(timedOut ? 'Preview timed out. Retry to load footage.' : `${e instanceof Error?userFacingClipError(e.message):'Preview unavailable.'} Retry to load footage.`);callbacks.current.onPlayingChange(false);}})
    .finally(()=>clearTimeout(timeout));
   return ()=>{active=false;controller.abort();clearTimeout(timeout);if(url)URL.revokeObjectURL(url);};
  },[clip.id,clip.url,clip.start_seconds,clip.end_seconds,attempt]);

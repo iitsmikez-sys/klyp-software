@@ -37,6 +37,7 @@ import {
   vodLinkAt,
 } from "@/lib/clip-ui";
 import type { ExportState } from "@/lib/clip-export";
+import { userFacingClipError } from "@/lib/analyze-errors";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -265,7 +266,7 @@ export default function ResultsClipPreviewModal({
         setLoadError(
           timedOut
             ? `Preview timed out after ${Math.round(PREVIEW_TIMEOUT_MS / 60_000)} minutes. The source VOD may still be downloading in the background — try again in a bit.`
-            : err.message
+            : userFacingClipError(err.message)
         );
         setShowSpinner(false);
       });
