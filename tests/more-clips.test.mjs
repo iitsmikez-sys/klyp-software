@@ -6,12 +6,12 @@ import { clipCountForDuration } from "../lib/sparks.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 
-test("the caps are 15 for a video under 2 hours and 20 beyond, and the database accepts both", () => {
-  assert.equal(clipCountForDuration(98 * 60), 15);
-  assert.equal(clipCountForDuration(3 * 3600), 20);
+test("the caps are 12 for a video under 2 hours and 15 beyond, and the database accepts both", () => {
+  assert.equal(clipCountForDuration(98 * 60), 12);
+  assert.equal(clipCountForDuration(3 * 3600), 15);
   const jobs = read("lib/analysis-jobs.ts");
   assert.match(jobs, /DB_REQUESTED_CLIP_VALUES = \[1, 2, 3, 5, 7, 10, 12, 20\]/);
-  for (const n of [15, 20]) assert.ok([1, 2, 3, 5, 7, 10, 12, 20].find((v) => v >= n) >= n, `${n} fits`);
+  for (const n of [12, 15]) assert.ok([1, 2, 3, 5, 7, 10, 12, 20].find((v) => v >= n) >= n, `${n} fits`);
 });
 
 test("two moments 30 seconds apart in one scene are both kept; overlapping ones are still merged", () => {

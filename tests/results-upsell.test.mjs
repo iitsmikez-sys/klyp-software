@@ -18,8 +18,8 @@ test("lengths read as plain words", () => {
 
 test("every number in the upgrade box comes from the app's own rules", () => {
   assert.equal(CAPTION_STYLES.length - FREE_CAPTION_STYLES.length, 13, "13 Pro caption styles");
-  assert.equal(clipCountForDuration(17643), 20);
-  assert.equal(clipCountForDuration(3.2 * 3600), 20);
+  assert.equal(clipCountForDuration(17643), 15);
+  assert.equal(clipCountForDuration(3.2 * 3600), 15);
   assert.deepEqual({ ...RESULTS_KEPT_DAYS }, { free: 5, pro: 30 });
   const box = read("components/PartUpsell.tsx");
   for (const piece of ["CAPTION_STYLES.length - FREE_CAPTION_STYLES.length", "resultsKeptDays(true)", "resultsKeptDays(false)", "MONTHLY_PRICE_USD"]) assert.ok(box.includes(piece), piece);
