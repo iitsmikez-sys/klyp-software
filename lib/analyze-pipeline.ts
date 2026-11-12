@@ -48,7 +48,7 @@ import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/a
 import { reviewProcessingBudget, runLimitForSeconds } from "@/lib/vod-budget";
 import { budgetForRun } from "@/lib/provider-budget";
 import { quoteSelectMessage, quoteTranscription } from "@/lib/provider-budget-core";
-import { pickExtras } from "@/lib/clip-extras";
+import { pickExtras, salvageClipsJson } from "@/lib/clip-extras";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
@@ -439,9 +439,9 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
 
   const request = {
     model,
-    // 20 clips (long videos) write about twice as much, so they get more room. Kept under the size where the
-    // SDK refuses a non-streaming request.
-    // 16,000 is the most the cost guard (lib/provider-budget-core.ts) will price, and 20 clips need only about 5,000 (about 250 tokens each).
+    // 16,000 is the most the cost guard (lib/provider-budget-core.ts) will price, and the early budget check is built on it. Adaptive
+    // thinking spends output tokens too, so 15 clips plus the longer gaming instructions can reach it and cut the answer off, usually
+    // in the near-miss list after the main one. When that happens the complete clips are kept (salvageClipsJson) instead of failing.
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
@@ -603,7 +603,11 @@ After your main list, fill "also_consider" with the next-best moments that score
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("Claude returned output that was not valid JSON.");
+    // A cut-off answer (output limit reached) still holds every clip written in full before the cut: keep those.
+    const kept = response.stop_reason === "max_tokens" ? salvageClipsJson(text) : null;
+    if (!kept) throw new Error("Claude returned output that was not valid JSON.");
+    console.warn("[analyze] the answer hit the output limit; kept the clips written out in full");
+    parsed = JSON.parse(kept);
   }
   const rawClips = (parsed as { clips?: unknown }).clips;
   if (!Array.isArray(rawClips)) {

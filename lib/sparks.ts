@@ -26,8 +26,8 @@ export const MAX_CLIP_COUNT: ClipCount = 10;
  * call sends the next value it accepts (see accountAnalysisJob in lib/analysis-jobs.ts).
  */
 export function clipCountForDuration(durationSeconds: number): ClipCount {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 2 * 3600) return 15;
-  return 20;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 2 * 3600) return 12;
+  return 15;
 }
 
 /** Clips are included in the video price, so a returned clip adds no charge. */
