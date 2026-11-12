@@ -20,6 +20,10 @@ export function userFacingClipError(message: string): string {
   if (/sign in to confirm you(?:['’]re| are) not a bot/i.test(message)) {
     return "YouTube is blocking this video right now. Try again in a few minutes, or use a Twitch or Kick link.";
   }
+  // Safari on iPhone says exactly "Load failed" when the connection drops, for example when the phone sleeps mid-download.
+  if (/^(load failed|failed to fetch|networkerror|the network connection was lost)/i.test(message.trim())) {
+    return "The connection dropped. Keep this screen open and try again.";
+  }
   if (/^yt-dlp exited with code/i.test(message)) {
     return "This video couldn't be downloaded right now. Try again in a few minutes.";
   }
