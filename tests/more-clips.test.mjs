@@ -44,3 +44,19 @@ test("the panel offers Auto, uses the detected type, and a pinned choice always 
   assert.ok(panel.includes('(["auto", ...CONTENT_TYPES] as const).map'));
   assert.ok(panel.includes("detectContentType(inputMode === \"file\" ? uploadedFile?.name : previewMeta?.title)"));
 });
+
+test("the roleplay section lists the patterns that make standalone GTA RP clips, and keeps same-scene moments separate", () => {
+  const pipeline = read("lib/analyze-pipeline.ts");
+  for (const piece of ["a diss built on an absurdly specific phrase", "a character trying to help and making it worse", "a fake flex", "a contradiction played completely straight", "a flirting mix-up", "a boast with an absurd number", "Return each distinct moment separately"]) {
+    assert.ok(pipeline.includes(piece), piece);
+  }
+});
+
+test("the clip finder never asks for more output than the cost guard accepts, or every analysis would be refused", async () => {
+  const pipeline = read("lib/analyze-pipeline.ts");
+  const asked = [...pipeline.matchAll(/max_tokens: (\d+)/g)].map((m) => Number(m[1]));
+  assert.ok(asked.length >= 1);
+  const guard = read("lib/provider-budget-core.ts");
+  const limit = Number(/maxOutputTokens > ([\d_]+)\)/.exec(guard)[1].replaceAll("_", ""));
+  for (const n of asked) assert.ok(n <= limit, `max_tokens ${n} is within the guard's ${limit}`);
+});
