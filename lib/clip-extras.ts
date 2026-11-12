@@ -53,3 +53,43 @@ export const isBestOfResult = (clips: { viral_score: number }[]) => clips.length
 
 /** A top pick is a clip that cleared the quality bar; anything below it is an extra. */
 export const isTopPick = (clip: { viral_score: number }) => clip.viral_score >= QUALITY_BAR;
+
+/**
+ * When the clip finder's answer is cut off by the output limit, the JSON stops in the middle of a clip and cannot be parsed.
+ * The clips before the cut are complete, though, so this keeps them: it finds the "clips" array and returns the text of a
+ * valid answer holding only the clips that were written out in full. Returns null when there is nothing to keep.
+ */
+export function salvageClipsJson(text: string): string | null {
+  const key = text.indexOf('"clips"');
+  if (key < 0) return null;
+  const open = text.indexOf("[", key);
+  if (open < 0) return null;
+
+  const complete: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let objectStart = -1;
+  for (let i = open + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") { if (depth === 0) objectStart = i; depth++; continue; }
+    if (ch === "}") {
+      depth--;
+      if (depth === 0 && objectStart >= 0) { complete.push(text.slice(objectStart, i + 1)); objectStart = -1; }
+      if (depth < 0) break;
+      continue;
+    }
+    if (ch === "]" && depth === 0) break; // the array ended normally
+  }
+  if (complete.length === 0) return null;
+  const json = `{"clips":[${complete.join(",")}]}`;
+  try { JSON.parse(json); } catch { return null; }
+  return json;
+}
