@@ -886,7 +886,7 @@ export default function AnalyzePanel() {
       saveBlob(blob, clipFilename(clip, index, raw));
       void trackEvent("download", downloadProps({ ok: true, cached: false, took_ms: Date.now() - rawStarted }));
     } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Download failed.");
+      setDownloadError(err instanceof Error ? userFacingClipError(err.message) : "Download failed.");
       void trackEvent("download", downloadProps({ ok: false, cached: false, took_ms: Date.now() - rawStarted, error: (err instanceof Error ? err.message : "Download failed.").slice(0, 80) }));
     } finally {
       if (rawTicker !== null) window.clearInterval(rawTicker);
@@ -930,7 +930,7 @@ export default function AnalyzePanel() {
       saveBlob(zipBlob, "klyp_clips.zip");
       void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", ok: true, took_ms: Date.now() - zipStarted });
     } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "ZIP download failed.");
+      setDownloadError(err instanceof Error ? userFacingClipError(err.message) : "ZIP download failed.");
       void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", ok: false, took_ms: Date.now() - zipStarted });
     } finally {
       exportLock.current = false;
@@ -988,6 +988,9 @@ export default function AnalyzePanel() {
 
   const viewLastAnalysis = () => {
     if (!lastJob) return;
+    // The result handler sets the clips' source from this ref (or from the paste box when it is empty). Without it, opening an
+    // earlier analysis replaced the link with the paste box's text, so every download went out with no link and was refused.
+    recoveringSource.current = lastJob.url;
     setAnalyzedUrl(lastJob.url);
     handleEvent(lastJob.result);
     setLastJob(null);

@@ -69,7 +69,7 @@ export function useRawClipDownloads() {
       setStates(s => ({ ...s, [clip.id]: ready }));
       downloadExport(ready, clip.id);
     } catch (error) {
-      setStates(s => ({ ...s, [clip.id]: { status: "error", error: controller.signal.aborted ? "Download timed out. Try again." : error instanceof Error ? error.message : "Download failed. Try again." } }));
+      setStates(s => ({ ...s, [clip.id]: { status: "error", error: controller.signal.aborted ? "Download timed out. Try again." : error instanceof Error ? userFacingClipError(error.message) : "Download failed. Try again." } }));
     } finally {
       window.clearInterval(ticker);
       window.clearTimeout(timeout);

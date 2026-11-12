@@ -78,7 +78,7 @@ export function useClipExports(onSparksSpent?: () => void) {
         if (upscale) onSparksSpent?.();
         return null;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Export failed.";
+        const message = err instanceof Error ? userFacingClipError(err.message) : "Export failed.";
         if ((revisionRef.current[clip.id] ?? 0) === revision) {
           setExports((prev) => ({ ...prev, [clip.id]: { status: "error", error: message } }));
         }
