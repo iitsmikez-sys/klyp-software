@@ -439,7 +439,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     model,
     // 20 clips (long videos) write about twice as much, so they get more room. Kept under the size where the
     // SDK refuses a non-streaming request.
-    max_tokens: clipCount > 10 ? 20000 : 16000,
+    max_tokens: clipCount > 15 ? 24000 : clipCount > 10 ? 20000 : 16000,
     thinking: { type: "adaptive" },
     system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
 
@@ -649,10 +649,10 @@ After your main list, fill "also_consider" with the next-best moments that score
   // Safety net #2: the prompt also asks Claude not to return overlapping or
   // near-duplicate moments, but it sometimes returns several clips anchored
   // within seconds of each other (e.g. 4 clips all starting around 2:40:40).
-  // Greedily keep the highest-scoring clip in each 60s start-time window and
+  // Greedily keep the highest-scoring clip in each 30s start-time window and
   // drop the rest — clips is already sorted by viral_score descending, so the
   // first clip claiming a window is always its best one.
-  const DEDUPE_WINDOW_S = 60;
+  const DEDUPE_WINDOW_S = 30;
   const deduped: Clip[] = [];
   for (const clip of clips) {
     const collides = [...priorWindows, ...deduped].some(

@@ -1,14 +1,14 @@
 /**
  * Near-miss "extra" clips. The clip finder keeps its strict bar (65+) for the main list; Claude may also
  * also return the next-best moments that scored 40-64. They are added to the result, below the main picks,
- * only to fill the list towards the requested count (10), so a video is rarely left with 3 clips.
+ * only to fill the list towards the requested count (15 or 20), so a video is rarely left with 3 clips.
  *
  * Rules (each one has a test):
  *  - only scores from 40 up to (not including) the bar; nothing weaker is ever shown
  *  - with NO main pick ("best of this stream") the same rule applies, so a quiet or small
  *    streamer is not left empty-handed; the analysis is free then (see migration 043)
  *  - never more than the room left to the requested count
- *  - never overlapping, or starting within 60 seconds of, a main pick, an earlier extra, or a moment
+ *  - never overlapping, or starting within 30 seconds of, a main pick, an earlier extra, or a moment
  *    the user already received
  */
 export const QUALITY_BAR = 65;
@@ -16,7 +16,7 @@ export const EXTRA_MIN_SCORE = 40;
 /** The lowest score shown when nothing cleared the bar. */
 export const BEST_OF_MIN_SCORE = 40;
 export const MAX_EXTRAS = 10;
-export const EXTRA_DEDUPE_WINDOW_S = 60;
+export const EXTRA_DEDUPE_WINDOW_S = 30;
 
 type Window = { start_seconds: number; end_seconds: number };
 type Scored = Window & { viral_score: number };
