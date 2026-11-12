@@ -11,6 +11,7 @@ import { drawCaptionPreview } from "@/lib/caption-preview";
 import { useSparks } from "./SparksProvider";
 import { drawWatermarkPreview } from "@/lib/watermark";
 import { processingFetch } from "@/lib/processing-api";
+import { userFacingClipError } from "@/lib/analyze-errors";
 
 /* ── Types ── */
 interface Props {
@@ -144,7 +145,7 @@ export default function ClipPreview({
         setLoadError(
           timedOut
             ? `Preview timed out after ${Math.round(PREVIEW_TIMEOUT_MS / 60_000)} minutes. The source VOD may still be downloading in the background — hit Retry in a bit.`
-            : err.message
+            : userFacingClipError(err.message)
         );
         setLoadingPreview(false);
       });
