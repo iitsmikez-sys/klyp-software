@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { YOUTUBE_ENABLED } from "@/lib/youtube-switch";
 
 const faqs = [
   {
     q: "How does Klyp know what to clip?",
-    a: "Paste a YouTube or Twitch VOD link. Klyp transcribes its audio and suggests moments to review and save.",
+    a: `Paste a ${YOUTUBE_ENABLED ? "YouTube or Twitch" : "Twitch or Kick"} VOD link. Klyp transcribes its audio and suggests moments to review and save.`,
   },
   {
     q: "Which streaming platforms are supported?",
-    a: "You can analyze published YouTube videos, Twitch VODs, and Kick VODs (Kick is in beta). Connect a Twitch channel to queue automatic clipping after a new VOD is published.",
+    a: (YOUTUBE_ENABLED ? "You can analyze published YouTube videos, Twitch VODs, and Kick VODs (Kick is in beta). " : "You can analyze Twitch VODs and Kick VODs (Kick is in beta). YouTube links are not supported right now. ") + "Connect a Twitch channel to queue automatic clipping after a new VOD is published.",
   },
   {
     q: "Do I need to leave my computer on?",
@@ -22,7 +23,7 @@ const faqs = [
   },
   {
     q: "Does it work with pre-recorded VODs?",
-    a: "Yes. Signed-in users can paste a YouTube or Twitch VOD link on the dashboard and review the suggested clips when analysis finishes.",
+    a: `Yes. Signed-in users can paste a ${YOUTUBE_ENABLED ? "YouTube or Twitch" : "Twitch or Kick"} VOD link on the dashboard and review the suggested clips when analysis finishes.`,
   },
   {
     q: "Can I cancel anytime?",

@@ -138,7 +138,7 @@ function routeHarness({ startedLastHour = 0, countFails = false, jobStatus = "qu
   const exports = {};
   const unref = (fn, ms) => { const t = setInterval(fn, ms); t.unref?.(); return t; };
   vm.runInNewContext(routeCode, { exports, require: (n) => { if (!(n in modules)) throw new Error(`Unexpected import: ${n}`); return modules[n]; },
-    process: { env: { DEPLOYMENT_TARGET: "processing", ASSEMBLYAI_API_KEY: "x", ANTHROPIC_API_KEY: "x" } },
+    process: { env: { NEXT_PUBLIC_YOUTUBE_ENABLED: "1", DEPLOYMENT_TARGET: "processing", ASSEMBLYAI_API_KEY: "x", ANTHROPIC_API_KEY: "x" } },
     Response, TextEncoder, ReadableStream, setInterval: unref, clearInterval, console, Math, Number, String, Date, Error });
   const post = () => exports.POST({ json: async () => ({ url: "https://www.twitch.tv/videos/123", clipCount: 3 }) });
   return { post, state };

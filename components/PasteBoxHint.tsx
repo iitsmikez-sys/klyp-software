@@ -7,13 +7,15 @@
  */
 import { useEffect, useState } from "react";
 import styles from "./PasteBoxHint.module.css";
+import { YOUTUBE_ENABLED } from "@/lib/youtube-switch";
 
 export const PASTE_HINT_HOLD_MS = 4000;
-export const PASTE_HINT_PLATFORMS = [
+const ALL_PASTE_HINT_PLATFORMS = [
   { name: "YouTube", className: "text-[#ff4e45]" },
   { name: "Twitch", className: "text-[#a970ff]" },
   { name: "Kick", className: "text-[#53fc18]" },
 ] as const;
+export const PASTE_HINT_PLATFORMS = ALL_PASTE_HINT_PLATFORMS.filter((platform) => YOUTUBE_ENABLED || platform.name !== "YouTube");
 
 export default function PasteBoxHint() {
   const [index, setIndex] = useState(0);

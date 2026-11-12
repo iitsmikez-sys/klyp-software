@@ -25,6 +25,10 @@ export const OPTIONS = corsPreflight;
 const VOD_URL_PATTERN =
   /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|twitch\.tv\/videos\/|m\.twitch\.tv\/videos\/|kick\.com\/(video\/|[\w.-]+\/videos\/))/i;
 
+const YOUTUBE_ON = process.env.NEXT_PUBLIC_YOUTUBE_ENABLED === "1";
+const YOUTUBE_LINK = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i;
+const YOUTUBE_OFF_MESSAGE = "YouTube links aren't supported right now. Paste a Twitch or Kick VOD link instead. No Sparks are charged.";
+
 const durationCache = new Map<string, { probe: VodProbe; at: number }>();
 /** Kick's thumbnail links are signed and stop working after 5 minutes, so a cached one must not be reused for long. */
 const SIGNED_THUMBNAIL_TTL_MS = 4 * 60_000;
@@ -40,6 +44,9 @@ export async function GET(req: NextRequest) {
 
   const url = (req.nextUrl.searchParams.get("url") ?? "").trim();
 
+  if (!YOUTUBE_ON && YOUTUBE_LINK.test(url)) {
+    return withCors(NextResponse.json({ error: YOUTUBE_OFF_MESSAGE }, { status: 400 }));
+  }
   if (url.length > 2048 || !VOD_URL_PATTERN.test(url)) {
     return withCors(NextResponse.json({ error: "Invalid VOD URL." }, { status: 400 }));
   }

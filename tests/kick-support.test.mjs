@@ -49,13 +49,18 @@ test("every copy of the VOD link check in the app accepts Kick links, including 
   }
   assert.ok(files.length >= 7, "found every copy of the link check");
   for (const p of files) {
-    const m = /VOD_URL_PATTERN =\s*(\/.+\/i);/.exec(read(p));
+    const m = /VOD_URL_PATTERN =\s*([^;]+);/.exec(read(p));
     assert.ok(m, `${p} has the pattern`);
-    const re = eval(m[1]);
+    // The paste box has two copies (YouTube on / off); every copy must accept Kick.
+    const copies = [...m[1].matchAll(/(\/\^https.+?\/i)/g)].map((x) => x[1]);
+    assert.ok(copies.length >= 1, `${p} has a pattern`);
+    for (const literal of copies) {
+    const re = eval(literal);
     assert.ok(re.test(`https://kick.com/chaifailed/videos/${ID}`), `${p} accepts channel-style Kick links`);
     assert.ok(re.test(`https://kick.com/video/${ID}`), `${p} accepts kick.com/video links`);
     assert.ok(!re.test("https://kick.com/chaifailed"), `${p} rejects a bare channel`);
     assert.ok(re.test("https://www.twitch.tv/videos/123"), `${p} still accepts Twitch`);
+    }
   }
 });
 

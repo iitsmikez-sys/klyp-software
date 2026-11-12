@@ -9,6 +9,7 @@ import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
 import BeforeAfterBand from "@/components/hero/BeforeAfterBand";
+import { YOUTUBE_ENABLED } from "@/lib/youtube-switch";
 
 /* ─── Features ───
  * Descriptions stay short here; each one states only what the product does
@@ -143,7 +144,7 @@ const features: {
       </svg>
     ),
     title: "Analyze a VOD",
-    desc: "Paste a YouTube or Twitch VOD link to find clips from the recording.",
+    desc: `Paste a ${YOUTUBE_ENABLED ? "YouTube or Twitch" : "Twitch or Kick"} VOD link to find clips from the recording.`,
     preview: (
       <div className="flex items-center gap-2 text-[11px] text-foreground-muted">
         <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
@@ -151,7 +152,7 @@ const features: {
       </div>
     ),
     cta: { label: "Analyze a VOD", href: "/dashboard" },
-    badge: "YouTube and Twitch VODs",
+    badge: YOUTUBE_ENABLED ? "YouTube and Twitch VODs" : "Twitch and Kick VODs",
   },
 ];
 
@@ -160,7 +161,7 @@ const steps = [
   {
     num: "01",
     title: "Paste your VOD",
-    desc: "Add a YouTube or Twitch VOD link in your dashboard.",
+    desc: `Add a ${YOUTUBE_ENABLED ? "YouTube or Twitch" : "Twitch or Kick"} VOD link in your dashboard.`,
     visual: (
       <div className="flex items-center justify-center gap-2">
         <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-400 text-[11px] font-bold">
@@ -265,7 +266,7 @@ export default function LandingPage({ beforeAfter = false, firstMonthForAll = fa
 
           <FadeIn delay={0.16}>
             <p className="mt-6 text-lg md:text-xl text-foreground-muted max-w-2xl text-balance leading-relaxed">
-              Paste a YouTube or Twitch VOD link and let Klyp suggest moments
+              Paste a {YOUTUBE_ENABLED ? "YouTube or Twitch" : "Twitch or Kick"} VOD link and let Klyp suggest moments
               you can review, save, and export.
             </p>
           </FadeIn>
@@ -321,7 +322,7 @@ export default function LandingPage({ beforeAfter = false, firstMonthForAll = fa
             Spend less time searching. More time posting.
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-base text-foreground-muted leading-relaxed">
-            Drop in a Twitch or YouTube VOD. Klyp surfaces moments you can
+            Drop in a {YOUTUBE_ENABLED ? "Twitch or YouTube" : "Twitch or Kick"} VOD. Klyp surfaces moments you can
             review, edit, and export as vertical clips.
           </p>
         </FadeIn>

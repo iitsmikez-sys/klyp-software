@@ -37,7 +37,7 @@ test("people who turn on reduce motion, or whose browser cannot say, get the pla
   assert.match(panel, /useState\(true\)/);
   assert.match(panel, /prefers-reduced-motion: reduce/);
   assert.match(panel, /placeholder=\{animateHint \? "" : PASTE_PLACEHOLDER\}/);
-  assert.match(panel, /const PASTE_PLACEHOLDER = "Paste a YouTube, Twitch, or Kick VOD link";/);
+  assert.ok(panel.includes('const PASTE_PLACEHOLDER = YOUTUBE_ENABLED ? "Paste a YouTube, Twitch, or Kick VOD link" : "Paste a Twitch or Kick VOD link";'));
   assert.match(css, /prefers-reduced-motion: reduce/);
 });
 

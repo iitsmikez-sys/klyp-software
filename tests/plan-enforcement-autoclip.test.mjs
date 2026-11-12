@@ -94,7 +94,7 @@ function eventsubHarness(plan) {
   const exports = {};
   vm.runInNewContext(eventsubCode, { exports, JSON, Date, Response, URL, console, Error,
     require: (n) => { if (!(n in modules)) throw new Error(`Unexpected import: ${n}`); return modules[n]; },
-    process: { env: { DEPLOYMENT_TARGET: "processing" } } });
+    process: { env: { NEXT_PUBLIC_YOUTUBE_ENABLED: "1", DEPLOYMENT_TARGET: "processing" } } });
   const headers = new Headers({ "twitch-eventsub-message-id": "evt-1", "twitch-eventsub-message-timestamp": new Date().toISOString(),
     "twitch-eventsub-message-signature": "sha256=valid", "twitch-eventsub-message-type": "notification" });
   const body = JSON.stringify({ subscription: { type: "stream.offline" }, event: { broadcaster_user_id: "999" } });

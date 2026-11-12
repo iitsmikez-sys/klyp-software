@@ -41,7 +41,7 @@ function diskHarness({ plan = "free", seconds = 600 } = {}) {
   const exports = {};
   vm.runInNewContext(diskCode, { exports, Buffer, Number, Math, String, Error, Promise, console,
     require: (n) => { if (!(n in modules)) throw new Error(`Unexpected import: ${n}`); return modules[n]; },
-    process: { env: { DEPLOYMENT_TARGET: "processing" } } });
+    process: { env: { NEXT_PUBLIC_YOUTUBE_ENABLED: "1", DEPLOYMENT_TARGET: "processing" } } });
   const req = { headers: { get: (h) => ({ "x-file-name": "vod.mp4", "content-length": "1000" })[h.toLowerCase()] ?? null },
     get body() { return {}; } };
   return { post: () => exports.POST(req), state };
@@ -95,7 +95,7 @@ function r2Harness({ plan = "free" } = {}) {
   const exports = {};
   vm.runInNewContext(r2Code, { exports, Number, Math, String, Error, Promise, console, URL,
     require: (n) => { if (!(n in modules)) throw new Error(`Unexpected import: ${n}`); return modules[n]; },
-    process: { env: { DEPLOYMENT_TARGET: "processing", R2_WRITES_ENABLED: "1" } } });
+    process: { env: { NEXT_PUBLIC_YOUTUBE_ENABLED: "1", DEPLOYMENT_TARGET: "processing", R2_WRITES_ENABLED: "1" } } });
   const post = (body) => exports.POST({ json: async () => body });
   const get = (uploadId) => exports.GET({ url: `http://x/api/upload/r2${uploadId ? `?uploadId=${uploadId}` : ""}`, headers: { get: () => null } });
   return { post, get, state };
