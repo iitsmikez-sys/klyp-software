@@ -202,7 +202,7 @@ const steps = [
 ];
 
 /** `beforeAfter` adds the new stream-to-clips band under the hero. It stays off on the live site until it is approved. */
-export default function LandingPage({ beforeAfter = false }: { beforeAfter?: boolean }) {
+export default function LandingPage({ beforeAfter = false, firstMonthForAll = false }: { beforeAfter?: boolean; firstMonthForAll?: boolean }) {
   return (
     <div className="min-h-screen bg-background flex flex-col font-geist">
       <AmbientAudio />
@@ -291,6 +291,23 @@ export default function LandingPage({ beforeAfter = false }: { beforeAfter?: boo
             <p className="mt-4 text-sm text-foreground-muted">
               No credit card required. Free plan includes {SPARKS_ALLOWANCE.free} Sparks every 30 days.
             </p>
+          </FadeIn>
+          <FadeIn delay={0.34}>
+            <div className="mt-5 flex flex-col items-center gap-3">
+              <p className="flex items-center gap-2.5 text-sm text-foreground-muted">
+                <span className="inline-flex items-center" aria-hidden="true">
+                  {["#8b5cf6", "#00E5A0", "#f59e0b", "#38bdf8", "#ff4e45"].map((color, i) => (
+                    <span key={color} className="inline-block h-7 w-7 rounded-full border-2 border-background" style={{ backgroundColor: color, marginLeft: i === 0 ? 0 : -8 }} />
+                  ))}
+                </span>
+                <span>Join <span className="font-semibold text-foreground">100+ streamers</span> clipping with Klyp</span>
+              </p>
+              {firstMonthForAll && (
+                <p className="rounded-full border border-accent/40 bg-accent-glow px-4 py-1.5 text-sm text-accent">
+                  New to Pro? Your first month is <span className="font-bold">$17</span>, then $28/mo. Cancel anytime.
+                </p>
+              )}
+            </div>
           </FadeIn>
         </div>
       </section>
