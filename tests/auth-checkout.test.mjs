@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as proTrial from "../lib/pro-trial.ts";
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
@@ -28,6 +29,8 @@ function checkoutHarness({signedIn = true, subscribed = false, validPrice = true
     '@/lib/stripe-billing': {resolveBillingState: async () => ({checkoutCustomerId: null, portalCustomerId: subscribed ? 'cus_existing' : null})},
     '@/lib/offer-cookie': {OFFER_COOKIE: 'klyp_offer', OFFER_VALUE: '17', offerCookieActive: value => value === '17'},
     '@/lib/first-month-offer': {firstMonthOfferAvailable: (_profile, _env, fromLink) => offer && fromLink === true, isNewCustomer: () => newCustomer, ensureFirstMonthCoupon: async () => 'coupon_test', FIRST_MONTH_PRICE_CENTS: 1700},
+    '@/lib/pro-trial': proTrial,
+    '@/lib/trial-uses': {trialKeysUsedByOthers: async () => false},
     '@/lib/checkout-price': {validateProPrice: (...args) => { validated.push(args.slice(1)); return validPrice; }},
   };
   const exports = {};

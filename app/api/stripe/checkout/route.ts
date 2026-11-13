@@ -14,24 +14,39 @@ import { resolveBillingState } from "@/lib/stripe-billing";
 import { validateProPrice } from "@/lib/checkout-price";
 import { OFFER_COOKIE, offerCookieActive } from "@/lib/offer-cookie";
 import { ensureFirstMonthCoupon, firstMonthOfferAvailable, isNewCustomer, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
+import { TRIAL_DAYS, TRIAL_SPARKS, emailTrialKey, proTrialOffered, trialMode } from "@/lib/pro-trial";
+import { trialKeysUsedByOthers } from "@/lib/trial-uses";
 
 export const runtime = "nodejs";
 
 /** Did this person arrive from the ad link? The proxy saved that in a cookie. */
 const hasOfferLink = (req: NextRequest) => offerCookieActive(req.cookies.get(OFFER_COOKIE)?.value);
 
-/** GET /api/stripe/checkout — does the signed-in person qualify for the $17 first month? */
+/**
+ * Is this person offered the free trial (lib/pro-trial.ts)? It also fails closed: if the used-trials table cannot be read (for example
+ * its migration is not applied yet), nobody is offered a trial and checkout works as before.
+ */
+async function trialOffered(req: NextRequest, profile: Awaited<ReturnType<typeof getProfile>>, userId: string | null | undefined, email: string | null | undefined): Promise<boolean> {
+  if (!userId || !proTrialOffered(profile, trialMode(), hasOfferLink(req))) return false;
+  try { return !(await trialKeysUsedByOthers(userId, [emailTrialKey(email)])); } catch { return false; }
+}
+
+/** GET /api/stripe/checkout — does the signed-in person qualify for the free trial or the $17 first month? */
 export async function GET(req: NextRequest) {
   try {
     const profile = await getProfile();
-    const offered = firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
+    const { data: { user: viewer } } = await (await createClient()).auth.getUser();
+    const trial = await trialOffered(req, profile, viewer?.id, viewer?.email);
+    // The trial replaces the $17 offer for the same person; the two never show together.
+    const offered = !trial && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
     return NextResponse.json({
+      trial: trial ? { days: TRIAL_DAYS, sparks: TRIAL_SPARKS } : null,
       first_month: offered ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null,
       // New monthly subscribers without the ad offer can type a promo code on Stripe's checkout page.
-      promo_code_field: !offered && isNewCustomer(profile),
+      promo_code_field: !offered && !trial && isNewCustomer(profile),
     });
   } catch {
-    return NextResponse.json({ first_month: null, promo_code_field: false });
+    return NextResponse.json({ trial: null, first_month: null, promo_code_field: false });
   }
 }
 
@@ -78,15 +93,19 @@ export async function POST(req: NextRequest) {
     // New monthly subscribers pay $17 for the first month (lib/first-month-offer.ts). Stripe also
     // confirms they have never been a customer, so a returning person pays the full price.
     const newMonthly = !yearly && !billing.checkoutCustomerId && isNewCustomer(profile);
-    const firstMonth = newMonthly && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
+    // A free trial takes the place of the $17 offer and of the promo code box: they never stack.
+    const trial = newMonthly && await trialOffered(req, profile, user.id, user.email);
+    const firstMonth = newMonthly && !trial && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
     // Stripe does not allow a preset discount and the promo code box together: ad-link visitors get the
     // preset $17, other new monthly subscribers get the box (codes are made in the Stripe dashboard).
-    const promoField = newMonthly && !firstMonth;
+    const promoField = newMonthly && !firstMonth && !trial;
     const couponId = firstMonth ? await ensureFirstMonthCoupon(stripe) : null;
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
       ...(promoField ? { allow_promotion_codes: true } : {}),
+      // A card is always collected for a trial: it is what keeps one person from taking many.
+      ...(trial ? { payment_method_collection: "always" as const } : {}),
       line_items: [
         configuredPrice
           ? { price: configuredPrice, quantity: 1 }
@@ -109,11 +128,14 @@ export async function POST(req: NextRequest) {
         : { customer_email: user.email ?? undefined }),
       client_reference_id: user.id,
       metadata: { user_id: user.id, billing_interval: interval },
-      subscription_data: { metadata: { user_id: user.id, billing_interval: interval } },
+      subscription_data: {
+        metadata: { user_id: user.id, billing_interval: interval, ...(trial ? { trial: "1" } : {}) },
+        ...(trial ? { trial_period_days: TRIAL_DAYS } : {}),
+      },
       success_url: `${origin}/dashboard?upgraded=1`,
       cancel_url: `${origin}/dashboard`,
     });
-    return NextResponse.json({ url: session.url, first_month: couponId !== null });
+    return NextResponse.json({ url: session.url, first_month: couponId !== null, trial });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to start checkout." },
