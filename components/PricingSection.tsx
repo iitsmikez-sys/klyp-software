@@ -137,8 +137,8 @@ function FeatureRow({ item }: { item: FeatureItem }) {
 }
 
 /* ─── Section ─── */
-/** `trialDays` is set only when the free trial is on for everyone (PRO_TRIAL=on); with it, the monthly Pro card offers the trial. */
-export default function PricingSection({ trialDays = 0 }: { trialDays?: number }) {
+/** `trial` is set only when the 4-day pass is on (PRO_TRIAL=on); with it, the monthly Pro card offers the pass. */
+export default function PricingSection({ trial }: { trial?: { days: number; priceCents: number } }) {
   const [yearly, setYearly] = useState(true);
   return (
     <section id="pricing" className="px-4 sm:px-6 py-24 max-w-[90rem] mx-auto w-full">
@@ -235,10 +235,10 @@ export default function PricingSection({ trialDays = 0 }: { trialDays?: number }
                         : "bg-surface-2 border border-border text-foreground hover:border-subtle"
                     }`}
                   >
-                    {plan.id === "pro" && trialDays > 0 && !yearly ? `Start ${trialDays}-day free trial` : plan.cta.label}
+                    {plan.id === "pro" && trial && !yearly ? `Start the ${trial.days}-day pass for $${trial.priceCents / 100}` : plan.cta.label}
                   </Link>
                   {plan.cta.subtext && (
-                    <p className="text-[11px] text-foreground-muted">{plan.id === "pro" && trialDays > 0 && !yearly ? `${trialDays} days free, then $${MONTHLY_PRICE_USD}/month. Card required. Cancel before day ${trialDays} and pay nothing.` : plan.cta.subtext}</p>
+                    <p className="text-[11px] text-foreground-muted">{plan.id === "pro" && trial && !yearly ? `$${trial.priceCents / 100} for ${trial.days} days, then $${MONTHLY_PRICE_USD}/month unless you cancel first. Card required. The $${trial.priceCents / 100} isn't refunded.` : plan.cta.subtext}</p>
                   )}
                 </div>
               </div>

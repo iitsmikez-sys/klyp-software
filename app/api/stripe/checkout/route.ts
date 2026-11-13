@@ -14,7 +14,7 @@ import { resolveBillingState } from "@/lib/stripe-billing";
 import { validateProPrice } from "@/lib/checkout-price";
 import { OFFER_COOKIE, offerCookieActive } from "@/lib/offer-cookie";
 import { ensureFirstMonthCoupon, firstMonthOfferAvailable, isNewCustomer, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
-import { TRIAL_DAYS, TRIAL_SPARKS, emailTrialKey, proTrialOffered, trialMode } from "@/lib/pro-trial";
+import { TRIAL_DAYS, TRIAL_PRICE_CENTS, TRIAL_SPARKS, emailTrialKey, proTrialOffered, trialMode } from "@/lib/pro-trial";
 import { trialKeysUsedByOthers } from "@/lib/trial-uses";
 
 export const runtime = "nodejs";
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     // The trial replaces the $17 offer for the same person; the two never show together.
     const offered = !trial && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
     return NextResponse.json({
-      trial: trial ? { days: TRIAL_DAYS, sparks: TRIAL_SPARKS } : null,
+      trial: trial ? { days: TRIAL_DAYS, sparks: TRIAL_SPARKS, price_cents: TRIAL_PRICE_CENTS } : null,
       first_month: offered ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null,
       // New monthly subscribers without the ad offer can type a promo code on Stripe's checkout page.
       promo_code_field: !offered && !trial && isNewCustomer(profile),
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     // New monthly subscribers pay $17 for the first month (lib/first-month-offer.ts). Stripe also
     // confirms they have never been a customer, so a returning person pays the full price.
     const newMonthly = !yearly && !billing.checkoutCustomerId && isNewCustomer(profile);
-    // A free trial takes the place of the $17 offer and of the promo code box: they never stack.
+    // The pass takes the place of the promo code box, and ad-link visitors get the $17 first month instead of it: they never stack.
     const trial = newMonthly && await trialOffered(req, profile, user.id, user.email);
     const firstMonth = newMonthly && !trial && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
     // Stripe does not allow a preset discount and the promo code box together: ad-link visitors get the
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
       mode: "subscription",
       ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
       ...(promoField ? { allow_promotion_codes: true } : {}),
-      // A card is always collected for a trial: it is what keeps one person from taking many.
+      // A card is always collected for the pass; the $3 and the card together are what keep one person from taking many.
       ...(trial ? { payment_method_collection: "always" as const } : {}),
       line_items: [
         configuredPrice
@@ -121,6 +121,15 @@ export async function POST(req: NextRequest) {
               },
               quantity: 1,
             },
+        // The 4-day pass: a one-time charge now. It lands on the first invoice and is paid at checkout, while the monthly price waits out the trial days.
+        ...(trial ? [{
+          price_data: {
+            currency: "usd",
+            unit_amount: TRIAL_PRICE_CENTS,
+            product_data: { name: `Klyp Pro: ${TRIAL_DAYS}-day pass`, description: `${TRIAL_DAYS} days of Pro, then $28 a month unless you cancel. The pass is not refunded.` },
+          },
+          quantity: 1,
+        }] : []),
       ],
       // Reuse the Stripe customer if this user subscribed before.
       ...(billing.checkoutCustomerId

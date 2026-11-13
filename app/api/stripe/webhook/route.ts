@@ -15,7 +15,7 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SPARKS_ALLOWANCE, type Tier } from "@/lib/tier";
-import { TRIAL_SPARKS, cardTrialKey, emailTrialKey } from "@/lib/pro-trial";
+import { TRIAL_PRICE_CENTS, TRIAL_SPARKS, cardTrialKey, emailTrialKey } from "@/lib/pro-trial";
 import { claimTrialKeys } from "@/lib/trial-uses";
 import { isPackSession, packForSession } from "@/lib/spark-packs";
 
@@ -195,9 +195,9 @@ export async function POST(req: NextRequest) {
           const latestInvoiceId = idOf(current.latest_invoice);
           if (!latestInvoiceId) throw new Error(`Subscription ${subscriptionId} has no latest invoice yet.`);
           if (latestInvoiceId !== invoice.id) break;
-          // The free trial's first invoice is $0. The trial starts with a smaller Sparks balance (the full 500 come with the first real
+          // The 4-day pass's first invoice is the $3 one-time charge (the monthly price is on trial). The pass starts with a smaller Sparks balance (the full 500 come with the first real
           // payment, a "subscription_cycle" invoice), and a second trial on the same email or the same card is cancelled before it gives anything.
-          const trialStart = current.status === "trialing" && invoice.amount_paid === 0 && invoice.billing_reason === "subscription_create" &&
+          const trialStart = current.status === "trialing" && invoice.amount_paid === TRIAL_PRICE_CENTS && invoice.billing_reason === "subscription_create" &&
             subDetails?.metadata?.trial === "1";
           if (trialStart) {
             const trialUserId = subDetails?.metadata?.user_id;

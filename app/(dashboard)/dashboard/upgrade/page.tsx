@@ -81,16 +81,16 @@ export default function UpgradePage() {
   useEffect(() => { const t = setTimeout(() => setWaitedTooLong(true), 4000); return () => clearTimeout(t); }, []);
   // New people can pay $17 for the first month; the server decides who qualifies. Open on the monthly view so they see it.
   const [firstMonthCents, setFirstMonthCents] = useState<number | null>(null);
-  // The free trial (only when the server offers it to this person): it takes the place of the $17 offer.
-  const [trial, setTrial] = useState<{ days: number; sparks: number } | null>(null);
+  // The 4-day pass (only when the server offers it to this person; ad-link visitors get the $17 first month instead).
+  const [trial, setTrial] = useState<{ days: number; sparks: number; priceCents: number } | null>(null);
   const [promoHint, setPromoHint] = useState(false);
   useEffect(() => {
     if (isPro) return;
     let cancelled = false;
     fetch("/api/stripe/checkout").then((r) => r.json()).then((d) => {
       if (!cancelled && d?.promo_code_field === true) setPromoHint(true);
-      if (!cancelled && typeof d?.trial?.days === "number" && typeof d?.trial?.sparks === "number") {
-        setTrial({ days: d.trial.days, sparks: d.trial.sparks });
+      if (!cancelled && typeof d?.trial?.days === "number" && typeof d?.trial?.sparks === "number" && typeof d?.trial?.price_cents === "number") {
+        setTrial({ days: d.trial.days, sparks: d.trial.sparks, priceCents: d.trial.price_cents });
         setYearly(false);
         return;
       }
@@ -291,9 +291,10 @@ export default function UpgradePage() {
           ) : !isPro && trial ? (
             <div className="mb-3">
               <div className="flex items-end gap-2">
-                <span className="font-syne text-4xl font-bold text-accent">{trial.days} days free</span>
+                <span className="font-syne text-4xl font-bold text-accent">${trial.priceCents / 100}</span>
+                <span className="mb-1.5 text-sm text-foreground-muted">for {trial.days} days of Pro</span>
               </div>
-              <p className="text-xs text-foreground-muted">Then ${MONTHLY_PRICE_USD}/mo. Card required. {trial.sparks} Sparks during the trial, 500 once you subscribe. Cancel any time before day {trial.days} and pay nothing.</p>
+              <p className="text-xs text-foreground-muted">Then ${MONTHLY_PRICE_USD}/mo from day {trial.days}, unless you cancel before then. Card required. {trial.sparks} Sparks during the pass, 500 once the month starts. The ${trial.priceCents / 100} isn't refunded.</p>
             </div>
           ) : !isPro && firstMonthCents !== null ? (
             <div className="mb-3">
@@ -337,7 +338,7 @@ export default function UpgradePage() {
             {busy && (
               <span className="w-3.5 h-3.5 rounded-full border-2 border-background border-t-transparent animate-spin" />
             )}
-            {complimentaryPro ? "Complimentary Pro active" : billingSetupNeeded ? "Set up billing" : isPro ? "Manage billing" : !yearly && trial ? `Start ${trial.days}-day free trial` : !yearly && firstMonthCents !== null ? `Get Pro for $${firstMonthCents / 100}` : "Upgrade to Pro"}
+            {complimentaryPro ? "Complimentary Pro active" : billingSetupNeeded ? "Set up billing" : isPro ? "Manage billing" : !yearly && trial ? `Start the ${trial.days}-day pass for $${trial.priceCents / 100}` : !yearly && firstMonthCents !== null ? `Get Pro for $${firstMonthCents / 100}` : "Upgrade to Pro"}
           </button>
 
           {yearlyOffer && (
