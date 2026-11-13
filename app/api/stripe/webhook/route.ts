@@ -15,6 +15,8 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SPARKS_ALLOWANCE, type Tier } from "@/lib/tier";
+import { TRIAL_PRICE_CENTS, TRIAL_SPARKS, cardTrialKey, emailTrialKey } from "@/lib/pro-trial";
+import { claimTrialKeys } from "@/lib/trial-uses";
 import { isPackSession, packForSession } from "@/lib/spark-packs";
 
 export const runtime = "nodejs";
@@ -79,14 +81,16 @@ async function grantTier(
   tier: Tier,
   eventId: string,
   reason: "checkout_grant" | "invoice_grant" | "subscription_deleted",
-  extra: Partial<{ stripe_customer_id: string; stripe_subscription_id: string | null }> = {}
+  extra: Partial<{ stripe_customer_id: string; stripe_subscription_id: string | null }> = {},
+  /** Sparks to set instead of the plan's full allowance (the free trial starts with fewer). */
+  balance?: number
 ) {
   const admin = createAdminClient();
   const { error } = await admin.rpc("grant_tier_sparks", {
     p_user_id: match.userId ?? null,
     p_match_customer_id: match.customerId ?? null,
     p_tier: tier,
-    p_balance: SPARKS_ALLOWANCE[tier],
+    p_balance: balance ?? SPARKS_ALLOWANCE[tier],
     p_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     p_event_id: eventId,
     p_reason: reason,
@@ -191,12 +195,32 @@ export async function POST(req: NextRequest) {
           const latestInvoiceId = idOf(current.latest_invoice);
           if (!latestInvoiceId) throw new Error(`Subscription ${subscriptionId} has no latest invoice yet.`);
           if (latestInvoiceId !== invoice.id) break;
+          // The 4-day pass's first invoice is the $3 one-time charge (the monthly price is on trial). The pass starts with a smaller Sparks balance (the full 500 come with the first real
+          // payment, a "subscription_cycle" invoice), and a second trial on the same email or the same card is cancelled before it gives anything.
+          const trialStart = current.status === "trialing" && invoice.amount_paid === TRIAL_PRICE_CENTS && invoice.billing_reason === "subscription_create" &&
+            subDetails?.metadata?.trial === "1";
+          if (trialStart) {
+            const trialUserId = subDetails?.metadata?.user_id;
+            if (trialUserId) {
+              const keys = [emailTrialKey(invoice.customer_email)];
+              const withCard = await getStripe().subscriptions.retrieve(subscriptionId, { expand: ["default_payment_method"] });
+              const method = withCard.default_payment_method;
+              const fingerprint = method && typeof method === "object" ? method.card?.fingerprint : null;
+              if (fingerprint) keys.push(cardTrialKey(fingerprint));
+              if ((await claimTrialKeys(trialUserId, keys)) === "used") {
+                console.warn(`[stripe] trial refused: this email or card already had a free trial (subscription ${subscriptionId})`);
+                await getStripe().subscriptions.cancel(subscriptionId);
+                break;
+              }
+            }
+          }
           await grantTier(
             { userId: subDetails?.metadata?.user_id, customerId: idOf(invoice.customer) },
             "pro",
             invoice.id,
             "invoice_grant",
-            { stripe_customer_id: idOf(invoice.customer), stripe_subscription_id: subscriptionId }
+            { stripe_customer_id: idOf(invoice.customer), stripe_subscription_id: subscriptionId },
+            trialStart ? TRIAL_SPARKS : undefined
           );
           await setBillingInterval(subscriptionId, intervalOf(current));
         }

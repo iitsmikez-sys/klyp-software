@@ -47,7 +47,7 @@ test("the coupon is created once with the right terms, and reused", async () => 
 test("checkout applies the coupon only to new monthly subscribers; the page shows the offer", () => {
   const route = read("app/api/stripe/checkout/route.ts");
   assert.ok(route.includes("const newMonthly = !yearly && !billing.checkoutCustomerId && isNewCustomer(profile);"));
-  assert.ok(route.includes("const firstMonth = newMonthly && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));"));
+  assert.ok(route.includes("const firstMonth = newMonthly && !trial && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));"));
   assert.ok(route.includes("discounts: [{ coupon: couponId }]"));
   const page = read("app/(dashboard)/dashboard/upgrade/page.tsx");
   assert.ok(page.includes('fetch("/api/stripe/checkout")'));

@@ -203,7 +203,7 @@ const steps = [
 ];
 
 /** `beforeAfter` adds the new stream-to-clips band under the hero. It stays off on the live site until it is approved. */
-export default function LandingPage({ beforeAfter = false, firstMonthForAll = false }: { beforeAfter?: boolean; firstMonthForAll?: boolean }) {
+export default function LandingPage({ beforeAfter = false, firstMonthForAll = false, trial }: { beforeAfter?: boolean; firstMonthForAll?: boolean; trial?: { days: number; priceCents: number } }) {
   return (
     <div className="min-h-screen bg-background flex flex-col font-geist">
       <AmbientAudio />
@@ -421,7 +421,7 @@ export default function LandingPage({ beforeAfter = false, firstMonthForAll = fa
 
       {/* ── Pricing ── */}
       <div id="pricing" className="scroll-mt-16">
-        <PricingSection />
+        <PricingSection trial={trial} />
       </div>
 
       {/* ── FAQ ── */}

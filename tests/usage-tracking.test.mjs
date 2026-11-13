@@ -41,7 +41,7 @@ test("every kind of download on the results page is recorded, with length, time 
 test("the steps to payment are recorded: upgrade page visit, click on Get Pro, checkout started, header link", () => {
   assert.match(upgrade, /void trackEvent\("upgrade_view"\)/);
   assert.match(upgrade, /if \(viewTracked\.current \|\| balance === null \|\| isPro\) return;/);
-  assert.match(upgrade, /trackEvent\("upgrade_click", \{ interval, first_month: firstMonthCents !== null \}\)/);
+  assert.match(upgrade, /trackEvent\("upgrade_click", \{ interval, first_month: firstMonthCents !== null, trial: trial !== null && !yearly \}\)/);
   assert.match(upgrade, /trackEvent\("checkout_started", \{ interval \}\)/);
   assert.ok(upgrade.indexOf('trackEvent("upgrade_click"') < upgrade.indexOf('fetch("/api/stripe/checkout", {'), "the click is recorded before the request");
   assert.match(read("components/UpgradeButton.tsx"), /trackEvent\("upgrade_link_click", \{ from: "header" \}\)/);
