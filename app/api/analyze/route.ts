@@ -48,7 +48,8 @@ import { createOrLoadAnalysisJob, getAnalysisJob, claimAnalysisJob, checkpointAn
 import { runQueued } from "@/lib/job-queue";
 import { acquireUserProcessingSlot } from "@/lib/clip-access";
 import { MAX_ANALYSES_PER_HOUR, startedAnalysesLastHour } from "@/lib/analysis-limits";
-import { FREE_PART_SECONDS, UPLOAD_PRO_MESSAGE, analysisModelFor, checkSourceLimit, planOf, sourceKindOf, transcriberFor, uploadsAllowed } from "@/lib/plan-limits";
+import { FREE_PART_SECONDS, UPLOAD_PRO_MESSAGE, analysisModelFor, checkSourceLimit, maxSecondsFor, planOf, sourceKindOf, transcriberFor, uploadsAllowed } from "@/lib/plan-limits";
+import { MIN_WINDOW_SECONDS, resolveRequestedWindow } from "@/lib/vod-window";
 import { checkFreeCapacity, recordPlanAtStart } from "@/lib/free-capacity";
 import { userFacingAnalysisError } from "@/lib/analyze-errors";
 import { anthropicCreditGate } from "@/lib/anthropic-credit";
@@ -124,6 +125,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let contentType: ContentType = DEFAULT_CONTENT_TYPE;
   let keyword: string | undefined; // optional — weights matching transcript moments higher (see lib/analyze-pipeline.ts)
   let requestedJobId: string | undefined;
+  let requestedWindow: { start: unknown; seconds: unknown } = { start: undefined, seconds: undefined }; // a Pro person chose which part of an over-long video to clip
   let firstPartOnly = false; // a free person chose "clip the first 2 hours" of a video that is over their limit
   try {
     const body = await req.json();
@@ -133,6 +135,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     const rawUploadId = String(body.uploadId ?? "").trim();
     if (rawUploadId) uploadId = rawUploadId;
     firstPartOnly = body.firstPartOnly === true;
+    requestedWindow = { start: body.windowStart, seconds: body.windowSeconds };
     const hint = Number(body.durationHint);
     if (Number.isFinite(hint) && hint > 0) durationHint = hint;
     if ((CLIP_COUNT_OPTIONS as readonly number[]).includes(Number(body.clipCount))) {
@@ -172,7 +175,11 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const sourceKind = sourceKindOf(sourceKey);
   if (!sourceKind) return fail("validate", "Please provide a valid YouTube, Twitch, or Kick VOD URL.", 400);
   if (sourceKind === "upload" && !uploadsAllowed(plan)) return fail("validate", UPLOAD_PRO_MESSAGE, 403);
-  const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null };
+  // A chosen part is its own job: the same video with another part must not hand back the first part's clips.
+  const askedStart = Number(requestedWindow.start);
+  const askedSeconds = Number(requestedWindow.seconds);
+  const windowAsked = !uploadId && Number.isFinite(askedStart) && Number.isFinite(askedSeconds) && askedStart >= 0 && askedSeconds >= MIN_WINDOW_SECONDS;
+  const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null, ...(windowAsked ? { window: [Math.round(askedStart), Math.round(askedSeconds)] } : {}) };
   let job;
   try {
     job = await createOrLoadAnalysisJob(profile.id, requestedJobId ?? randomUUID(), sourceKey, intent);
@@ -255,7 +262,11 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // Separate from the Sparks balance below and from the per-run provider budget.
   const fullLengthCheck = checkSourceLimit(plan, sourceKind, verifiedDuration);
   // Over the Free limit and they chose the first part: analyze only the start (never for Pro, uploads or videos within the limit).
-  const partSeconds = firstPartOnly && plan === "free" && !uploadedPath && !fullLengthCheck.ok && fullLengthCheck.status === 413
+  // A person who chose a part (Pro, over the plan's length) gets exactly that part, capped at the plan's length.
+  const chosenWindow = !uploadedPath && !fullLengthCheck.ok && fullLengthCheck.status === 413
+    ? resolveRequestedWindow({ requestedStart: requestedWindow.start, requestedSeconds: requestedWindow.seconds, verifiedSeconds: verifiedDuration, capSeconds: plan === "free" ? FREE_PART_SECONDS : maxSecondsFor(plan, sourceKind) })
+    : null;
+  const partSeconds = chosenWindow ? chosenWindow.seconds : firstPartOnly && plan === "free" && !uploadedPath && !fullLengthCheck.ok && fullLengthCheck.status === 413
     ? FREE_PART_SECONDS : undefined;
   const analysisSeconds = partSeconds ?? verifiedDuration;
   const lengthCheck = partSeconds ? checkSourceLimit(plan, sourceKind, analysisSeconds) : fullLengthCheck;
@@ -367,6 +378,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               url,
               durationHint,
               partSeconds,
+              windowStart: chosenWindow?.start,
               sourceSeconds: verifiedDuration,
               clipCount,
               sourceKey,

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import * as planLimits from '../lib/plan-limits.ts';
+import * as vodWindow from '../lib/vod-window.ts';
 
 const source = readFileSync(new URL('../app/api/analyze/route.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS,
@@ -29,6 +30,7 @@ function routeHarness({ duration = '7200', sparks = 20 } = {}) {
     '@/lib/profile-token': { bearerToken: () => 'fixture-token',
       getProfileFromToken: async () => ({ id: 'fixture-user', sparks, tier: 'pro', stripe_subscription_id: 'sub_test' }), tokenClient: () => ({}) },
     '@/lib/plan-limits': planLimits,
+    '@/lib/vod-window': vodWindow,
     '@/lib/cors': { withCors: value => value, corsPreflight: () => {} },
     '@/lib/sparks': { estimateSparks: seconds => seconds < 1800 ? 10 : seconds < 3600 ? 20 : seconds < 7200 ? 35 : 50,
       MIN_ANALYZE_COST: 20, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3, clipCountForDuration: () => 3 },

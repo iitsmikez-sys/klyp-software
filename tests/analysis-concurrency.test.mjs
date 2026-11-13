@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import * as planLimits from "../lib/plan-limits.ts";
+import * as vodWindow from "../lib/vod-window.ts";
 
 const transpile = (path) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
@@ -111,6 +112,7 @@ function routeHarness({ startedLastHour = 0, countFails = false, jobStatus = "qu
     "@/lib/video-cache": { findUploadedVideo: async () => null },
     "@/lib/profile-token": { bearerToken: () => "fixture-token", getProfileFromToken: async () => ({ id: "fixture-user", sparks: 500, tier: "pro", stripe_subscription_id: "sub_test" }), tokenClient: () => ({}) },
     "@/lib/plan-limits": planLimits,
+    "@/lib/vod-window": vodWindow,
     "@/lib/cors": { withCors: (v) => v, corsPreflight: () => {} },
     "@/lib/sparks": { estimateSparks: () => 20, MIN_ANALYZE_COST: 14, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3, clipCountForDuration: () => 3 },
     "@/lib/twitch-chat": { detectChatSpikes: async () => null },

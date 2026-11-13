@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import * as planLimits from "../lib/plan-limits.ts";
+import * as vodWindow from "../lib/vod-window.ts";
 import * as vodSource from "../lib/vod-source.ts";
 
 const H = 3600;
@@ -54,6 +55,7 @@ function harness({ plan = "free", url = YT, uploadId, seconds = 600, sparks = 50
     "@/lib/clip-access": { acquireUserProcessingSlot: () => () => {} },
     "@/lib/analysis-limits": { MAX_ANALYSES_PER_HOUR: 10, startedAnalysesLastHour: async () => 0 },
     "@/lib/plan-limits": planLimits,
+    "@/lib/vod-window": vodWindow,
     "@/lib/free-capacity": { checkFreeCapacity: async (o) => { state.capacityChecks.push(o); return capacity; },
       recordPlanAtStart: async (_save, planName, secs) => { state.recorded.push([planName, secs]); } },
     "@/lib/vod-source": vodSource,

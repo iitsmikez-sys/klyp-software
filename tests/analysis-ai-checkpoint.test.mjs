@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { createSafeEventSender } from "../lib/analysis-sse.ts";
 import * as planLimits from "../lib/plan-limits.ts";
+import * as vodWindow from "../lib/vod-window.ts";
 
 const nativeRequire = createRequire(import.meta.url);
 const source = await readFile(new URL("../app/api/analyze/route.ts", import.meta.url), "utf8");
@@ -32,6 +33,7 @@ test("saved AI checkpoint bypasses all providers and commits through accounting 
     "@/lib/bin": { resolveBin: () => "ffprobe", runCapture: async () => "3600", runYtDlpCaptureWithIpv6Fallback: async () => "3600" },
     "@/lib/profile-token": { bearerToken: () => "test-token", getProfileFromToken: async () => ({ id: "user-1", sparks: 200, tier: "pro", stripe_subscription_id: "sub_test" }) },
     "@/lib/plan-limits": planLimits,
+    "@/lib/vod-window": vodWindow,
     "@/lib/cors": { withCors: (response) => response, corsPreflight: () => {} },
     "@/lib/sparks": { estimateSparks: () => 35, MIN_ANALYZE_COST: 10, CLIP_COUNT_OPTIONS: [3], CLIP_COUNT_COST: { 3: 10 }, DEFAULT_CLIP_COUNT: 3, clipCountForDuration: () => 3 },
     "@/lib/twitch-chat": { detectChatSpikes: async () => null },
