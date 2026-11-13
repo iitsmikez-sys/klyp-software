@@ -123,7 +123,7 @@ const SEGMENT_CONCURRENCY = 3;
 
 /** Download the audio for one window. Exact range, no padding — see the note
  *  on resolveSourceSegment in lib/video-cache.ts for why padding is a trap. */
-async function downloadAudioWindow(url: string, dir: string, w: AudioWindow): Promise<string> {
+async function downloadAudioWindow(url: string, dir: string, w: AudioWindow, maxRunMs = 5 * 60_000): Promise<string> {
   const stem = `win-${w.start}-${w.end}`;
   await runYtDlpWithRetry(
     [
@@ -140,7 +140,7 @@ async function downloadAudioWindow(url: string, dir: string, w: AudioWindow): Pr
       "-o", path.join(dir, `${stem}.%(ext)s`),
       url,
     ],
-    { stallTimeoutMs: 60_000, maxRunMs: 5 * 60_000 }
+    { stallTimeoutMs: 60_000, maxRunMs }
   );
   const produced = (await readdir(dir)).find((f) => f.startsWith(`${stem}.`));
   if (!produced) throw new Error(`Segment ${w.start}-${w.end}s produced no audio file.`);
@@ -775,6 +775,8 @@ export async function runAnalysisPipeline(opts: {
   partSeconds?: number;
   /** The whole video's length in seconds, needed with partSeconds to know how far the window can slide. */
   sourceSeconds?: number;
+  /** With partSeconds: where the part the person chose starts on the video's own timeline. Only that stretch is downloaded. Left out for Smart pick. */
+  windowStart?: number;
   cachedTranscript?: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" };
   onTranscript?: (transcript: { words: TimedWord[]; durationSeconds: number; coverageMode: "full" | "chat-sampled" }) => Promise<void>;
   onAnalysis?: (result: PipelineResult) => Promise<void>;
@@ -850,6 +852,11 @@ export async function runAnalysisPipeline(opts: {
     }
     const audioPath = await withMem("download", async () => {
       if (uploadedPath) return extractAudio(uploadedPath, workDir);
+      // The person chose the part: download only that stretch (no full-video download, no Smart pick).
+      if (partSeconds && opts.windowStart !== undefined) {
+        windowStart = opts.windowStart;
+        return downloadAudioWindow(url, workDir, { start: opts.windowStart, end: opts.windowStart + partSeconds }, 30 * 60_000);
+      }
       // The source is longer than the part being analyzed, so it is downloaded as a long video and cut down afterwards.
       const full = await downloadAudio(url, workDir, partSeconds ? true : !!durationHint && durationHint >= SEGMENT_MIN_VOD_S);
       if (!partSeconds) return full;
@@ -918,7 +925,7 @@ export async function runAnalysisPipeline(opts: {
   const poolSize = discoveryPoolSize(clipCount);
   const cacheInput = { sourceKey: opts.sourceKey ?? "", durationSeconds, contentType,
     keyword: keyword ?? "", creatorPreferences: opts.creatorPreferences ?? "",
-    windows: [{ start: 0, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
+    windows: [{ start: windowStart, end: durationSeconds }], pipeline: "legacy" as const, model: opts.model,
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
     // "relatable-v1": results found before relatable moments and the share trigger were added; "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.

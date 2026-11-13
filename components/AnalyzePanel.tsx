@@ -35,6 +35,8 @@ import { readyClipRequest } from "@/lib/ready-clip";
 import { isYouTubeBotBlockError, userFacingClipError } from "@/lib/analyze-errors";
 import { FREE_PART_SECONDS, PLAN_LIMITS, UPLOAD_PRO_MESSAGE } from "@/lib/plan-limits";
 import PartUpsell from "@/components/PartUpsell";
+import VodWindowPicker from "@/components/VodWindowPicker";
+import { windowShortcut } from "@/lib/vod-window";
 import { AUDIO_ONLY_MESSAGE } from "@/lib/vod-probe";
 import ResultsUpsell from "@/components/ResultsUpsell";
 import { MONTHLY_PRICE_USD } from "@/lib/pricing";
@@ -166,6 +168,8 @@ export default function AnalyzePanel() {
   const submittedPartTotal = useRef<number | null>(null);
   /** The link a free person chose to clip only the first 2 hours of (see FREE_PART_SECONDS in lib/plan-limits.ts). */
   const [firstPartFor, setFirstPartFor] = useState<string | null>(null);
+  /** The part of an over-long video a Pro person picked on the bar (reset with each new link). */
+  const [proWindow, setProWindow] = useState<{ start: number; end: number } | null>(null);
   const [probeRevision, setProbeRevision] = useState(0);
   const [keyword, setKeyword] = useState("");
   // "auto" reads the video's title and picks Gaming or IRL; a pinned choice is always respected.
@@ -204,10 +208,15 @@ export default function AnalyzePanel() {
   const animateHint = !urlFocused && url === "" && !loading && !reduceMotion;
   // Full estimate = VOD length cost (probed) + clip count cost.
   const firstPart = firstPartFor === url && !!planBlock && !isPro;
+  // Pro and a video longer than the plan's length: the bar picks which part to clip (the middle until they move it).
+  const proCapSeconds = PLAN_LIMITS.pro.twitch;
+  const windowOffered = inputMode === "url" && isPro && !!planBlock && previewDuration !== null && previewDuration > proCapSeconds;
+  const activeWindow = windowOffered ? (proWindow ?? windowShortcut("middle", previewDuration!, proCapSeconds)) : null;
   const totalEstimate = firstPart ? estimateSparks(FREE_PART_SECONDS) + CLIP_COUNT_COST[clipCount]
+    : activeWindow ? estimateSparks(activeWindow.end - activeWindow.start) + CLIP_COUNT_COST[clipCount]
     : estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
   /** The ceiling shown on screen: longer videos look for more clips (the server sets the real number from the verified length). */
-  const shownClipCount = clipCountForDuration(inputMode === "file" ? uploadedFile?.durationSeconds ?? 0 : firstPart ? FREE_PART_SECONDS : previewDuration ?? 0);
+  const shownClipCount = clipCountForDuration(inputMode === "file" ? uploadedFile?.durationSeconds ?? 0 : firstPart ? FREE_PART_SECONDS : activeWindow ? activeWindow.end - activeWindow.start : previewDuration ?? 0);
   // What the screen promises: the ceiling, lowered for short videos. Wording only; the request is unchanged.
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
@@ -219,7 +228,7 @@ export default function AnalyzePanel() {
     // Counts how many free people run into the 2 hour limit (best effort, never shown).
     void trackEvent("long_video_limit", { hours: Math.round(((previewDuration ?? 0) / 3600) * 10) / 10, source: platformName(url) });
   }, [showCapPopup, url, previewDuration]);
-  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !audioOnly && (!planBlock || firstPart) && !busy && !loading && !outOfSparks && !cantAfford;
+  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !audioOnly && (!planBlock || firstPart || !!activeWindow) && !busy && !loading && !outOfSparks && !cantAfford;
 
   const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
     id: savedIds[index] ?? "", url: analyzedUrl, title: clip.title, clip_type: clip.type,
@@ -282,6 +291,7 @@ export default function AnalyzePanel() {
     setPreviewImageFailed(false);
     setEstimateError(null);
     setPlanBlock(null);
+    setProWindow(null);
     setAudioOnly(false);
     if (!VOD_URL_PATTERN.test(url)) {
       setEstimating(false);
@@ -633,7 +643,7 @@ export default function AnalyzePanel() {
     setReconnectAttempt(null);
     const requestBody = inputMode === "file" && uploadedFile
       ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType, keyword: keyword.trim() || undefined }
-      : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined, firstPartOnly: firstPart || undefined };
+      : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined, firstPartOnly: firstPart || undefined, ...(activeWindow ? { windowStart: activeWindow.start, windowSeconds: activeWindow.end - activeWindow.start } : {}) };
     let jobId = crypto.randomUUID();
     try {
       const saved = JSON.parse(localStorage.getItem("klyp-active-analysis-job") ?? "null");
@@ -1208,7 +1218,10 @@ export default function AnalyzePanel() {
                   <button type="button" onClick={() => setUrl("")} className="font-semibold underline underline-offset-2">Try another link</button>
                 </div>
               )}
-              {planBlock && !firstPart && previewDuration !== null && !estimating && (
+              {activeWindow && previewDuration !== null && !estimating && (
+                <VodWindowPicker totalSeconds={previewDuration} capSeconds={proCapSeconds} start={activeWindow.start} end={activeWindow.end} onChange={(start, end) => setProWindow({ start, end })} />
+              )}
+              {planBlock && !firstPart && !activeWindow && previewDuration !== null && !estimating && (
                 <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
                   <p className="text-sm font-semibold text-foreground">This video is {fmtTime(previewDuration)}</p>
                   <p className="text-xs leading-relaxed text-amber-100/80">{planBlock}</p>
@@ -1401,8 +1414,8 @@ export default function AnalyzePanel() {
                 </p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
-                <p className="text-xs text-foreground-muted">{firstPart ? `Analyze best part (${fmtTime(FREE_PART_SECONDS)})` : `Analyze VOD ${previewDuration ? `(${fmtTime(previewDuration)})` : ""}`}</p>
-                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{firstPart ? estimateSparks(FREE_PART_SECONDS) : estimatedSparks} Sparks</p>
+                <p className="text-xs text-foreground-muted">{firstPart ? `Analyze best part (${fmtTime(FREE_PART_SECONDS)})` : activeWindow ? `Analyze your part (${fmtTime(activeWindow.end - activeWindow.start)})` : `Analyze VOD ${previewDuration ? `(${fmtTime(previewDuration)})` : ""}`}</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{firstPart ? estimateSparks(FREE_PART_SECONDS) : activeWindow ? estimateSparks(activeWindow.end - activeWindow.start) : estimatedSparks} Sparks</p>
               </div>
               <div className="border-l border-border pl-3 sm:pl-4">
                 <p className="text-xs text-foreground-muted">Best moments</p>

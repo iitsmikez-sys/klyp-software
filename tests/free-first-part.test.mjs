@@ -23,7 +23,7 @@ test("the server only honours it for a Free account over the limit, and charges 
     assert.ok(route.includes(piece), piece);
   }
   assert.ok(route.includes("useDiscoveryV2 || partSeconds ? null"), "a saved full transcript is never reused for a part");
-  assert.ok(route.includes("partSeconds,\n              sourceSeconds: verifiedDuration,"), "passed to the pipeline");
+  assert.ok(route.includes("partSeconds,\n              windowStart: chosenWindow?.start,\n              sourceSeconds: verifiedDuration,"), "passed to the pipeline");
 });
 
 test("the pipeline cuts the audio to the part and never records that transcript as full coverage", () => {
@@ -38,12 +38,12 @@ test("the pop-up offers the free first part and the screen then prices and sends
   assert.ok(panel.includes("const firstPart = firstPartFor === url && !!planBlock && !isPro;"));
   assert.ok(panel.includes("estimateSparks(FREE_PART_SECONDS)"));
   assert.ok(panel.includes("firstPartOnly: firstPart || undefined"));
-  assert.ok(panel.includes("(!planBlock || firstPart)"));
+  assert.ok(panel.includes("(!planBlock || firstPart || !!activeWindow)"));
   assert.ok(panel.includes('trackEvent("long_video_first_part"'));
 });
 
 test("the price summary shows the part's length and price, not the whole video's, once the free part is chosen", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes("Analyze best part (${fmtTime(FREE_PART_SECONDS)})"));
-  assert.ok(panel.includes("{firstPart ? estimateSparks(FREE_PART_SECONDS) : estimatedSparks} Sparks"));
+  assert.ok(panel.includes("{firstPart ? estimateSparks(FREE_PART_SECONDS) : activeWindow ? estimateSparks(activeWindow.end - activeWindow.start) : estimatedSparks} Sparks"));
 });

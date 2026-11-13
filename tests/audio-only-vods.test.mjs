@@ -40,7 +40,7 @@ test("Analyze refuses such a source before anything is charged, with a plain mes
 test("the page warns and keeps Find Clips off for such a link", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes("setAudioOnly(data.videoAvailable === false);"));
-  assert.ok(panel.includes("!estimateError && !audioOnly && (!planBlock || firstPart)"));
+  assert.ok(panel.includes("!estimateError && !audioOnly && (!planBlock || firstPart || !!activeWindow)"));
   assert.ok(panel.includes("{audioOnly && previewDuration !== null && !estimating && ("));
   assert.ok(panel.includes("<span>{AUDIO_ONLY_MESSAGE}</span>"));
 });
