@@ -99,3 +99,7 @@ test("checkout says plainly what is charged today and after the pass", () => {
   assert.ok(src.includes("custom_text: { submit: { message:"));
   assert.ok(src.includes("You pay $3 today for ${TRIAL_DAYS} days of Pro."));
 });
+
+test("the pricing section opens on Monthly, where the $3 pass is shown", () => {
+  assert.ok(read("components/PricingSection.tsx").includes("const [yearly, setYearly] = useState(false);"));
+});

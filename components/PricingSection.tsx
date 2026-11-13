@@ -139,7 +139,7 @@ function FeatureRow({ item }: { item: FeatureItem }) {
 /* ─── Section ─── */
 /** `trial` is set only when the 4-day pass is on (PRO_TRIAL=on); with it, the monthly Pro card offers the pass. */
 export default function PricingSection({ trial }: { trial?: { days: number; priceCents: number } }) {
-  const [yearly, setYearly] = useState(true);
+  const [yearly, setYearly] = useState(false);
   return (
     <section id="pricing" className="px-4 sm:px-6 py-24 max-w-[90rem] mx-auto w-full">
       {/* Header */}
