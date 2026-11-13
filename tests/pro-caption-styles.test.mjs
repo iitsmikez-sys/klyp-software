@@ -30,7 +30,7 @@ test("both export routes apply the rule on the server, before any rendering", ()
 });
 
 test("every caption picker shows the diamond and the Pro note", () => {
-  for (const file of ["components/CaptionTemplatePicker.tsx", "components/ClipPreview.tsx", "components/SavedClipEditor.tsx", "components/LegacySavedClipEditor.tsx", "app/(dashboard)/dashboard/settings/page.tsx"]) {
+  for (const file of ["components/CaptionTemplatePicker.tsx", "components/ClipPreview.tsx", "components/SavedClipEditor.tsx", "components/LegacySavedClipEditor.tsx"]) {
     const src = read(file);
     assert.ok(src.includes("<StyleDiamond"), file + " diamond");
     assert.ok(src.includes("<ProStyleNote"), file + " note");

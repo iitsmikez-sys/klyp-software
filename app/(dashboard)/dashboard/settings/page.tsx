@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { CAPTION_STYLES, type CaptionStyle } from "@/lib/clips";
-import { ProStyleNote, StyleDiamond } from "@/components/ProDiamond";
 import { SPARKS_ALLOWANCE, type Profile } from "@/lib/tier";
 import { useSparks } from "@/components/SparksProvider";
 import { SparkIcon } from "@/components/SparksBalance";
@@ -16,26 +14,6 @@ import { uiSoundsEnabled, setUiSoundsEnabled } from "@/lib/ui-sound";
 import VerticalLayoutEditor from "@/components/VerticalLayoutEditor";
 import type { VerticalLayoutV1 } from "@/lib/vertical-layout";
 
-const STYLE_DESCRIPTIONS: Record<CaptionStyle, string> = {
-  BOLD: "Big high-impact captions — the TikTok classic",
-  CLEAN: "Minimal, understated captions",
-  KLYP: "Branded style with the accent green keyword pop",
-  PULSE: "Yellow captions pulse in with each phrase",
-  SLIDE: "White captions slide into view",
-  SPARK: "Green words flash in one at a time",
-  BOUNCE: "Bold captions spring into place",
-  GLOW: "Soft luminous captions fade in",
-  COMIC: "Yellow comic captions pop onto the screen",
-  KEYWORD: "One word turns green as each phrase plays",
-  HYPE: "The word being said turns red, thick outline",
-  POP: "One huge word at a time in yellow, light blue or white",
-  FIRE: "Neon green word plus an emoji that matches",
-  TRICOLOR: "Active word flashes bright green and red, no emoji",
-  FOCUS: "One big neon green word at a time",
-  DUO: "One word at a time, flashing bright green or red",
-  MARKER: "White phrase with a purple box that jumps to the word being said",
-  HIGHLIGHTER: "Bold capitals with a thick outline; the word being said turns yellow",
-};
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
@@ -57,7 +35,6 @@ export default function SettingsPage() {
   const [provider, setProvider] = useState("");
   const [handle, setHandle] = useState("");
   const [handleVisible, setHandleVisibleState] = useState(true);
-  const [defaultStyle, setDefaultStyle] = useState<CaptionStyle>("BOLD");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -86,10 +63,6 @@ export default function SettingsPage() {
     }).catch(() => setLayoutMessage("Could not load your vertical layout."));
     setHandle(localStorage.getItem("klyp-handle") ?? "");
     setHandleVisibleState(isHandleVisible());
-    const storedStyle = localStorage.getItem("klyp-default-style");
-    if (storedStyle && (CAPTION_STYLES as readonly string[]).includes(storedStyle)) {
-      setDefaultStyle(storedStyle as CaptionStyle);
-    }
   }, []);
 
   const flashSaved = () => {
@@ -107,12 +80,6 @@ export default function SettingsPage() {
     const clean = value.replace(/^@/, "").replace(/[^A-Za-z0-9_]/g, "").slice(0, 25);
     setHandle(clean);
     localStorage.setItem("klyp-handle", clean);
-    flashSaved();
-  };
-
-  const updateStyle = (style: CaptionStyle) => {
-    setDefaultStyle(style);
-    localStorage.setItem("klyp-default-style", style);
     flashSaved();
   };
 
@@ -236,27 +203,6 @@ export default function SettingsPage() {
               )}
             </div>
 
-            <div>
-              <p className="text-xs font-medium text-foreground-muted mb-2">Default caption style</p>
-              <div className="grid grid-cols-3 gap-2">
-                {CAPTION_STYLES.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => updateStyle(s)}
-                    className={`relative py-2.5 rounded-lg border text-xs font-bold font-syne transition-colors ${
-                      defaultStyle === s
-                        ? "bg-accent-glow border-accent/50 text-accent"
-                        : "bg-surface-2 border-border text-foreground-muted hover:border-subtle"
-                    }`}
-                  >
-                    {s === "KLYP" ? "⚡ KLYP" : s}
-                    <StyleDiamond style={s} size={16} className="-right-1.5 -top-1.5" />
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-subtle mt-1.5">{STYLE_DESCRIPTIONS[defaultStyle]}</p>
-              <ProStyleNote style={defaultStyle} />
-            </div>
           </div>
         </Section>
 

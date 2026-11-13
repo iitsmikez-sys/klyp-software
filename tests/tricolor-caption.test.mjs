@@ -50,7 +50,6 @@ test("the editor export draws Tri-color the same way", () => {
   assert.ok(body(out[0]).includes(`{${bs}c${GREEN}}THAT`) && !ass.includes("Noto Emoji") && !ass.includes("fscx118"));
 });
 
-test("the picker and settings list Tri-color", () => {
+test("the picker lists Tri-color", () => {
   assert.ok(read("components/CaptionTemplatePicker.tsx").includes("name: 'Tri-color'"));
-  assert.ok(read("app/(dashboard)/dashboard/settings/page.tsx").includes("TRICOLOR:"));
 });
