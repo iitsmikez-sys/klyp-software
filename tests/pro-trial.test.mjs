@@ -93,3 +93,9 @@ test("the pages show the pass only when the server offers it, and name the price
   assert.ok(read("app/page.tsx").includes('trial={trialMode() === "on" ? { days: TRIAL_DAYS, priceCents: TRIAL_PRICE_CENTS } : undefined}'), "the public page shows it only when it is on");
   assert.doesNotMatch(upgrade + pricing, /free trial/i, "nothing calls it free any more");
 });
+
+test("checkout says plainly what is charged today and after the pass", () => {
+  const src = readFileSync(new URL("../app/api/stripe/checkout/route.ts", import.meta.url), "utf8");
+  assert.ok(src.includes("custom_text: { submit: { message:"));
+  assert.ok(src.includes("You pay $3 today for ${TRIAL_DAYS} days of Pro."));
+});
