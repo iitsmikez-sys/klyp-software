@@ -7,6 +7,7 @@ import Logo from "@/components/Logo";
 import PasswordInput from "@/components/PasswordInput";
 import { createClient } from "@/lib/supabase/client";
 import { CLAIM_NEXT_COOKIE, safeClaimNext } from "@/lib/claim-next";
+import { BLOCKED_SIGNUP_MESSAGE, DUPLICATE_SIGNUP_MESSAGE, isBlockedEmailDomain, isGuardRefusal } from "@/lib/signup-guards";
 
 // Supabase's wording is blunt. Say what to try next (people who joined with Google have no password).
 const friendlyLoginError = (message: string) =>
@@ -83,13 +84,20 @@ export default function LoginPage() {
         router.refresh();
       }
     } else {
+      // Throwaway email services cannot sign up (the database also refuses them; this says so before anything is sent).
+      if (isBlockedEmailDomain(email)) {
+        setError(BLOCKED_SIGNUP_MESSAGE);
+        setLoading(false);
+        return;
+      }
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
       });
       if (error) {
-        setError(error.message);
+        // The database guard refuses the same real email twice and throwaway domains; Supabase words that generically.
+        setError(isGuardRefusal(error.message) ? DUPLICATE_SIGNUP_MESSAGE : error.message);
         setLoading(false);
       } else if (data.session) {
         // Auto-confirm is on — we're already signed in, go straight to the app.
