@@ -339,3 +339,15 @@ test("rate limiter: allows the limit, refuses the next, and recovers after the w
   assert.equal(rateLimit("other", 6, 60_000, t0 + 10).ok, true);
   assert.equal(rateLimit("u", 6, 60_000, t0 + 61_000).ok, true);
 });
+
+test("the sync never grants a month of Sparks for the $3 pass: the webhook does that, with its checks", async () => {
+  const ctx = await database();
+  try {
+    const stripe = fakeStripe({ subs: [sub("sub_pass", "trialing", { ...invoice("in_pass", "subscription_create"), amount_paid: 300 })] });
+    const res = await syncUser(ctx, stripe);
+    assert.deepEqual(res.outcomes, [{ subscriptionId: "sub_pass", action: "unchanged" }]);
+    const p = await ctx.profile();
+    assert.deepEqual([p.tier, p.sparks], ["free", 60]);
+    assert.equal((await ctx.ledger()).length, 0);
+  } finally { await ctx.db.close(); }
+});

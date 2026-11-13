@@ -131,6 +131,8 @@ export async function POST(req: NextRequest) {
           quantity: 1,
         }] : []),
       ],
+      // Stripe labels the monthly line "4 days free" and cannot rename it, so say plainly under the button what is charged and when.
+      ...(trial ? { custom_text: { submit: { message: `You pay $3 today for ${TRIAL_DAYS} days of Pro. After ${TRIAL_DAYS} days your card is charged $28 a month, unless you cancel first from the Upgrade page.` } } } : {}),
       // Reuse the Stripe customer if this user subscribed before.
       ...(billing.checkoutCustomerId
         ? { customer: billing.checkoutCustomerId }

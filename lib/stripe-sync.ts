@@ -19,6 +19,7 @@
  * in step if either changes.
  */
 import { SPARKS_ALLOWANCE } from "./tier.ts";
+import { TRIAL_PRICE_CENTS } from "./pro-trial.ts";
 
 type IdOrObject = string | { id: string } | null | undefined;
 
@@ -26,6 +27,7 @@ export type InvoiceLike = {
   id: string;
   status?: string | null;
   billing_reason?: string | null;
+  amount_paid?: number | null;
 };
 
 export type SubscriptionLike = {
@@ -133,7 +135,9 @@ export async function syncUserFromStripe(opts: {
       const invoice = typeof sub.latest_invoice === "object" ? sub.latest_invoice : null;
       const eligible = invoice && invoice.status === "paid" &&
         (invoice.billing_reason === "subscription_create" || invoice.billing_reason === "subscription_cycle");
-      if (!eligible) {
+      // The first invoice of the $3 pass (trialing, $3 paid) is the webhook's to grant: it gives the 250 Sparks and runs the one-per-card check. Granting a full month here would skip both.
+      const passStart = sub.status === "trialing" && invoice?.billing_reason === "subscription_create" && invoice?.amount_paid === TRIAL_PRICE_CENTS;
+      if (!eligible || passStart) {
         outcomes.push({ subscriptionId: sub.id, action: "unchanged" });
         continue;
       }
