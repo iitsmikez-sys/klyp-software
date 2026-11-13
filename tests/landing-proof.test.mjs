@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 const landing = read("components/landing/LandingPage.tsx");
 
-test("the landing page says 100+ streamers, the same count the upgrade page uses", () => {
-  assert.match(landing, /Join <span className="font-semibold text-foreground">100\+ streamers<\/span> clipping with Klyp/);
+test("the landing page says 100+ clippers and streamers, the same count the upgrade page uses", () => {
+  assert.match(landing, /Join <span className="font-semibold text-foreground">100\+ clippers and streamers<\/span> clipping with Klyp/);
 });
 
 test("the $17 first-month line shows only when the offer is open to every new subscriber", () => {
