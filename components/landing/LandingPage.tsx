@@ -252,22 +252,21 @@ export default function LandingPage({ beforeAfter = false, firstMonthForAll = fa
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-glow border border-accent/20 mb-8">
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
               <span className="text-accent text-[13px] font-medium tracking-wide">
-                AI-powered clipping for streamers
+                AI-powered clipping for Twitch and Kick
               </span>
             </div>
           </FadeIn>
 
           <FadeIn delay={0.08}>
             <h1 className="font-geist text-5xl md:text-7xl font-bold text-white leading-[1.05] tracking-tight text-balance max-w-4xl">
-              Your best moments,{" "}
-              <span className="text-accent">ready to find</span>
+              Stop watching 6-hour VODs{" "}
+              <span className="text-accent">to find 30 seconds.</span>
             </h1>
           </FadeIn>
 
           <FadeIn delay={0.16}>
             <p className="mt-6 text-lg md:text-xl text-foreground-muted max-w-2xl text-balance leading-relaxed">
-              Paste a {YOUTUBE_ENABLED ? "YouTube or Twitch" : "Twitch or Kick"} VOD link and let Klyp suggest moments
-              you can review, save, and export.
+              Paste the link. Klyp finds the funny, wild, quotable moments, and gives you vertical clips with captions and a hook.
             </p>
           </FadeIn>
 
@@ -301,7 +300,7 @@ export default function LandingPage({ beforeAfter = false, firstMonthForAll = fa
                     <span key={color} className="inline-block h-7 w-7 rounded-full border-2 border-background" style={{ backgroundColor: color, marginLeft: i === 0 ? 0 : -8 }} />
                   ))}
                 </span>
-                <span>Join <span className="font-semibold text-foreground">100+ streamers</span> clipping with Klyp</span>
+                <span>Join <span className="font-semibold text-foreground">100+ clippers and streamers</span> clipping with Klyp</span>
               </p>
               {firstMonthForAll && (
                 <p className="rounded-full border border-accent/40 bg-accent-glow px-4 py-1.5 text-sm text-accent">
