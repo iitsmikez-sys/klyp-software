@@ -12,7 +12,7 @@
  * segment — and repeat requests are served straight off disk.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { readFile, stat } from "fs/promises";
+import { readFile, stat, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import { createHash } from "crypto";
@@ -155,6 +155,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   }
 
   const outPath = path.join(CACHE_DIR, `${thumbCacheKey(url, start, end)}.jpg`);
+  // A fresh container has no cache folder yet (uploads never create it), and ffmpeg will not create it: without this the clip failed with "Error opening output ... No such file or directory".
+  await mkdir(CACHE_DIR, { recursive: true });
 
   const serve = async () => {
     const buffer = await readFile(outPath);
