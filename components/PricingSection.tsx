@@ -235,11 +235,16 @@ export default function PricingSection({ trial }: { trial?: { days: number; pric
                         : "bg-surface-2 border border-border text-foreground hover:border-subtle"
                     }`}
                   >
-                    {plan.id === "pro" && trial && !yearly ? `Start the ${trial.days}-day pass for $${trial.priceCents / 100}` : plan.cta.label}
+                    {plan.id === "pro" && trial && !yearly ? `Start for $${trial.priceCents / 100}` : plan.cta.label}
                   </Link>
-                  {plan.cta.subtext && (
-                    <p className="text-[11px] text-foreground-muted">{plan.id === "pro" && trial && !yearly ? `$${trial.priceCents / 100} for ${trial.days} days, then $${MONTHLY_PRICE_USD}/month unless you cancel first. Card required. The $${trial.priceCents / 100} isn't refunded.` : plan.cta.subtext}</p>
-                  )}
+                  {plan.id === "pro" && trial && !yearly ? (
+                    <>
+                      <p className="text-[12px] text-foreground-muted">{trial.days} days of full Pro, then ${MONTHLY_PRICE_USD}/month unless you cancel.</p>
+                      <p className="text-[11px] text-subtle">Card required. The ${trial.priceCents / 100} isn't refunded.</p>
+                    </>
+                  ) : plan.cta.subtext ? (
+                    <p className="text-[11px] text-foreground-muted">{plan.cta.subtext}</p>
+                  ) : null}
                 </div>
               </div>
             </FadeIn>

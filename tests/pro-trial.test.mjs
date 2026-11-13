@@ -78,13 +78,14 @@ test("the used-passes table keeps both keys and only the server can read it", ()
 
 test("the pages show the pass only when the server offers it, and name the price, the card, the days, the $28 after, and that the $3 is not refunded", () => {
   const upgrade = read("app/(dashboard)/dashboard/upgrade/page.tsx");
-  assert.ok(upgrade.includes("Start the ${trial.days}-day pass for $${trial.priceCents / 100}"));
+  assert.ok(upgrade.includes("`Start for $${trial.priceCents / 100}`"));
   assert.ok(upgrade.includes("Card required."));
-  assert.ok(upgrade.includes("from day {trial.days}, unless you cancel before then."));
+  assert.ok(upgrade.includes("{trial.days} days of full Pro, then ${MONTHLY_PRICE_USD}/month unless you cancel."));
   assert.ok(upgrade.includes("isn't refunded."));
   const pricing = read("components/PricingSection.tsx");
-  assert.ok(pricing.includes("Start the ${trial.days}-day pass for $${trial.priceCents / 100}"));
-  assert.ok(pricing.includes("unless you cancel first. Card required."));
+  assert.ok(pricing.includes("`Start for $${trial.priceCents / 100}`"));
+  assert.ok(pricing.includes("{trial.days} days of full Pro, then ${MONTHLY_PRICE_USD}/month unless you cancel."));
+  assert.ok(pricing.includes("Card required. The ${trial.priceCents / 100} isn't refunded."), "the small print is always shown");
   assert.ok(pricing.includes("isn't refunded."));
   assert.ok(read("app/page.tsx").includes('trial={trialMode() === "on" ? { days: TRIAL_DAYS, priceCents: TRIAL_PRICE_CENTS } : undefined}'), "the public page shows it only when it is on");
   assert.doesNotMatch(upgrade + pricing, /free trial/i, "nothing calls it free any more");
