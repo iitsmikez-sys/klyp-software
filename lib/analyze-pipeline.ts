@@ -567,7 +567,9 @@ After your main list, fill "also_consider" with the next-best moments that score
           (chatSpikes ? `\n\n${formatSpikesForPrompt(chatSpikes)}` : ""),
       },
     ],
-    output_config: { format: zodOutputFormat(clipAnalysisSchemaForContentType(contentType)) },
+    // effort "medium" limits how long the model thinks before it answers (the default, "high", spent up to the whole 16,000 on a
+    // long dialogue-heavy VOD and left no room to write the list). Thinking counts against max_tokens and costs output-token prices.
+    output_config: { format: zodOutputFormat(clipAnalysisSchemaForContentType(contentType)), effort: "medium" },
   } as Anthropic.MessageCreateParamsNonStreaming;
   // Reserve against the request's REAL input size when the API can count it (the counting call is
   // free), never more than the old byte-based bound, and fall back to that bound if counting fails.
@@ -577,7 +579,7 @@ After your main list, fill "also_consider" with the next-best moments that score
     maxOutputTokens: request.max_tokens,
     countInputTokens: async () => (await client.messages.countTokens({
       model: request.model, system: request.system, messages: request.messages,
-      thinking: request.thinking, output_config: request.output_config,
+      thinking: request.thinking, output_config: { format: request.output_config?.format },
     }, { timeout: 20_000, maxRetries: 1 })).input_tokens,
   });
   if (costRunId) console.log(`[analysis-budget] select reservation ${selectQuote.microUsd} micro-USD (${selectQuote.basis})`);

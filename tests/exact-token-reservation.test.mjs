@@ -69,7 +69,9 @@ test("the selection call is reserved from the API's token count of the exact req
   assert.equal(body.system, sent.system);
   assert.deepEqual(body.messages, sent.messages);
   assert.deepEqual(body.thinking, sent.thinking);
-  assert.deepEqual(body.output_config, sent.output_config);
+  // Effort only limits thinking and does not change the input size, so the count is taken with the schema alone.
+  assert.equal(JSON.stringify(body.output_config), JSON.stringify({ format: sent.output_config.format }));
+  assert.equal(sent.output_config.effort, "medium");
   assert.deepEqual(h.seen.reservations, [["select", core.quoteTextMessageFromTokens("claude-opus-4-8", 1_000, 16_000)]]);
   assert.equal(h.seen.counted[0].options.timeout, 20_000);
 });
