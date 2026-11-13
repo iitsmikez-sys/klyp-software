@@ -61,6 +61,9 @@ test("the webhook recognises the $3 first invoice, gives 250 Sparks for it and 5
   assert.ok(hook.includes("p_balance: balance ?? SPARKS_ALLOWANCE[tier],"), "no balance override means the full allowance");
   assert.ok(hook.includes('(await claimTrialKeys(trialUserId, keys)) === "used"'));
   assert.ok(hook.includes("await getStripe().subscriptions.cancel(subscriptionId);"));
+  assert.ok(hook.includes("await refundRefusedPass(invoice.id);"), "the $3 of a refused repeat is given back");
+  assert.ok(hook.includes("stripe.invoicePayments.list({ invoice: invoiceId, limit: 5 })"));
+  assert.ok(hook.includes("[stripe] REFUND NEEDED BY HAND"), "a failed refund is logged loudly and never breaks the event");
   assert.ok(hook.indexOf("claimTrialKeys(trialUserId, keys)") < hook.indexOf("trialStart ? TRIAL_SPARKS : undefined"), "the repeat check comes before the grant");
   assert.ok(hook.includes("cardTrialKey(fingerprint)"));
 });
