@@ -19,7 +19,6 @@ export const FREE_STYLE_NAMES: Partial<Record<CaptionStyle, string>> = {
 const names = FREE_CAPTION_STYLES.map((style) => FREE_STYLE_NAMES[style] ?? style);
 const freeCaptionList = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 const freeHours = PLAN_LIMITS.free.youtube / 3600;
-const proHours = PLAN_LIMITS.pro.youtube / 3600;
 
 export const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: `${SPARKS_ALLOWANCE.free} Sparks every 30 days` },
@@ -43,7 +42,7 @@ export const PRO_FEATURES: { text: string; pro?: boolean; soon?: boolean }[] = [
   { text: "All export formats: 9:16, Original, 1:1 and 16:9" },
   { text: "Raw exports: edit clips yourself in CapCut" },
   { text: "Streamer handle overlay on exports" },
-  { text: `Longer videos from ${YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"} (up to ${proHours} hours), plus direct video uploads` },
+  { text: `Longer videos from ${YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"}, plus direct video uploads` },
   { text: "Automatic clipping when your Twitch stream ends" },
   { text: "Twitch chat spike detection" },
   { text: "Download all clips as ZIP" },
