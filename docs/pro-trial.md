@@ -7,7 +7,7 @@ The pass is built and OFF. Nothing changes for visitors until you do the steps b
 - After 4 days the card is charged **$28** (the normal Pro month, with the full 500 Sparks), unless they cancel before day 4.
 - 250 Sparks during the 4 days. The full 500 arrive with the first $28 payment.
 - Only people who never subscribed before. One pass per account, per real email (Gmail dots and +tags are ignored), and per card.
-- A second pass on the same email or card is cancelled right away. (The $3 for a refused repeat is NOT taken back automatically: if you see `[stripe] trial refused` in the logs, refund that $3 in Stripe.)
+- A second pass on the same email or card is cancelled right away, and its $3 is refunded automatically. (If the refund ever fails, the logs say `[stripe] REFUND NEEDED BY HAND`: refund that $3 in Stripe.)
 - **Ad visitors get the $17 first month instead** (the offer that already exists), so nobody sees both offers. The pass is for everyone else who is new.
 
 ## Steps, in order
@@ -24,4 +24,4 @@ Your ad link (`klyp.world/?offer=17`) already gives the $17 first month, so the 
 - Passes started, and how many pay the $28 after day 4. The $3 pass earns more than the $17 offer only if more than half of the people who start it go on to pay the $28.
 - Cost: each pass can use up to 250 Sparks, about $1 to $3. The $3 covers it.
 - In the logs, `[stripe] trial refused` means a repeat card or email was stopped.
-- A person whose repeat pass is refused is left on the Free plan with no message.
+- A person whose repeat pass is refused is left on the Free plan with no message, but they get their $3 back.

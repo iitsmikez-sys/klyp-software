@@ -102,6 +102,25 @@ async function grantTier(
   if (error) throw new Error(`Supabase Sparks grant failed: ${error.message}`);
 }
 
+/**
+ * Give the pass's $3 back when a repeat pass is refused (same email or same card): the person paid at checkout before Klyp could check.
+ * It never throws: a failed refund must not make Stripe retry the whole event, so it is logged loudly for a hand refund instead.
+ */
+async function refundRefusedPass(invoiceId: string) {
+  try {
+    const stripe = getStripe();
+    const payments = await stripe.invoicePayments.list({ invoice: invoiceId, limit: 5 });
+    const paid = payments.data.find((p) => p.status === "paid");
+    const paymentIntent = paid?.payment?.payment_intent;
+    const intentId = typeof paymentIntent === "string" ? paymentIntent : paymentIntent?.id;
+    if (!intentId) throw new Error("no payment found on the invoice");
+    await stripe.refunds.create({ payment_intent: intentId, reason: "requested_by_customer", metadata: { why: "repeat 4-day pass refused" } }, { idempotencyKey: `pass-refund-${invoiceId}` });
+    console.warn(`[stripe] repeat pass refused and its $3 refunded (invoice ${invoiceId})`);
+  } catch (err) {
+    console.error(`[stripe] REFUND NEEDED BY HAND: a repeat pass was refused but its $3 could not be refunded (invoice ${invoiceId}): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /** "year" for a yearly subscription, otherwise "month" (also when the price is not visible on the object). */
 function intervalOf(sub: { items?: { data?: Array<{ price?: { recurring?: { interval?: string } | null } }> } }): "month" | "year" {
   return sub.items?.data?.[0]?.price?.recurring?.interval === "year" ? "year" : "month";
@@ -210,6 +229,7 @@ export async function POST(req: NextRequest) {
               if ((await claimTrialKeys(trialUserId, keys)) === "used") {
                 console.warn(`[stripe] trial refused: this email or card already had a free trial (subscription ${subscriptionId})`);
                 await getStripe().subscriptions.cancel(subscriptionId);
+                await refundRefusedPass(invoice.id);
                 break;
               }
             }
