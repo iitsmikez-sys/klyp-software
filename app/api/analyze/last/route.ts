@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { planOf } from "@/lib/plan-limits";
 import { resultsCutoffIso, resultsDaysLeft, resultsKeptDays } from "@/lib/results-retention";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { sourceKeyToUrl } from "@/lib/vod-source";
 
 export const runtime = "nodejs";
 export const OPTIONS = corsPreflight;
@@ -29,7 +30,9 @@ export async function GET(req: NextRequest) {
   const clips = row?.result?.clips;
   // An analysis that found nothing has nothing to bring back.
   if (!row || !Array.isArray(clips) || clips.length === 0) return withCors(NextResponse.json({ job: null }));
-  const url = row.request_payload?.url || (row.request_payload?.uploadId ? `upload:${row.request_payload.uploadId}` : "");
+  // An analysis stores only the video's identity (source_key), not the link that was pasted, so request_payload.url is never there. Rebuild
+  // the link from the key: without one, every download from a reopened analysis was refused as "not in your saved clips".
+  const url = row.request_payload?.url || (row.request_payload?.uploadId ? `upload:${row.request_payload.uploadId}` : "") || sourceKeyToUrl(row.source_key);
   return withCors(NextResponse.json({ job: {
     id: row.id, url, sourceKey: row.source_key, completedAt: row.updated_at,
     keptDays: resultsKeptDays(isPro), daysLeft: resultsDaysLeft(row.updated_at, isPro),

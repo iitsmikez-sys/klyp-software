@@ -24,3 +24,17 @@ export function vodSourceKey(url: string, uploadId?: string): string | null {
   }
   return null;
 }
+
+/**
+ * The reverse of vodSourceKey: a link that works for the clip routes, rebuilt from the saved identity of a VOD. An analysis stores
+ * only this key (not the link the person pasted), so anything that has to hand a link back (the "last analysis" banner) rebuilds it here.
+ */
+export function sourceKeyToUrl(key: string | null | undefined): string {
+  const match = /^(youtube|twitch|kick|upload):(.+)$/.exec(key ?? "");
+  if (!match) return "";
+  const [, kind, id] = match;
+  if (kind === "upload") return /^[-\w]{1,100}$/.test(id) ? `upload:${id}` : "";
+  if (kind === "twitch") return /^\d+$/.test(id) ? `https://www.twitch.tv/videos/${id}` : "";
+  if (kind === "kick") return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? `https://kick.com/video/${id}` : "";
+  return /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://www.youtube.com/watch?v=${id}` : "";
+}
