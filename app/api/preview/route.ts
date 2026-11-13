@@ -13,7 +13,7 @@
  * Repeat previews of the same range hit the segment cache.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, mkdir } from "fs/promises";
 import path from "path";
 import { resolveBin, run, FFMPEG_THREADS } from "@/lib/bin";
 import { resolveSourceSegment, isUploadRef, CACHE_DIR } from "@/lib/video-cache";
@@ -50,6 +50,8 @@ async function cutPreview(
     CACHE_DIR,
     `preview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`
   );
+  // A fresh container has no cache folder yet (uploads never create it), and ffmpeg will not create it: without this the clip failed with "Error opening output ... No such file or directory".
+  await mkdir(CACHE_DIR, { recursive: true });
 
   await run(resolveBin("ffmpeg"), [
     "-ss", String(startSeconds),

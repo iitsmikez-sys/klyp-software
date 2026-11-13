@@ -130,6 +130,8 @@ async function cutClip(
     CACHE_DIR,
     `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`
   );
+  // A fresh container has no cache folder yet (uploads never create it), and ffmpeg will not create it: without this the clip failed with "Error opening output ... No such file or directory".
+  await mkdir(CACHE_DIR, { recursive: true });
 
   // Build video filter chain: framing → imported picture → captions → hook → handle → watermark.
   // Raw mode skips the chain entirely: original
