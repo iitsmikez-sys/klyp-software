@@ -6,7 +6,7 @@ const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").re
 const landing = read("components/landing/LandingPage.tsx");
 
 test("the landing page speaks to clippers and streamers, with the pain of scrubbing long VODs", () => {
-  assert.ok(landing.includes("For clippers and streamers"));
+  assert.ok(landing.includes("AI-powered clipping for Twitch and Kick"));
   assert.ok(landing.includes("Stop watching 6-hour VODs"));
   assert.ok(landing.includes("to find 30 seconds."));
   assert.ok(landing.includes("Paste the link. Klyp finds the funny, wild, quotable moments, and gives you vertical clips with captions and a hook."));

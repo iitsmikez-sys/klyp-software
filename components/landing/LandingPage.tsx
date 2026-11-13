@@ -252,7 +252,7 @@ export default function LandingPage({ beforeAfter = false, firstMonthForAll = fa
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-glow border border-accent/20 mb-8">
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
               <span className="text-accent text-[13px] font-medium tracking-wide">
-                For clippers and streamers
+                AI-powered clipping for Twitch and Kick
               </span>
             </div>
           </FadeIn>
