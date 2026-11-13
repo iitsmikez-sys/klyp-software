@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
-import { CAPTION_STYLES, CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, resolveExportFormat } from "@/lib/clips";
+import { CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, resolveExportFormat } from "@/lib/clips";
 import { detectContentType } from "@/lib/detect-content-type";
 import {
   MIN_ANALYZE_COST,
@@ -521,12 +521,8 @@ export default function AnalyzePanel() {
       setStageStartedAt(null);
       setClips(event.clips);
       setPartRunTotal(submittedPartTotal.current);
-      // Default each clip to the user's preferred style (Settings → Clip Defaults).
-      const stored = localStorage.getItem("klyp-default-style");
-      const defaultStyle: CaptionStyle =
-        stored && (CAPTION_STYLES as readonly string[]).includes(stored)
-          ? (stored as CaptionStyle)
-          : "BOLD";
+      // Every clip starts on Bold; the style is changed per clip (there is no default-style setting any more).
+      const defaultStyle: CaptionStyle = "BOLD";
       setClipStyles(Object.fromEntries(event.clips.map((_, i) => [i, defaultStyle])));
       // Default: first hook selected, 9:16 vertical.
       setExported((prev) => {

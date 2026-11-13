@@ -50,9 +50,8 @@ test("the editor export draws Focus the same way, one word per caption", () => {
   assert.ok(out.some((l) => body(l).includes(`{${bs}c${GREEN}${bs}fscx125${bs}fscy125}POSSIBLE`)));
 });
 
-test("the picker and settings list Focus", () => {
+test("the picker lists Focus", () => {
   assert.ok(read("components/CaptionTemplatePicker.tsx").includes("name: 'Focus'"));
   assert.ok(read("components/CaptionTemplatePicker.tsx").includes("<em>SECOND</em>"));
-  assert.ok(read("app/(dashboard)/dashboard/settings/page.tsx").includes("FOCUS:"));
   assert.ok(read("lib/caption-preview.ts").includes("activeWordScale"));
 });

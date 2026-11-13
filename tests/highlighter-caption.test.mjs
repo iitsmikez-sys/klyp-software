@@ -62,12 +62,11 @@ test("Highlighter is the default look for ready-to-post clips, with the white bo
   assert.equal(resolveCaptionStyle(READY_CLIP_STYLE, false), READY_CLIP_STYLE, "free accounts get the default as it is, not Bold");
 });
 
-test("the picker, settings, previews and preview painter all know about Highlighter", () => {
+test("the picker, previews and preview painter all know about Highlighter", () => {
   const picker = read("components/CaptionTemplatePicker.tsx");
   assert.ok(picker.includes("name: 'Highlighter'") && picker.includes("'PULSE', 'HIGHLIGHTER', 'HYPE'"));
   assert.ok(picker.includes("style === 'HIGHLIGHTER' ? <>WAIT, <em>ARE</em> YOU GUYS</>"));
   assert.ok(read("components/clip-timeline-editor.css").includes("data-style=highlighter"));
-  assert.ok(read("app/(dashboard)/dashboard/settings/page.tsx").includes("HIGHLIGHTER:"));
   assert.ok(read("components/ClipPreview.tsx").includes("HIGHLIGHTER:"));
   const preview = read("lib/caption-preview.ts");
   assert.ok(preview.includes("isBoxStyle(style) && wordOffset + index === activeWord"));

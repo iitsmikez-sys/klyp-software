@@ -62,10 +62,9 @@ test("the editor export draws Duo the same way", () => {
   assert.ok(body(out[0]).includes("SECOND"));
 });
 
-test("the picker, settings and previews know about Duo", () => {
+test("the picker and previews know about Duo", () => {
   assert.ok(read("components/CaptionTemplatePicker.tsx").includes("name: 'Duo'"));
   assert.ok(read("components/CaptionTemplatePicker.tsx").includes("'FOCUS', 'DUO'"));
-  assert.ok(read("app/(dashboard)/dashboard/settings/page.tsx").includes("DUO:"));
   assert.ok(read("components/ClipPreview.tsx").includes("DUO:"));
   assert.ok(read("components/VerticalLayoutPreview.tsx").includes("activeCaption.start_ms") && read("components/VerticalLayoutPreview.tsx").includes("active.startMs"));
   assert.ok(read("lib/caption-preview.ts").includes("cue.startMs"));

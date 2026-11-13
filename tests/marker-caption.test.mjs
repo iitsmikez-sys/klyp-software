@@ -73,10 +73,9 @@ test("the plain export path (non-editor) draws Marker too", () => {
   assert.ok(ass.includes("Style: Default,Poppins ExtraBold,82"));
 });
 
-test("the picker, settings, previews and preview painter know about Marker", () => {
+test("the picker, previews and preview painter know about Marker", () => {
   assert.ok(read("components/CaptionTemplatePicker.tsx").includes("name: 'Marker'"));
   assert.ok(read("components/CaptionTemplatePicker.tsx").includes("'DUO', 'MARKER'"), "Marker stays last in the picker");
-  assert.ok(read("app/(dashboard)/dashboard/settings/page.tsx").includes("MARKER:"));
   assert.ok(read("components/ClipPreview.tsx").includes("MARKER:"));
   const preview = read("lib/caption-preview.ts");
   assert.ok(preview.includes("paintMarkerBox(ctx, widths[index], style)") && preview.includes("boxColorFor(style).css"));
