@@ -11,6 +11,7 @@ import { useClipExports } from "./useClipExports";
 import { downloadExport } from "@/lib/clip-export";
 import { useSparks } from "./SparksProvider";
 import DashboardUpsell from "./DashboardUpsell";
+import RawProModal from "./RawProModal";
 
 const LIMIT = 4;
 export default function SavedClips() {
@@ -19,7 +20,7 @@ export default function SavedClips() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   // balance is null until the account has loaded, so a Pro member never sees the free-plan line flash by.
   const { balance, tier } = useSparks();
-  const { rawDownloads, downloadRaw, readyDownloads, downloadReady } = useRawClipDownloads();
+  const { rawDownloads, downloadRaw, readyDownloads, downloadReady, rawLockOpen, closeRawLock } = useRawClipDownloads();
   const { exports, createClip, invalidateClip } = useClipExports();
   useEffect(() => {
     let active = true;
@@ -63,5 +64,6 @@ export default function SavedClips() {
       onDownloadClip={() => { const ready = exports[previewClip.id]; if (ready) downloadExport(ready, previewClip.id); }}
       rawState={rawDownloads[previewClip.id]} onDownloadRaw={() => void downloadRaw(previewClip)}
       readyState={readyDownloads[previewClip.id]} onDownloadReady={() => void downloadReady(previewClip)} />}
+    {rawLockOpen && <RawProModal onClose={closeRawLock} />}
   </section>;
 }

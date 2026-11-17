@@ -25,6 +25,8 @@ import type { EditorExportSettings } from "@/lib/editor-export-settings";
 import { resultsChargeMessage } from "@/lib/results-summary";
 import resultsStyles from "./ClipResults.module.css";
 import ProGateModal from "./ProGateModal";
+import RawProModal from "./RawProModal";
+import { useRawLocked } from "./useRawLocked";
 import { isBestOfResult } from "@/lib/clip-extras";
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent, type EventProps } from "@/lib/track";
@@ -170,6 +172,9 @@ export default function AnalyzePanel() {
   const [firstPartFor, setFirstPartFor] = useState<string | null>(null);
   /** The part of an over-long video a Pro person picked on the bar (reset with each new link). */
   const [proWindow, setProWindow] = useState<{ start: number; end: number } | null>(null);
+  /** A Free person tapped Download Raw (a Pro feature): show the pop-up instead of downloading. */
+  const rawLocked = useRawLocked();
+  const [rawLockOpen, setRawLockOpen] = useState(false);
   const [probeRevision, setProbeRevision] = useState(0);
   const [keyword, setKeyword] = useState("");
   // "auto" reads the video's title and picks Gaming or IRL; a pinned choice is always respected.
@@ -1564,7 +1569,7 @@ export default function AnalyzePanel() {
               rawSeconds={downloading === i ? downloadElapsed : 0} exportKind={downloadKind}
               onReadyExport={() => void downloadClip(clip, i, undefined, false, true)}
               onPreview={() => { if (!busy) setPreviewIndex(i); }} onCustomize={() => void editClip(i)}
-              onRawExport={() => void downloadClip(clip, i, undefined, true)}
+              onRawExport={() => { if (rawLocked) setRawLockOpen(true); else void downloadClip(clip, i, undefined, true); }}
               onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} />)}
           </div>
           {partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}
@@ -1575,6 +1580,7 @@ export default function AnalyzePanel() {
       )}
 
       {proGateOpen && <ProGateModal onClose={() => setProGateOpen(false)} />}
+      {rawLockOpen && <RawProModal onClose={() => setRawLockOpen(false)} />}
 
       {/* ── Preview modal ── */}
       {previewIndex !== null && clips && (
@@ -1591,7 +1597,7 @@ export default function AnalyzePanel() {
           onKeepClip={() => keepClip(previewIndex)} savingClip={saving !== null} saveError={downloadError}
           onClose={() => setPreviewIndex(null)}
           onEditClip={() => void editClip(previewIndex)}
-          onDownloadRaw={() => void downloadClip(clips[previewIndex], previewIndex, undefined, true)}
+          onDownloadRaw={() => { if (rawLocked) setRawLockOpen(true); else void downloadClip(clips[previewIndex], previewIndex, undefined, true); }}
           rawWorking={downloading === previewIndex && downloadKind === "raw"}
           readyWorking={downloading === previewIndex && downloadKind === "ready"}
           onDownloadReady={() => void downloadClip(clips[previewIndex], previewIndex, undefined, false, true)}

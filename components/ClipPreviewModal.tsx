@@ -28,6 +28,8 @@ import SavedClipEditor from "./SavedClipEditor";
 import { defaultClipEditDraft, readClipEditDraft, type ClipEditDraftV1 } from "@/lib/clip-edit-draft";
 import { clipPreviewPlayback } from "@/lib/clip-preview-state";
 import type { RawDownloadState } from "./useRawClipDownloads";
+import { useRawLocked } from "./useRawLocked";
+import RawLockBadge from "./RawLockBadge";
 import { processingFetch } from "@/lib/processing-api";
 import { peekClipThumbnail, loadClipThumbnail } from "@/lib/clip-thumbnails";
 import { playOpenSound } from "@/lib/ui-sound";
@@ -86,6 +88,7 @@ export default function ClipPreviewModal({
   initialDetailsOpen = false,
   onClipSaved,
 }: Props) {
+  const rawLocked = useRawLocked();
   const [sourceStart, setSourceStart] = useState(clip.start_seconds);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
@@ -473,7 +476,7 @@ export default function ClipPreviewModal({
           <button type="button" onClick={onDownloadRaw} disabled={!onDownloadRaw || rawState?.status === "working"}
             className="min-h-9 self-center rounded-lg border border-border px-3 text-xs font-medium text-foreground-muted hover:border-accent/50 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
             {rawState?.status === "working" ? (rawState.received !== undefined ? "Downloading " + rawState.received + "%" : "Preparing raw " + rawState.seconds + "s")
-              : rawState?.status === "ready" ? "Download Raw Again" : "Download Raw"}
+              : rawState?.status === "ready" ? "Download Raw Again" : rawLocked ? <RawLockBadge /> : "Download Raw"}
           </button>
           {!isUpload && <a href={vodLinkAt(clip.url, clip.start_seconds)} target="_blank" rel="noopener noreferrer"
             className="self-center px-2 py-2 text-sm text-foreground-muted hover:text-accent">Watch Original ↗</a>}

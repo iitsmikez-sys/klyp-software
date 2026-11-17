@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import ClipThumbnail from "@/components/ClipThumbnail";
 import ClipPreviewModal from "@/components/ClipPreviewModal";
 import { useRawClipDownloads } from "@/components/useRawClipDownloads";
+import RawProModal from "@/components/RawProModal";
 import { useClipExports } from "@/components/useClipExports";
 import { downloadExport } from "@/lib/clip-export";
 import { type SavedClip, TYPE_STYLES, TYPE_BAR_COLORS, fmtTime, clipDuration } from "@/lib/clip-ui";
@@ -119,7 +120,7 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState<PeriodKey>("all"); // default: All time
   const [showAllTypes, setShowAllTypes] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const { rawDownloads, downloadRaw, readyDownloads, downloadReady } = useRawClipDownloads();
+  const { rawDownloads, downloadRaw, readyDownloads, downloadReady, rawLockOpen, closeRawLock } = useRawClipDownloads();
   const { exports, createClip, invalidateClip } = useClipExports();
 
   useEffect(() => {
@@ -415,6 +416,7 @@ export default function AnalyticsPage() {
           readyState={readyDownloads[previewClip.id]} onDownloadReady={() => void downloadReady(previewClip)}
         />
       )}
+      {rawLockOpen && <RawProModal onClose={closeRawLock} />}
     </div>
   );
 }

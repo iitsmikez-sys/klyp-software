@@ -38,6 +38,8 @@ import {
 } from "@/lib/clip-ui";
 import type { ExportState } from "@/lib/clip-export";
 import { userFacingClipError } from "@/lib/analyze-errors";
+import { useRawLocked } from "./useRawLocked";
+import RawLockBadge from "./RawLockBadge";
 
 /** Give a first-time source-VOD download plenty of room, but fail loudly eventually. */
 const PREVIEW_TIMEOUT_MS = 6 * 60_000;
@@ -86,6 +88,7 @@ export default function ResultsClipPreviewModal({
   initialDetailsOpen = false,
   draftId, initialCaptionStyle, onSettingsChange, onKeepClip, savingClip, saveError, initialSettings, onExportStateChange,
 }: Props) {
+  const rawLocked = useRawLocked();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [finishedLook, setFinishedLook] = useState(true);
@@ -436,7 +439,7 @@ export default function ResultsClipPreviewModal({
           </button>
           <button type="button" onClick={onDownloadRaw} disabled={!onDownloadRaw || rawWorking || readyWorking}
             className="rounded-lg border border-border px-3 py-1.5 self-center text-xs font-medium text-foreground-muted hover:border-accent/50 hover:text-foreground disabled:opacity-50">
-            {rawWorking ? `Preparing raw ${rawSeconds}s…` : "Download Raw"}
+            {rawWorking ? `Preparing raw ${rawSeconds}s…` : rawLocked ? <RawLockBadge /> : "Download Raw"}
           </button>
           {!isUpload && <a href={vodLinkAt(clip.url, clip.start_seconds)} target="_blank" rel="noopener noreferrer"
             className="self-center px-2 py-2 text-sm text-foreground-muted hover:text-accent">Watch Original ↗</a>}

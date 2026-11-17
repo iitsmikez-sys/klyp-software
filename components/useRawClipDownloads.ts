@@ -7,6 +7,7 @@ import { downloadExport, exportFilename, type ExportState } from "@/lib/clip-exp
 import type { SavedClip } from "@/lib/clip-ui";
 import { readyClipRequest } from "@/lib/ready-clip";
 import { getStoredHandle } from "@/lib/streamer-handle";
+import { useRawLocked } from "./useRawLocked";
 
 export type RawDownloadState = Exclude<ExportState, { status: "working" }> | { status: "working"; seconds: number; received?: number };
 
@@ -15,6 +16,9 @@ export type RawDownloadState = Exclude<ExportState, { status: "working" }> | { s
  * renders the finished "ready clip" (lib/ready-clip.ts), kept in its own state so the two never mix.
  */
 export function useRawClipDownloads() {
+  const rawLocked = useRawLocked();
+  /** A Free person tapped Download Raw: show the Pro pop-up (the server refuses a Free raw download too). */
+  const [rawLockOpen, setRawLockOpen] = useState(false);
   const [rawStates, setRawStates] = useState<Record<string, RawDownloadState>>({});
   const [readyStates, setReadyStates] = useState<Record<string, RawDownloadState>>({});
   const rawCache = useRef<Record<string, string>>({});
@@ -77,7 +81,8 @@ export function useRawClipDownloads() {
     }
   };
   return {
-    rawDownloads: rawStates, downloadRaw: (clip: SavedClip) => download(clip, "raw"),
+    rawDownloads: rawStates, downloadRaw: (clip: SavedClip) => { if (rawLocked) { setRawLockOpen(true); return; } return download(clip, "raw"); },
+    rawLockOpen, closeRawLock: () => setRawLockOpen(false),
     readyDownloads: readyStates, downloadReady: (clip: SavedClip) => download(clip, "ready"),
   };
 }
