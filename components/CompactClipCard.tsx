@@ -8,6 +8,8 @@ import type { RawDownloadState } from "./useRawClipDownloads";
 import { type SavedClip, fmtTime, platformName, footageGone, vodLinkAt } from "@/lib/clip-ui";
 import { backupState, backupTone } from "@/lib/clip-backup-state";
 import { isMediaExpired } from "@/lib/clip-expiry";
+import { useRawLocked } from "./useRawLocked";
+import RawLockBadge from "./RawLockBadge";
 
 export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawState, onDownloadReady, readyState, more, compact = false }: {
   clip: SavedClip;
@@ -20,6 +22,7 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
   compact?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const rawLocked = useRawLocked();
   const gone = footageGone(clip);
   const backup = backupState(isMediaExpired(clip) ? "expired" : clip.archive_status, clip.url);
   const rawLabel = rawState?.status === "working"
@@ -55,7 +58,7 @@ export default function CompactClipCard({ clip, onPreview, onDownloadRaw, rawSta
       <button type="button" onClick={onDownloadReady} disabled={gone || !onDownloadReady || readyState?.status === "working"} title={gone ? "Source footage is unavailable" : undefined} className={`w-full rounded-lg bg-accent px-2 font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${compact ? "min-h-9 text-xs" : "min-h-10 text-sm"}`}>{gone ? "Footage unavailable" : readyLabel}</button>
       <div className="mt-2 grid grid-cols-2 gap-2">
       <Link href={`/dashboard/clips/${clip.id}/edit`} className={`flex items-center justify-center rounded-lg border border-border px-2 text-center font-semibold text-foreground-muted transition-colors hover:border-subtle hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent min-h-8 text-xs`}>Edit</Link>
-      <button type="button" onClick={onDownloadRaw} disabled={gone || rawState?.status === "working"} title={gone ? "Source footage is unavailable" : undefined} className={`rounded-lg border border-border px-2 font-medium text-foreground-muted transition-colors hover:border-subtle hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 min-h-8 text-xs`}>{gone ? "Footage unavailable" : rawLabel}</button>
+      <button type="button" onClick={onDownloadRaw} disabled={gone || rawState?.status === "working"} title={gone ? "Source footage is unavailable" : rawLocked ? "Raw clips with no watermark are a Pro feature" : undefined} className={`rounded-lg border ${rawLocked ? "border-dashed border-accent/60" : "border-border"} px-2 font-medium text-foreground-muted transition-colors hover:border-subtle hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 min-h-8 text-xs`}>{gone ? "Footage unavailable" : rawLocked ? <RawLockBadge label="Raw" /> : rawLabel}</button>
       </div>
     </div>
     {readyState?.status === "working" && <p role="status" className="mt-2 text-xs text-foreground-muted">Building your finished clip with the hook and captions.</p>}

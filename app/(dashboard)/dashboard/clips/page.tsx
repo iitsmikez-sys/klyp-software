@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import CompactClipCard from "@/components/CompactClipCard";
 import { useRawClipDownloads } from "@/components/useRawClipDownloads";
+import RawProModal from "@/components/RawProModal";
 import ClipPreviewModal from "@/components/ClipPreviewModal";
 import { useSparks } from "@/components/SparksProvider";
 import { downloadExport } from "@/lib/clip-export";
@@ -48,7 +49,7 @@ function ClipsPageContent() {
   const { refresh } = useSparks();
   // Shared with the dashboard's Saved Clips so both behave identically.
   const { exports, createClip, invalidateClip } = useClipExports(refresh);
-  const { rawDownloads, downloadRaw, readyDownloads, downloadReady } = useRawClipDownloads();
+  const { rawDownloads, downloadRaw, readyDownloads, downloadReady, rawLockOpen, closeRawLock } = useRawClipDownloads();
 
   useEffect(() => {
     const supabase = createClient();
@@ -326,7 +327,7 @@ function ClipsPageContent() {
           readyState={readyDownloads[previewClip.id]} onDownloadReady={() => void downloadReady(previewClip)}
         />
       )}
-
+      {rawLockOpen && <RawProModal onClose={closeRawLock} />}
 
       {notice && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg bg-surface border border-accent/40 text-sm text-foreground shadow-accent-glow-sm animate-fade-in">

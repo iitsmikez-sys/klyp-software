@@ -111,8 +111,17 @@ test('raw request with an edit draft still downloads the untouched detected mome
  const {response,calls}=await exportRoute({body:{clip_id:'owned',edit_draft:draft,raw:true}});assert.equal(response.status,200);assert.ok(!calls.some(c=>c.name==='render'));assert.ok(!calls.some(c=>c.name==='cues'));const args=calls.find(c=>c.name==='encode')!.args[1];assert.ok(!args.includes('-filter_complex')&&!args.includes('-vf'));
 });
 
-test('Free raw download uses owned original moment and ignores saved editing effects without a Sparks charge',async()=>{
- const {response,calls}=await exportRoute({pro:false,archive:true,body:{clip_id:'owned',url:'https://twitch.tv/videos/forged',start_seconds:101,end_seconds:102,raw:true,edit_draft:draft,aspect_ratio:'9:16',hook:'forged',style:'BOLD'}});
+test('Free raw download is refused (Pro feature) before any source work or charge',async()=>{
+ const {response,calls}=await exportRoute({pro:false,archive:true,body:{clip_id:'owned',raw:true}});
+ assert.equal(response.status,403);
+ const body=await response.json() as {error:string;code:string};
+ assert.equal(body.code,'raw_pro_only');
+ assert.ok(body.error.includes('Pro feature'));
+ assert.ok(!calls.some(c=>['download','encode','charge','render','cues','composition','verifyAssets'].includes(c.name)));
+});
+
+test('Pro raw download uses owned original moment and ignores saved editing effects without a Sparks charge',async()=>{
+ const {response,calls}=await exportRoute({pro:true,archive:true,body:{clip_id:'owned',url:'https://twitch.tv/videos/forged',start_seconds:101,end_seconds:102,raw:true,edit_draft:draft,aspect_ratio:'9:16',hook:'forged',style:'BOLD'}});
  assert.equal(response.status,200,await response.clone().text());
  assert.equal(calls.filter(c=>c.name==='download').length,0);
  assert.ok(!calls.some(c=>['render','cues','composition','charge','verifyAssets'].includes(c.name)));

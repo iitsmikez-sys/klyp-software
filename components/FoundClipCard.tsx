@@ -11,6 +11,9 @@ import { trackEvent } from '@/lib/track';
  * One found clip. One clear button (Download), a plain note about how long it takes and how long it is saved, and the
  * rest (Edit, raw download, Keep, Discard) tucked under "More" so a first-time visitor is not facing nine buttons.
  */
+import { useRawLocked } from "./useRawLocked";
+import RawLockBadge from "./RawLockBadge";
+
 export default function FoundClipCard({ clip, topPick = false, kept, busy, exporting, saving, rawSeconds, exportKind = 'raw', keptDays, showWatermarkNudge = false, onPreview, onCustomize, onRawExport, onReadyExport, onKeep, onDiscard }: {
   clip: SavedClip; topPick?: boolean; kept: boolean; busy: boolean; exporting: boolean; saving: boolean; rawSeconds: number;
   exportKind?: 'ready' | 'raw';
@@ -23,6 +26,7 @@ export default function FoundClipCard({ clip, topPick = false, kept, busy, expor
 }) {
   const backup = backupState(isMediaExpired(clip) ? 'expired' : clip.archive_status, clip.url);
   const readyWorking = exporting && exportKind === 'ready';
+  const rawLocked = useRawLocked();
   return <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface p-4">
     <div className="relative">
       <ClipThumbnail clip={clip} onPlay={onPreview} />
@@ -44,7 +48,7 @@ export default function FoundClipCard({ clip, topPick = false, kept, busy, expor
       <summary className="min-h-8 cursor-pointer select-none py-1.5 font-medium text-foreground-muted hover:text-foreground">More</summary>
       <div className="mt-1 grid grid-cols-2 gap-2">
         <button type="button" onClick={onCustomize} disabled={busy} title="Change the captions, hook and layout before you download" className="rounded-lg border border-border px-2 py-1.5 font-medium text-foreground-muted hover:border-accent/60 hover:text-foreground disabled:opacity-50">{saving ? 'Saving…' : 'Edit'}</button>
-        <button type="button" onClick={onRawExport} disabled={busy} title="The original cut, with no captions or effects" className="rounded-lg border border-border px-2 py-1.5 font-medium text-foreground-muted hover:border-accent/60 hover:text-foreground disabled:opacity-50">{exporting && exportKind === 'raw' ? `Preparing ${rawSeconds}s…` : 'Download Raw'}</button>
+        <button type="button" onClick={onRawExport} disabled={busy} title={rawLocked ? 'Raw clips with no watermark are a Pro feature' : 'The original cut, with no captions or effects'} className={`rounded-lg border ${rawLocked ? 'border-dashed border-accent/60' : 'border-border'} px-2 py-1.5 font-medium text-foreground-muted hover:border-accent/60 hover:text-foreground disabled:opacity-50`}>{exporting && exportKind === 'raw' ? `Preparing ${rawSeconds}s…` : rawLocked ? <RawLockBadge /> : 'Download Raw'}</button>
         {!kept && <>
           <button type="button" onClick={onKeep} disabled={busy} title="Save this clip to your library" className="rounded-lg border border-border px-2 py-1.5 font-medium text-foreground-muted hover:border-accent/60 hover:text-accent disabled:opacity-50">{saving ? 'Saving…' : 'Keep'}</button>
           <button type="button" onClick={onDiscard} disabled={busy} title="Remove this clip from the list" className="rounded-lg border border-border px-2 py-1.5 font-medium text-foreground-muted hover:text-red-400 disabled:opacity-50">Discard</button>

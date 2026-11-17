@@ -295,6 +295,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   // "Pro" requires a real, confirmed subscription — see SparksProvider.tsx for
   // why the raw tier flag alone isn't trusted (it can drift from reality).
   const isPro = hasProAccess(profile);
+  // Raw is the clean cut with no watermark, so it is a Pro feature (Free exports always carry the Klyp watermark). Same wording as RAW_PRO_MESSAGE in lib/raw-pro.ts.
+  if (raw && !isPro) {
+    return NextResponse.json({ error: "Raw downloads are a Pro feature. Free clips come with the Klyp watermark. Upgrade to Pro for clean raw clips.", code: "raw_pro_only" }, { status: 403 });
+  }
   const sparksBalance = profile.sparks;
   // Raw always means the detected source moment, never an edited draft.
   const editorRequested = !raw && (requestBody.edit_draft !== undefined || requestBody.editor_export === true || requestBody.segments !== undefined || requestBody.caption_cues !== undefined);
