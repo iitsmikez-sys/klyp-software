@@ -56,3 +56,33 @@ test("the pop-up uses the shared wording and sends people to the Pro plans", () 
   assert.equal(RAW_PRO_TITLE, "Raw clips are for Pro");
   assert.ok(RAW_PRO_BODY.includes("no watermark") && RAW_PRO_BODY.includes("Klyp watermark"));
 });
+
+test("the pop-up shows the cheap way in this person is offered, always with the $28 and the cancel rule", async () => {
+  const { rawOfferFrom, rawOfferCopy, dollars } = await import("../lib/raw-pro.ts");
+  const pass = rawOfferFrom({ trial: { days: 4, sparks: 250, price_cents: 300 }, first_month: { price_cents: 1700 } });
+  assert.deepEqual(pass, { kind: "trial", days: 4, sparks: 250, cents: 300 }, "the 4-day pass wins over the first month");
+  const copy = rawOfferCopy(pass);
+  assert.equal(copy.button, "Start for $3");
+  assert.ok(copy.heading.includes("4-day Pro pass: $3"));
+  assert.ok(copy.detail.includes("$28 a month unless you cancel first") && copy.detail.includes("250 Sparks"));
+  const month = rawOfferFrom({ trial: null, first_month: { price_cents: 1700 } });
+  assert.deepEqual(month, { kind: "first_month", cents: 1700 });
+  const monthCopy = rawOfferCopy(month);
+  assert.equal(monthCopy.button, "Start for $17");
+  assert.ok(monthCopy.detail.includes("$28 a month") && monthCopy.detail.includes("Cancel any time"));
+  for (const odd of [null, undefined, {}, { trial: null, first_month: null }, { trial: { days: "4", sparks: 250, price_cents: 300 } }, { trial: { days: 4, sparks: 250, price_cents: 0 } }, "x"]) {
+    assert.deepEqual(rawOfferFrom(odd), { kind: "none" });
+  }
+  assert.equal(rawOfferCopy({ kind: "none" }), null);
+  assert.equal(dollars(300), "$3");
+  assert.equal(dollars(1750), "$17.50");
+});
+
+test("the pop-up starts checkout in one click for an offered pass, and otherwise links to the Pro plans", () => {
+  const modal = read("components/RawProModal.tsx");
+  assert.ok(modal.includes('fetch("/api/stripe/checkout").then((r) => r.json())'));
+  assert.ok(modal.includes('body: JSON.stringify({ interval: "month" })'));
+  assert.ok(modal.includes("window.location.href = data.url;"));
+  assert.ok(modal.includes('href="/dashboard/upgrade"'), "no offer means the Pro plans page");
+  assert.ok(modal.includes('source: "raw_pro_modal"'));
+});
