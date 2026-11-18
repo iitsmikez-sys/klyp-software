@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import os from "os";
 import path from "path";
 import { shouldRetryYouTubeOverIpv6 } from "./youtube-ipv6-fallback.ts";
+import { LIVE_DOWNLOAD_REASON } from "./live-download.ts";
 import { withYoutubeCookies } from "./youtube-cookies.ts";
 import { tryYoutubeClients, YOUTUBE_FALLBACK_CLIENTS } from "./youtube-client-fallback.ts";
 import { forgetBlockedVideo, isYoutubeRateLimit, isYoutubeRequest, recentlyBlockedMessage, rememberBlockedVideo, startYoutubeCooldown, youtubeCooldownActive, YOUTUBE_COOLDOWN_MESSAGE } from "./youtube-block-memory.ts";
@@ -57,6 +58,11 @@ export type RunOptions = {
   stallTimeoutMs?: number;
   /** Kill the process if it runs longer than this in total. */
   maxRunMs?: number;
+  /**
+   * Looked at on every line of progress output: return a reason to stop the process right away (it becomes the failure message),
+   * or null to carry on. Used to stop a download of a still-live stream (lib/live-download.ts).
+   */
+  abortWhen?: (stderr: string, elapsedMs: number) => string | null;
 };
 
 /** Preserve actionable process failure identity while retaining existing Error messages. */
@@ -222,6 +228,7 @@ function spawnProcess(bin: string, args: string[], opts: RunOptions): Promise<st
     let stderr = "";
     let killReason: string | null = null;
     let settled = false;
+    const startedAt = Date.now();
 
     let stallTimer: NodeJS.Timeout | undefined;
     let maxTimer: NodeJS.Timeout | undefined;
@@ -283,6 +290,10 @@ function spawnProcess(bin: string, args: string[], opts: RunOptions): Promise<st
     proc.stderr.on("data", (d: Buffer) => {
       stderr = appendCapped(stderr, d.toString());
       resetStall();
+      if (opts.abortWhen && !killReason) {
+        const why = opts.abortWhen(stderr, Date.now() - startedAt);
+        if (why) { killReason = why; killTree(proc); }
+      }
     });
 
     proc.on("error", (err: NodeJS.ErrnoException) => {
@@ -458,6 +469,7 @@ export async function runYtDlpWithRetry(
       // was then reported as rate limiting, sending people chasing a
       // throttling problem they don't have.
       if (isDiskSpaceError(message)) throw err;
+      if (message.includes(LIVE_DOWNLOAD_REASON)) throw err;
       const transient = TRANSIENT_YTDLP_ERROR.test(fatalText(message));
       if (!transient || attempt >= retries) {
         throw transient ? new Error(transientMessage(message)) : err;

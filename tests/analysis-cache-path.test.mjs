@@ -39,6 +39,7 @@ function pipelineHarness({ denyBudget = false } = {}) {
     "@/lib/discovery-pool": { discoveryPoolSize: () => 10 },
     "@/lib/analysis-result-cache": { createResultCache: () => null, resultCacheKey: () => "cache", selectReviewedCachedClips: () => ({ clips: [], flagged: [], readyCount: 0 }) },
     "@/lib/vod-budget": { reviewProcessingBudget: () => ({ requiresReview: false }) },
+    "@/lib/live-download": { liveDownloadDetected: () => false, LIVE_DOWNLOAD_REASON: "x" },
     "@/lib/provider-budget": { budgetForRun: () => ({ call: async (_stage, _amount, fn) => {
       if (denyBudget) throw new Error('provider budget exceeded');
       return fn();

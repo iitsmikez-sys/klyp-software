@@ -46,6 +46,7 @@ import { formatTranscript } from "@/lib/format-transcript";
 import { discoveryPoolSize } from "@/lib/discovery-pool";
 import { availableCachedClips, createResultCache, resultCacheKey } from "@/lib/analysis-result-cache";
 import { reviewProcessingBudget, runLimitForSeconds } from "@/lib/vod-budget";
+import { LIVE_DOWNLOAD_REASON, liveDownloadDetected } from "@/lib/live-download";
 import { budgetForRun } from "@/lib/provider-budget";
 import { quoteSelectMessage, quoteTranscription } from "@/lib/provider-budget-core";
 import { pickExtras, salvageClipsJson } from "@/lib/clip-extras";
@@ -53,7 +54,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
 /* ── Stage 2: download audio with yt-dlp ── */
-export async function downloadAudio(url: string, dir: string, largeVod = false): Promise<string> {
+export async function downloadAudio(url: string, dir: string, largeVod = false, expectedSeconds?: number): Promise<string> {
   // Audio_Only on Twitch / bestaudio elsewhere — all HLS (m3u8) streams need
   // ffmpeg to merge segments. --ffmpeg-location avoids the stale-PATH hang.
   // Retries once on YouTube's transient 403/429 throttling (see runYtDlpWithRetry).
@@ -73,7 +74,11 @@ export async function downloadAudio(url: string, dir: string, largeVod = false):
       "-o", path.join(dir, "audio.%(ext)s"),
       url,
     ],
-    { stallTimeoutMs: 60_000, maxRunMs: largeVod ? 30 * 60_000 : 10 * 60_000 }
+    {
+      stallTimeoutMs: 60_000, maxRunMs: largeVod ? 30 * 60_000 : 10 * 60_000,
+      // A stream that is still live downloads at its own playing speed. Say so after about a minute instead of waiting out the limit.
+      abortWhen: (stderr, elapsedMs) => (liveDownloadDetected(stderr, elapsedMs, expectedSeconds) ? LIVE_DOWNLOAD_REASON : null),
+    }
   );
 
   const files = await readdir(dir);
@@ -923,7 +928,7 @@ export async function runAnalysisPipeline(opts: {
         return downloadAudioWindow(url, workDir, { start: opts.windowStart, end: opts.windowStart + partSeconds }, 30 * 60_000);
       }
       // The source is longer than the part being analyzed, so it is downloaded as a long video and cut down afterwards.
-      const full = await downloadAudio(url, workDir, partSeconds ? true : !!durationHint && durationHint >= SEGMENT_MIN_VOD_S);
+      const full = await downloadAudio(url, workDir, partSeconds ? true : !!durationHint && durationHint >= SEGMENT_MIN_VOD_S, opts.sourceSeconds ?? durationHint);
       if (!partSeconds) return full;
       // Smart pick: read the whole audio's loudness (free, on this server) and take the liveliest stretch. Any problem means the start.
       const samples = await readLoudSamples(full, { run, readText: (p) => readFile(p, "utf8"), ffmpeg: resolveBin("ffmpeg"), outPath: path.join(workDir, "smartpick-loudness.txt") });

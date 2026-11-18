@@ -1,4 +1,5 @@
 import { isAnthropicCreditBalanceError } from "./anthropic-credit.ts";
+import { LIVE_DOWNLOAD_REASON } from "./live-download.ts";
 
 /** A download that crawls at about the speed the video plays is a stream that is still live: it cannot be fetched faster than it is being made. */
 export const LIVE_VOD_MESSAGE = "This video is downloading only as fast as it plays, which usually means the stream is still live (or only just ended). Wait until the stream has fully ended, then try again. No Sparks were charged.";
@@ -6,6 +7,8 @@ export const DOWNLOAD_TIMEOUT_MESSAGE = "Downloading this video took too long. T
 
 /** "yt-dlp timed out after 600s. stderr: ... speed=1.04x ..." becomes a plain sentence. Returns null for any other message. */
 export function timedOutDownloadMessage(message: string): string | null {
+  // Stopped on purpose after about a minute because the download crawled at the video's playing speed (lib/live-download.ts).
+  if (message.includes(LIVE_DOWNLOAD_REASON)) return LIVE_VOD_MESSAGE;
   if (!/yt-dlp timed out after \d+s/i.test(message)) return null;
   const speeds = [...message.matchAll(/speed=\s*([0-9]+(?:\.[0-9]+)?)x/gi)].map((m) => Number(m[1]));
   // Live: every reading is within a whisker of 1x (0.8x to 1.5x). Much slower is a bad connection, much faster is just a huge file.

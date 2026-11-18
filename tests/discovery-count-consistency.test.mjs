@@ -62,6 +62,7 @@ function harness({ denyProviderSpend = false } = {}) {
     '@/lib/format-transcript': { formatTranscript: () => 'Full VOD transcript: quiet joke at 600 seconds.' },
     '@/lib/discovery-pool': { discoveryPoolSize },
     '@/lib/vod-budget': { reviewProcessingBudget: () => ({ requiresReview: false }) },
+    "@/lib/live-download": { liveDownloadDetected: () => false, LIVE_DOWNLOAD_REASON: "x" },
     '@/lib/analysis-result-cache': {
       resultCacheKey: input => JSON.stringify(input),
       availableCachedClips: (clips, prior, count) => clips.filter(c =>

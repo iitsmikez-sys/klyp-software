@@ -49,6 +49,7 @@ function harness({ countTokens } = {}) {
     "@/lib/discovery-pool": { discoveryPoolSize: () => 10 },
     "@/lib/analysis-result-cache": { createResultCache: () => null, resultCacheKey: () => "k", selectReviewedCachedClips: () => ({ clips: [], flagged: [], readyCount: 0 }) },
     "@/lib/vod-budget": { reviewProcessingBudget: () => ({ requiresReview: false }) },
+    "@/lib/live-download": { liveDownloadDetected: () => false, LIVE_DOWNLOAD_REASON: "x" },
     "@/lib/provider-budget": { budgetForRun: () => ({ call: async (stage, microUsd, fn) => { seen.reservations.push([stage, microUsd]); return fn(); } }) },
     "@/lib/provider-budget-core": core,
   };

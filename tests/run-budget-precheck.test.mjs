@@ -133,6 +133,7 @@ function pipelineHarness(review) {
     "@/lib/discovery-pool": { discoveryPoolSize: () => 10 },
     "@/lib/analysis-result-cache": { createResultCache: () => null, resultCacheKey: () => "cache", selectReviewedCachedClips: () => ({ clips: [], flagged: [], readyCount: 0 }) },
     "@/lib/vod-budget": { reviewProcessingBudget: () => review },
+    "@/lib/live-download": { liveDownloadDetected: () => false, LIVE_DOWNLOAD_REASON: "x" },
     "@/lib/provider-budget": { budgetForRun: () => ({ call: async (_s, _a, fn) => fn() }) },
     "@/lib/provider-budget-core": { quoteTranscription: () => 1, quoteTextMessage: () => 1 },
   };
