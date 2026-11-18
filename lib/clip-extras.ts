@@ -1,6 +1,6 @@
 /**
  * Near-miss "extra" clips. The clip finder keeps its strict bar (65+) for the main list; Claude may also
- * also return the next-best moments that scored 40-64. They are added to the result, below the main picks,
+ * also return the next-best moments that scored 25-64. They are added to the result, below the main picks,
  * only to fill the list towards the requested count (12 or 15), so a video is rarely left with 3 clips.
  *
  * Rules (each one has a test):
@@ -12,9 +12,9 @@
  *    the user already received
  */
 export const QUALITY_BAR = 65;
-export const EXTRA_MIN_SCORE = 40;
+export const EXTRA_MIN_SCORE = 25;
 /** The lowest score shown when nothing cleared the bar. */
-export const BEST_OF_MIN_SCORE = 40;
+export const BEST_OF_MIN_SCORE = 25;
 export const MAX_EXTRAS = 10;
 export const EXTRA_DEDUPE_WINDOW_S = 30;
 
