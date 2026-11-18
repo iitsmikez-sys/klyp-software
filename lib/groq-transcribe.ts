@@ -12,6 +12,9 @@
  */
 export const GROQ_MODEL = "whisper-large-v3-turbo";
 export const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+/** DeepInfra hosts the same Whisper turbo model at about $0.012 an hour. It speaks the same OpenAI-style API. */
+export const DEEPINFRA_MODEL = "openai/whisper-large-v3-turbo";
+export const DEEPINFRA_URL = "https://api.deepinfra.com/v1/openai/audio/transcriptions";
 export const CHUNK_SECONDS = 20 * 60;
 export const OVERLAP_SECONDS = 3;
 const MAX_ATTEMPTS = 4;
@@ -80,6 +83,11 @@ export function stitchChunks(chunks: { plan: ChunkPlan; words: TimedWordLike[] }
 
 export type GroqDeps = {
   apiKey: string;
+  /** Which Whisper host to call. Defaults to Groq. */
+  url?: string;
+  model?: string;
+  /** Name used in error messages. */
+  name?: string;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   /** Writes `length` seconds of the recording starting at `start` to `target` as a small mono mp3. */
@@ -96,17 +104,17 @@ async function requestChunk(bytes: Uint8Array, name: string, deps: GroqDeps): Pr
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const form = new FormData();
     form.append("file", new Blob([bytes as BlobPart], { type: "audio/mpeg" }), name);
-    form.append("model", GROQ_MODEL);
+    form.append("model", deps.model ?? GROQ_MODEL);
     form.append("response_format", "verbose_json");
     form.append("timestamp_granularities[]", "word");
     form.append("timestamp_granularities[]", "segment");
     form.append("temperature", "0");
     let response: Response;
     try {
-      response = await doFetch(GROQ_URL, { method: "POST", headers: { Authorization: `Bearer ${deps.apiKey}` }, body: form, signal: AbortSignal.timeout(180_000) });
+      response = await doFetch(deps.url ?? GROQ_URL, { method: "POST", headers: { Authorization: `Bearer ${deps.apiKey}` }, body: form, signal: AbortSignal.timeout(180_000) });
     } catch (error) {
       lastStatus = 0;
-      if (attempt === MAX_ATTEMPTS) throw new Error(`Groq transcription could not be reached: ${error instanceof Error ? error.message : "network error"}`);
+      if (attempt === MAX_ATTEMPTS) throw new Error(`${deps.name ?? "Groq"} transcription could not be reached: ${error instanceof Error ? error.message : "network error"}`);
       await sleep(Math.min(30_000, 1500 * 2 ** (attempt - 1)));
       continue;
     }
@@ -119,7 +127,7 @@ async function requestChunk(bytes: Uint8Array, name: string, deps: GroqDeps): Pr
     }
     break;
   }
-  throw new Error(`Groq transcription failed (HTTP ${lastStatus})`);
+  throw new Error(`${deps.name ?? "Groq"} transcription failed (HTTP ${lastStatus})`);
 }
 
 /** Transcribe a whole recording. Returns words in milliseconds on the recording's own clock. */

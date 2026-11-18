@@ -111,7 +111,7 @@ export function analysisModelFor(isPro: boolean, env: Record<string, string | un
   return isPro ? PRO_ANALYSIS_MODEL : FREE_ANALYSIS_MODEL;
 }
 
-export type Transcriber = "assemblyai" | "groq";
+export type Transcriber = "assemblyai" | "groq" | "deepinfra";
 
 /**
  * Which service turns a VOD's audio into text. TRANSCRIPTION_PROVIDER decides:
@@ -122,6 +122,10 @@ export type Transcriber = "assemblyai" | "groq";
  */
 export function transcriberFor(isPro: boolean, env: Record<string, string | undefined> = process.env): Transcriber {
   const setting = (env.TRANSCRIPTION_PROVIDER ?? "assemblyai").trim().toLowerCase();
+  // DeepInfra (the same Whisper model, about $0.012 an hour): "deepinfra" for everyone, "deepinfra-free" for Free accounts only.
+  if ((setting === "deepinfra" || setting === "deepinfra-free") && env.DEEPINFRA_API_KEY?.trim()) {
+    return setting === "deepinfra" || !isPro ? "deepinfra" : "assemblyai";
+  }
   if (!env.GROQ_API_KEY?.trim()) return "assemblyai";
   if (setting === "groq") return "groq";
   if (setting === "groq-free") return isPro ? "assemblyai" : "groq";
