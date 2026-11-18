@@ -999,7 +999,7 @@ export async function runAnalysisPipeline(opts: {
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
     // "relatable-v1": results found before relatable moments and the share trigger were added; "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
-    signals: ["trim-v1", "story-v1", "relatable-v1", "floor40-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
+    signals: ["trim-v1", "story-v1", "relatable-v1", "floor25-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
