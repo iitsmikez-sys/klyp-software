@@ -221,8 +221,69 @@ async function transcribeWithGroq(audioPath: string, measured: number, costRunId
   }
 }
 
+/**
+ * DeepInfra hosts the same Whisper model for about $0.012 an hour (AssemblyAI is $0.15). Whisper can get stuck in a loop and
+ * write one word dozens of times, which can bury the best moment, so every loop is found and that stretch alone is sent to
+ * AssemblyAI (about a quarter of a cent a minute). If DeepInfra fails, or hears no speech, the whole file goes to AssemblyAI as before.
+ */
+async function transcribeWithDeepInfra(audioPath: string, measured: number, costRunId?: string): Promise<{ words: TimedWord[]; durationSeconds: number } | null> {
+  try {
+    const { groqTranscribe, DEEPINFRA_MODEL, DEEPINFRA_URL } = await import("@/lib/groq-transcribe");
+    const { findWordLoops, repairWindowsFor, spliceRepaired, collapseLoops } = await import("@/lib/whisper-loops");
+    const dir = path.dirname(audioPath);
+    const makeChunk = (start: number, length: number, target: string) => run(resolveBin("ffmpeg"), ["-y", "-ss", String(start), "-t", String(length), "-i", audioPath,
+      "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "48k", target], { stallTimeoutMs: 60_000, maxRunMs: 10 * 60_000 }).then(() => undefined);
+    const result = await groqTranscribe(measured, {
+      apiKey: process.env.DEEPINFRA_API_KEY!, url: DEEPINFRA_URL, model: DEEPINFRA_MODEL, name: "DeepInfra",
+      makeChunk,
+      readFile: (file) => readFile(file),
+      removeFile: (file) => import("fs/promises").then((fs) => fs.rm(file, { force: true })),
+      tempPath: (name) => path.join(dir, `${costRunId ?? "run"}-di-${name}`),
+    });
+    if (costRunId) recordProviderUsage({ runId: costRunId, stage: "transcribe", provider: "deepinfra", model: DEEPINFRA_MODEL, audioSeconds: measured });
+    if (result.words.length === 0) {
+      console.log("[transcribe] DeepInfra heard no speech; asking AssemblyAI to be sure");
+      return null;
+    }
+    let words: TimedWord[] = result.words;
+    const loops = findWordLoops(words);
+    if (loops.length) {
+      const windows = repairWindowsFor(loops, 10_000, measured * 1000);
+      let repaired = 0;
+      for (const window of windows) {
+        const target = path.join(dir, `${costRunId ?? "run"}-di-repair-${window.startMs}.mp3`);
+        try {
+          await makeChunk(window.startMs / 1000, (window.endMs - window.startMs) / 1000, target);
+          let fixed: TimedWord[] = [];
+          try {
+            // The same stretch, from AssemblyAI. Silence there means the loop was made up, so nothing replaces it.
+            fixed = (await transcribe(target, costRunId, false, "assemblyai")).words.map((w) => ({ ...w, start: w.start + window.startMs, end: w.end + window.startMs }));
+          } catch (error) {
+            if (/provider budget|cannot be bounded|durable job ID|bounded price/i.test(String(error))) throw error;
+            if (!/couldn't hear any speech|no words|no speech/i.test(String(error))) throw error;
+          }
+          words = spliceRepaired(words, window, fixed) as TimedWord[];
+          repaired++;
+        } catch (error) {
+          console.log(`[transcribe] could not repair ${Math.round(window.startMs / 1000)}-${Math.round(window.endMs / 1000)}s with AssemblyAI, trimming the loop instead: ${error instanceof Error ? error.message : error}`);
+        } finally {
+          await import("fs/promises").then((fs) => fs.rm(target, { force: true })).catch(() => {});
+        }
+      }
+      words = collapseLoops(words) as TimedWord[];
+      console.log(`[transcribe] DeepInfra: ${loops.length} loop(s) found, ${repaired} of ${windows.length} stretch(es) repaired with AssemblyAI`);
+    }
+    console.log(`[transcribe] DeepInfra: ${words.length} words in ${Math.round(measured / 60)} min${result.language ? ` (${result.language})` : ""}`);
+    return { words, durationSeconds: Math.round(measured) };
+  } catch (error) {
+    if (/provider budget|cannot be bounded|durable job ID|bounded price/i.test(String(error))) throw error;
+    console.log(`[transcribe] DeepInfra failed, using AssemblyAI: ${error instanceof Error ? error.message : error}`);
+    return null;
+  }
+}
+
 export async function transcribe(
-  audioPath: string, costRunId?: string, fullPass = false, transcriber: "assemblyai" | "groq" = "assemblyai",
+  audioPath: string, costRunId?: string, fullPass = false, transcriber: "assemblyai" | "groq" | "deepinfra" = "assemblyai",
 ): Promise<{ words: TimedWord[]; durationSeconds: number }> {
   const aai = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! });
 
@@ -232,6 +293,10 @@ export async function transcribe(
   if (transcriber === "groq" && process.env.GROQ_API_KEY && Number.isFinite(measured) && measured > 0) {
     const viaGroq = await transcribeWithGroq(audioPath, measured, costRunId);
     if (viaGroq) return viaGroq;
+  }
+  if (transcriber === "deepinfra" && process.env.DEEPINFRA_API_KEY && Number.isFinite(measured) && measured > 0) {
+    const viaDeepInfra = await transcribeWithDeepInfra(audioPath, measured, costRunId);
+    if (viaDeepInfra) return viaDeepInfra;
   }
   // Only ONE full-transcript pass over a long video is given the larger run budget (fixed by this
   // first reservation); sampled windows and everything up to about 6 hours keep the standard $3.
@@ -783,7 +848,7 @@ export async function runAnalysisPipeline(opts: {
   /** Claude model for the moment-picking step (Free and Pro can differ). Defaults to Pro's model. */
   model?: string;
   /** Which service transcribes the audio. Defaults to AssemblyAI; see transcriberFor in lib/plan-limits.ts. */
-  transcriber?: "assemblyai" | "groq";
+  transcriber?: "assemblyai" | "groq" | "deepinfra";
 }): Promise<PipelineResult> {
   // Check before downloading or transcribing, both of which can incur costs.
   anthropicCreditGate.assertAvailable();
