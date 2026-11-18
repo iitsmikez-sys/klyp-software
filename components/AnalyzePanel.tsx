@@ -26,6 +26,7 @@ import { resultsChargeMessage } from "@/lib/results-summary";
 import resultsStyles from "./ClipResults.module.css";
 import ProGateModal from "./ProGateModal";
 import RawProModal from "./RawProModal";
+import ProOfferCta from "./ProOfferCta";
 import { useRawLocked } from "./useRawLocked";
 import { isBestOfResult } from "@/lib/clip-extras";
 import { createClient } from "@/lib/supabase/client";
@@ -1132,8 +1133,7 @@ export default function AnalyzePanel() {
             <div className="mt-3 rounded-xl border border-accent/40 bg-accent-glow p-4">
               <p className="text-sm font-semibold text-foreground">Get the whole video with Pro</p>
               <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp looks at all {lengthWords(previewDuration ?? 0)}, so more of your stream's great moments become clips. No watermark.</p>
-              <a href="/dashboard/upgrade" className="mt-3 flex min-h-10 items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Get Pro, ${MONTHLY_PRICE_USD} a month</a>
-              <p className="mt-1.5 text-center text-xs text-foreground-muted">Cancel anytime.</p>
+              <ProOfferCta source="long_video_popup" fallbackLabel={`Get Pro, $${MONTHLY_PRICE_USD} a month`} />
             </div>
             <button type="button" onClick={() => setCapDismissedFor(url)} className="mt-3 w-full text-center text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">Not now</button>
           </div>
