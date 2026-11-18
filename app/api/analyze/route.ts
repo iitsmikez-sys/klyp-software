@@ -123,6 +123,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   let durationHint: number | undefined; // optional, from the client's cost preview — used for ETAs
   let clipCount: ClipCount = DEFAULT_CLIP_COUNT;
   let contentType: ContentType = DEFAULT_CONTENT_TYPE;
+  let autoContentType = false; // Auto, and the title said nothing: the pipeline decides from the transcript
   let keyword: string | undefined; // optional — weights matching transcript moments higher (see lib/analyze-pipeline.ts)
   let requestedJobId: string | undefined;
   let requestedWindow: { start: unknown; seconds: unknown } = { start: undefined, seconds: undefined }; // a Pro person chose which part of an over-long video to clip
@@ -143,6 +144,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     }
     if ((CONTENT_TYPES as readonly string[]).includes(body.contentType)) {
       contentType = body.contentType as ContentType;
+      autoContentType = body.contentAuto === true;
     }
     const rawKeyword = String(body.keyword ?? "").trim().slice(0, 100);
     if (rawKeyword) keyword = rawKeyword;
@@ -386,6 +388,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
               client: tokenClient(token!),
               costRunId: jobId,
               contentType,
+              autoContentType,
               keyword,
               priorWindows,
               creatorPreferences,
