@@ -1,5 +1,5 @@
 /**
- * Signup guards for the free plan's 60 Sparks. Throwaway email services cannot sign up; the same real address (Gmail dots and "+tags"
+ * Signup guards for the free plan's 40 Sparks. Throwaway email services cannot sign up; the same real address (Gmail dots and "+tags"
  * ignored) cannot sign up twice. The database enforces both for every signup path (supabase/migrations/052_signup_guards.sql); this
  * list is also checked on the login page so the person gets a clear message before anything is sent. The list here and the
  * one in the migration must match (a test keeps them equal). No imports on purpose: the login page loads it.

@@ -1,7 +1,7 @@
 /**
  * Free-plan daily capacity breaker.
  *
- * A Free account's 60 Sparks buy at most one long (e.g. 4-hour YouTube) analysis a month, so
+ * A Free account's 40 Sparks buy at most one long (up to 2 hour) analysis a month, so
  * one account's exposure is already small. The risk is many throwaway accounts. This caps the
  * ESTIMATED provider cost of all Free long runs started in a UTC day; once it is reached,
  * Free analyses longer than an hour are paused until tomorrow. Short Free runs and every Pro

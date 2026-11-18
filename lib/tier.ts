@@ -4,7 +4,7 @@ export type Tier = "free" | "pro";
 /** Sparks allowance per 30-day cycle. Keep in sync with the latest
  *  tier_allowance() migration. */
 export const SPARKS_ALLOWANCE: Record<Tier, number> = {
-  free: 60,
+  free: 40,
   pro: 500,
 };
 
