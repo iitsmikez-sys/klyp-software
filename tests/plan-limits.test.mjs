@@ -90,21 +90,21 @@ import { SPARKS_ALLOWANCE } from "../lib/tier.ts";
 
 test("Spark pricing: per video with clips included, allowances unchanged", () => {
   assert.deepEqual(Object.values(CLIP_COUNT_COST), [0, 0, 0, 0, 0, 0, 0, 0, 0]);
-  assert.deepEqual([10, 29 * 60].map((s) => estimateSparks(s)), [20, 20]);
-  assert.equal(estimateSparks(45 * 60), 35);
-  assert.equal(estimateSparks(90 * 60), 50);
-  assert.equal(estimateSparks(2 * H), 65);
-  assert.equal(estimateSparks(4 * H), 65);
-  assert.equal(estimateSparks(4 * H + 1), 80);
-  assert.equal(estimateSparks(6 * H), 80);
-  assert.equal(estimateSparks(8 * H), 120);
+  assert.deepEqual([10, 29 * 60].map((s) => estimateSparks(s)), [15, 20]);
+  assert.equal(estimateSparks(45 * 60), 20);
+  assert.equal(estimateSparks(90 * 60), 30);
+  assert.equal(estimateSparks(2 * H), 35);
+  assert.equal(estimateSparks(4 * H), 60);
+  assert.equal(estimateSparks(4 * H + 1), 60);
+  assert.equal(estimateSparks(6 * H), 85);
+  assert.equal(estimateSparks(8 * H), 110);
   assert.equal(UPSCALE_COST, 35);
-  assert.deepEqual(SPARKS_ALLOWANCE, { free: 60, pro: 500 });
+  assert.deepEqual(SPARKS_ALLOWANCE, { free: 40, pro: 500 });
 });
 
 test("clips add no charge; a run that finds none costs nothing", () => {
   assert.equal(clipCharge(10, 4), 0);
   assert.equal(clipCharge(10, 10), 0);
   assert.equal(analysisCharge(45 * 60, 0), 0);
-  assert.equal(analysisCharge(45 * 60, 3), 35);
+  assert.equal(analysisCharge(45 * 60, 3), 20);
 });

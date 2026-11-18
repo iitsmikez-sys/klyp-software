@@ -58,13 +58,20 @@ test("the per-run cap is enforced cumulatively at the run's own limit", async ()
 });
 
 /* ── Sparks ── */
-test("long-video Sparks: flat up to 6h, then 20 per started hour", () => {
-  assert.deepEqual([1800, 3600, 7200, 4 * H, 6 * H].map(estimateSparks), [35, 50, 65, 65, 80]);
-  assert.equal(estimateSparks(6 * H + 1), 100);
-  assert.equal(estimateSparks(7 * H), 100);
-  assert.equal(estimateSparks(7 * H + 1), 120);
-  assert.equal(estimateSparks(8 * H), 120);
-  assert.equal(LONG_VIDEO_FROM_SECONDS, 6 * H);
+test("Sparks are a smooth line: 10 plus 1 per 5 minutes, rounded up to the next 5, with no cliffs", () => {
+  assert.deepEqual([900, 1800, 3600, 5400, 7200, 3 * H, 4 * H, 6 * H, 8 * H].map(estimateSparks), [15, 20, 25, 30, 35, 50, 60, 85, 110]);
+  assert.equal(estimateSparks(7 * H), 95);
+  assert.equal(estimateSparks(24 * H), 300);
+  assert.equal(estimateSparks(60), 15, "the shortest video is the minimum charge");
+  assert.equal(estimateSparks(0), 15);
+  // no jump anywhere: a minute more video never costs more than 5 Sparks more, and never less
+  let previous = estimateSparks(1);
+  for (let seconds = 60; seconds <= 10 * H; seconds += 60) {
+    const price = estimateSparks(seconds);
+    assert.ok(price >= previous && price - previous <= 5, `${seconds}s: ${previous} -> ${price}`);
+    previous = price;
+  }
+  assert.equal(LONG_VIDEO_FROM_SECONDS, 6 * H, "the run budget still uses the 6 hour mark");
 });
 
 /* ── the database side (migrations 036 + 038) ── */
@@ -153,11 +160,14 @@ async function sparksDb() {
   await db.exec("create table public.analysis_provider_budgets (run_id uuid primary key, reserved_micro_usd bigint not null default 0, updated_at timestamptz not null default now());");
   await db.exec(await read("038_long_video_budget_and_sparks.sql"));
   await db.exec(await read("039_video_only_pricing.sql"));
+  // 053 replaces the price. The older 4-argument version must go first, as migration 050 does in production.
+  await db.exec("drop function if exists public.record_analysis_clips(text, jsonb, double precision, integer);");
+  await db.exec(await read("053_smooth_sparks.sql"));
   return db;
 }
 
 test("SQL: the Sparks charge matches estimateSparks for every length, so UI and ledger agree", async () => {
-  for (const seconds of [1000, 2400, 5400, 4 * H, 4 * H + 1, 5 * H, 6 * H, 6 * H + 1, 7 * H, 7 * H + 1, 8 * H, 8 * H + 30]) {
+  for (const seconds of [1000, 1500, 1501, 1800, 2400, 3599, 3600, 5400, 7199, 7200, 4 * H, 4 * H + 1, 5 * H, 6 * H, 6 * H + 1, 7 * H, 7 * H + 1, 8 * H, 8 * H + 30, 24 * H]) {
     const db = await sparksDb();
     try {
       const r = await db.query("select * from public.record_analysis_clips($1, $2::jsonb, $3, $4)",
@@ -167,17 +177,28 @@ test("SQL: the Sparks charge matches estimateSparks for every length, so UI and 
   }
 });
 
-test("SQL: clips are included in the video price, and a first run that finds nothing costs half", async () => {
+test("SQL: the database price equals the app's price on a dense sweep of lengths, not just a few", async () => {
+  const db = await sparksDb();
+  try {
+    const rows = await db.query("select s::double precision as s, (ceil((10 + s::double precision / 300.0) / 5.0) * 5)::integer as cost from generate_series(1, 200000, 7) as s");
+    assert.ok(rows.rows.length > 25000);
+    for (const row of rows.rows) assert.equal(row.cost, estimateSparks(row.s), `${row.s}s`);
+    // and the migration really contains that expression, so this test is about the shipped SQL
+    assert.ok((await read("053_smooth_sparks.sql")).includes("v_vod_cost := (ceil((10 + v_billed / 300.0) / 5.0) * 5)::integer;"));
+  } finally { await db.close(); }
+});
+
+test("SQL: clips are included in the video price, and a run that finds no new clips costs nothing", async () => {
   const clips = (n) => JSON.stringify(Array.from({ length: n }, (_, i) => ({ start_seconds: 100 + i * 200, end_seconds: 130 + i * 200 })));
   const charge = async (db, key, n, seconds, requested = 10) =>
     (await db.query("select * from public.record_analysis_clips($1, $2::jsonb, $3, $4)", [key, clips(n), seconds, requested])).rows[0];
   const db = await sparksDb();
   try {
-    assert.equal((await charge(db, "youtube:AAAAAAAAAAA", 10, 3 * H)).sparks_spent, 65); // ten clips, one price
-    assert.equal((await charge(db, "youtube:BBBBBBBBBBB", 1, 3 * H)).sparks_spent, 65); // one clip, same price
-    assert.equal((await charge(db, "youtube:CCCCCCCCCCC", 0, 3600)).sparks_spent, 25); // nothing found: half of 50
-    assert.equal((await charge(db, "youtube:DDDDDDDDDDD", 0, 20 * 60)).sparks_spent, 10); // half of 20
+    assert.equal((await charge(db, "youtube:AAAAAAAAAAA", 10, 3 * H)).sparks_spent, 50); // ten clips, one price
+    assert.equal((await charge(db, "youtube:BBBBBBBBBBB", 1, 3 * H)).sparks_spent, 50); // one clip, same price
+    assert.equal((await charge(db, "youtube:CCCCCCCCCCC", 0, 3600)).sparks_spent, 0); // nothing found: free
+    assert.equal((await charge(db, "youtube:DDDDDDDDDDD", 0, 20 * 60)).sparks_spent, 0); // nothing found: free
     assert.equal((await charge(db, "youtube:BBBBBBBBBBB", 0, 3 * H)).sparks_spent, 0); // clips already delivered, nothing new: free
-    assert.equal((await charge(db, "youtube:EEEEEEEEEEE", 3, 3600, 3)).sparks_spent, 50); // older requests priced the same
+    assert.equal((await charge(db, "youtube:EEEEEEEEEEE", 3, 3600, 3)).sparks_spent, 25); // older requests priced the same
   } finally { await db.close(); }
 });

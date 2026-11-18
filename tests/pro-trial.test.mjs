@@ -6,9 +6,9 @@ import { TRIAL_DAYS, TRIAL_PRICE_CENTS, TRIAL_SPARKS, cardTrialKey, emailTrialKe
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 const NEW = { tier: "free", stripe_customer_id: null, stripe_subscription_id: null };
 
-test("the pass is 4 days for $3 with 250 Sparks, and is off unless PRO_TRIAL is on", () => {
+test("the pass is 4 days for $3 with 150 Sparks, and is off unless PRO_TRIAL is on", () => {
   assert.equal(TRIAL_DAYS, 4);
-  assert.equal(TRIAL_SPARKS, 250);
+  assert.equal(TRIAL_SPARKS, 150);
   assert.equal(TRIAL_PRICE_CENTS, 300);
   assert.equal(trialMode({}), "off");
   assert.equal(trialMode({ PRO_TRIAL: "" }), "off");
@@ -53,7 +53,7 @@ test("checkout charges the $3 now, then starts a card-required 4-day trial of th
   assert.ok(route.includes("trial: trial ? { days: TRIAL_DAYS, sparks: TRIAL_SPARKS, price_cents: TRIAL_PRICE_CENTS } : null,"));
 });
 
-test("the webhook recognises the $3 first invoice, gives 250 Sparks for it and 500 with the first real payment, and cancels a repeat pass before it gives anything", () => {
+test("the webhook recognises the $3 first invoice, gives 150 Sparks for it and 500 with the first real payment, and cancels a repeat pass before it gives anything", () => {
   const hook = read("app/api/stripe/webhook/route.ts");
   assert.ok(hook.includes('current.status === "trialing" && invoice.amount_paid === TRIAL_PRICE_CENTS && invoice.billing_reason === "subscription_create"'));
   assert.ok(hook.includes('subDetails?.metadata?.trial === "1"'));

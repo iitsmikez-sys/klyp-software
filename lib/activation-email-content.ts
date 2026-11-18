@@ -4,7 +4,7 @@ import type { ActivationKind } from "./activation-email-rules.ts";
 export type ActivationEmail = { subject: string; previewText: string; html: string; text: string };
 
 const SUBJECTS: Record<ActivationKind, { subject: string; preview: string }> = {
-  first: { subject: "You're in. Your 60 free Sparks are ready", preview: "Paste one stream link and see your best moments in minutes." },
+  first: { subject: "You're in. Your 40 free Sparks are ready", preview: "Paste one stream link and see your best moments in minutes." },
   second: { subject: "Got a VOD sitting around?", preview: "Every stream hides a few moments worth posting." },
 };
 
@@ -22,14 +22,14 @@ export function buildActivationEmail(kind: ActivationKind, links: { dashboardUrl
     : "";
 
   const body = kind === "first"
-    ? `<p style="${P}">Welcome to Klyp. Your 60 free Sparks are ready.</p>
+    ? `<p style="${P}">Welcome to Klyp. Your 40 free Sparks are ready.</p>
                 <p style="margin-top:0;margin-right:0;margin-bottom:6px;margin-left:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;font-weight:bold;color:#1a1a1a;">Takes about two minutes:</p>
                 <ul style="margin-top:0;margin-right:0;margin-bottom:22px;margin-left:0;padding-left:20px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;color:#333333;">
                   <li style="margin-bottom:6px;">Paste a Twitch, Kick, or YouTube link.</li>
                   <li style="margin-bottom:6px;">Klyp finds the best moments.</li>
                   <li>Download them, ready to post.</li>
                 </ul>`
-    : `<p style="${P}">Every stream hides a few moments worth posting. Your 60 free Sparks are still waiting, enough to try a video or two.</p>
+    : `<p style="${P}">Every stream hides a few moments worth posting. Your 40 free Sparks are still waiting, enough to try a video or two.</p>
                 <p style="margin-top:0;margin-right:0;margin-bottom:22px;margin-left:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;color:#333333;">Not sure what to paste? Any recent VOD works. If something got in your way, just reply and tell us.</p>`;
 
   const noCard = kind === "first"
@@ -81,7 +81,7 @@ export function buildActivationEmail(kind: ActivationKind, links: { dashboardUrl
   const text = kind === "first"
     ? `klyp
 
-Welcome to Klyp. Your 60 free Sparks are ready.
+Welcome to Klyp. Your 40 free Sparks are ready.
 
 Takes about two minutes:
 
@@ -95,7 +95,7 @@ No card needed.
 The Klyp team
 
 Unsubscribe: ${links.unsubscribeUrl}`
-    : `Every stream hides a few moments worth posting. Your 60 free Sparks are still waiting, enough to try a video or two.
+    : `Every stream hides a few moments worth posting. Your 40 free Sparks are still waiting, enough to try a video or two.
 
 Not sure what to paste? Any recent VOD works. If something got in your way, just reply and tell us.
 

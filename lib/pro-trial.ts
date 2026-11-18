@@ -1,5 +1,5 @@
 /**
- * The Pro 4-day pass: a card is required, $3 is charged at checkout, the person gets 250 Sparks and full Pro for 4 days, and then the
+ * The Pro 4-day pass: a card is required, $3 is charged at checkout, the person gets 150 Sparks and full Pro for 4 days, and then the
  * card is charged the normal $28 a month (with the full 500 Sparks) unless they cancel first. The $3 is not refunded.
  * It is OFF unless PRO_TRIAL=on. When on, it is offered to every new person who has never subscribed, EXCEPT people who arrived from the
  * ad link: they are offered the $17 first month instead (lib/first-month-offer.ts), so nobody sees both. One pass per account, per real
@@ -7,7 +7,7 @@
  * read it.
  */
 export const TRIAL_DAYS = 4;
-export const TRIAL_SPARKS = 250;
+export const TRIAL_SPARKS = 150;
 /** What the pass costs today, in cents. The checkout charges exactly this, and the webhook recognises the first invoice by it. */
 export const TRIAL_PRICE_CENTS = 300;
 

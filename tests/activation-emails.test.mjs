@@ -41,8 +41,8 @@ test("test and throwaway addresses are never emailed", () => {
 test("the emails say what was approved and carry the dashboard and unsubscribe links", () => {
   const links = { dashboardUrl: "https://www.klyp.world/dashboard?src=email_new1", unsubscribeUrl: "https://www.klyp.world/api/activation-unsubscribe?u=1&t=2" };
   const one = buildActivationEmail("first", links);
-  assert.equal(one.subject, "You're in. Your 60 free Sparks are ready");
-  assert.match(one.text, /Welcome to Klyp\. Your 60 free Sparks are ready\./);
+  assert.equal(one.subject, "You're in. Your 40 free Sparks are ready");
+  assert.match(one.text, /Welcome to Klyp\. Your 40 free Sparks are ready\./);
   assert.match(one.text, /Paste a Twitch, Kick, or YouTube link\./);
   assert.doesNotMatch(one.text + one.html, /haven't used|haven't clipped/);
   const two = buildActivationEmail("second", links);
@@ -90,7 +90,7 @@ test("a pass sends email 1 once, with tagged links, and marks the account first"
   const summary = await runActivationEmails(h.deps, opts);
   assert.deepEqual(summary, { sent: 1, wouldSend: 0, skipped: 0, failed: 0 });
   assert.equal(h.sent.length, 1);
-  assert.equal(h.sent[0].subject, "You're in. Your 60 free Sparks are ready");
+  assert.equal(h.sent[0].subject, "You're in. Your 40 free Sparks are ready");
   assert.ok(h.sent[0].html.includes("src=email_new1"));
   assert.deepEqual(h.claimed, ["aaaa1111-0000-4000-8000-000000000001:first"]);
 });

@@ -27,7 +27,7 @@ test("the Sparks lines no longer say how many VODs, and both plans say AI clippi
     assert.ok(!/about \d+ VODs?/i.test(src));
   }
   assert.ok(freeText.includes("AI clipping with Virality Score") && proText.includes("AI clipping with Virality Score"));
-  assert.ok(freeText.includes("60 Sparks every 30 days") && proText.includes("500 Sparks every 30 days"));
+  assert.ok(freeText.includes("40 Sparks every 30 days") && proText.includes("500 Sparks every 30 days"));
 });
 
 test("Free names every free caption style (Highlighter included); Pro counts the rest honestly and keeps the diamond and full editor", () => {
