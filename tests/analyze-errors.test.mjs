@@ -54,3 +54,28 @@ test("a failed length check on a YouTube link says YouTube is limiting downloads
   assert.ok(src.includes("YouTube is limiting downloads right now, so Klyp can’t read this video. Try again later, or use a Twitch or Kick link."));
   assert.ok(src.includes("Couldn’t confirm the VOD length or Sparks cost. Check the link and try again."));
 });
+
+const liveError = "yt-dlp timed out after 600s. stderr: d=1.04x size= 15360KiB time=00:10:20.01 bitrate= 202.9kbits/s speed=1.04x size= 15360KiB time=00:10:20.01 bitrate= 202.9kbits/s speed=1.04x";
+const slowError = "yt-dlp timed out after 600s. stderr: size= 1024KiB time=00:00:30.00 bitrate= 280kbits/s speed=0.05x";
+
+test("a download that crawls at the speed the video plays says the stream is probably still live", () => {
+  const message = userFacingAnalysisError("download", "https://www.twitch.tv/videos/2932151237", liveError);
+  assert.equal(message, analyzeErrors.LIVE_VOD_MESSAGE);
+  assert.match(message, /still live/);
+  assert.match(message, /No Sparks were charged/);
+  assert.doesNotMatch(message, /yt-dlp|stderr|KiB/);
+});
+
+test("any other download timeout gets a plain message too, not raw yt-dlp output", () => {
+  const message = userFacingAnalysisError("download", "https://www.twitch.tv/videos/1", slowError);
+  assert.equal(message, analyzeErrors.DOWNLOAD_TIMEOUT_MESSAGE);
+  assert.doesNotMatch(message, /yt-dlp|stderr/);
+  // a fast download that still timed out (huge file) is not blamed on a live stream
+  assert.equal(userFacingAnalysisError("download", "https://www.twitch.tv/videos/1", "yt-dlp timed out after 600s. stderr: speed=14.2x"), analyzeErrors.DOWNLOAD_TIMEOUT_MESSAGE);
+});
+
+test("the same wording is used when a clip download times out, and other stages are left alone", () => {
+  assert.equal(analyzeErrors.userFacingClipError(liveError), analyzeErrors.LIVE_VOD_MESSAGE);
+  assert.equal(userFacingAnalysisError("transcribe", "https://www.twitch.tv/videos/1", liveError), liveError);
+  assert.equal(analyzeErrors.timedOutDownloadMessage("something else entirely"), null);
+});
