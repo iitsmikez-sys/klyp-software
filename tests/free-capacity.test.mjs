@@ -16,7 +16,7 @@ function load({ rows = [], error = null, env = {} } = {}) {
   const exports = {};
   vm.runInNewContext(code, { exports, Number, Math, Date, Array, console: { error() {}, warn() {}, log() {} },
     require: (n) => ({ "@/lib/supabase/admin": { createAdminClient: () => ({ from: (t) => { calls.push(["from", t]); return chain; } }) },
-      "@/lib/vod-budget": vodBudget }[n] ?? (() => { throw new Error(`Unexpected import: ${n}`); })()),
+      "@/lib/vod-budget": vodBudget, "@/lib/live-download": { liveDownloadDetected: () => false, LIVE_DOWNLOAD_REASON: "x" } }[n] ?? (() => { throw new Error(`Unexpected import: ${n}`); })()),
     process: { env } });
   return { ...exports, calls };
 }
