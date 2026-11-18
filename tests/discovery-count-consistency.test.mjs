@@ -63,6 +63,7 @@ function harness({ denyProviderSpend = false } = {}) {
     '@/lib/discovery-pool': { discoveryPoolSize },
     '@/lib/vod-budget': { reviewProcessingBudget: () => ({ requiresReview: false }) },
     "@/lib/live-download": { liveDownloadDetected: () => false, LIVE_DOWNLOAD_REASON: "x" },
+    "@/lib/detect-content-type": { detectContentFromTranscript: () => null },
     '@/lib/analysis-result-cache': {
       resultCacheKey: input => JSON.stringify(input),
       availableCachedClips: (clips, prior, count) => clips.filter(c =>

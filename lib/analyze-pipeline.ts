@@ -12,6 +12,7 @@ import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { isMostlyEnglish, languageSection } from "@/lib/language-hint";
+import { detectContentFromTranscript } from "@/lib/detect-content-type";
 import { detectLoudMoments, formatLoudMomentsForPrompt, isQuietStream, readLoudSamples, type LoudMoment } from "@/lib/loud-moments";
 import { bestWindowStart } from "@/lib/best-window";
 import { logAnthropicRateLimits } from "@/lib/anthropic-rate-limits";
@@ -823,6 +824,8 @@ export async function runAnalysisPipeline(opts: {
    *  gaming for callers that don't have a per-request choice (e.g. the
    *  auto-clip background worker in lib/vod-poll.ts). */
   contentType?: ContentType;
+  /** The title did not say Gaming or IRL and the person left it on Auto: decide from what is said once the transcript exists. */
+  autoContentType?: boolean;
   /** Optional keyword/phrase from the analyze form — when set, moments near
    *  a spoken mention are weighted higher during clip selection (see
    *  findKeywordMatches / formatKeywordSection). Undefined falls back to
@@ -863,7 +866,7 @@ export async function runAnalysisPipeline(opts: {
   /** The length of the analyzed part, once transcribed. */
   let partLength: number | undefined;
   const cachedTranscript = opts.cachedTranscript?.coverageMode === "full" ? opts.cachedTranscript : undefined;
-  const contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
+  let contentType = opts.contentType ?? DEFAULT_CONTENT_TYPE;
   const keyword = opts.keyword;
   const progress: PipelineProgress = onProgress ?? (() => {});
 
@@ -962,6 +965,14 @@ export async function runAnalysisPipeline(opts: {
   }
   const quietStream = isQuietStream(words.length, partLength ?? durationSeconds);
   const nonEnglish = !isMostlyEnglish(words);
+  if (opts.autoContentType && !nonEnglish) {
+    const guessed = detectContentFromTranscript(words.map((w) => w.text).join(" "));
+    if (guessed && guessed !== contentType) {
+      console.log(`[analyze] auto content type: transcript reads as ${guessed}, not ${contentType}`);
+      contentType = guessed;
+      if (contentType !== "gaming") loudMoments = [];
+    }
+  }
   if (quietStream) console.log(`[analyze] quiet stream: ${words.length} words in ${Math.round((partLength ?? durationSeconds) / 60)} min`);
   const coverageMode = cachedTranscript?.coverageMode ?? (windows.length || partSeconds ? "chat-sampled" : "full");
   if (!cachedTranscript) await opts.onTranscript?.({ words, durationSeconds, coverageMode });

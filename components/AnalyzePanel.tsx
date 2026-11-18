@@ -648,8 +648,8 @@ export default function AnalyzePanel() {
     setStageElapsed(0);
     setReconnectAttempt(null);
     const requestBody = inputMode === "file" && uploadedFile
-      ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType, keyword: keyword.trim() || undefined }
-      : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, keyword: keyword.trim() || undefined, firstPartOnly: firstPart || undefined, ...(activeWindow ? { windowStart: activeWindow.start, windowSeconds: activeWindow.end - activeWindow.start } : {}) };
+      ? { uploadId: uploadedFile.id, durationHint: uploadedFile.durationSeconds, clipCount, contentType, ...(contentChoice === "auto" && !detectedContent ? { contentAuto: true } : {}), keyword: keyword.trim() || undefined }
+      : { url, durationHint: previewDuration ?? undefined, clipCount, contentType, ...(contentChoice === "auto" && !detectedContent ? { contentAuto: true } : {}), keyword: keyword.trim() || undefined, firstPartOnly: firstPart || undefined, ...(activeWindow ? { windowStart: activeWindow.start, windowSeconds: activeWindow.end - activeWindow.start } : {}) };
     let jobId = crypto.randomUUID();
     try {
       const saved = JSON.parse(localStorage.getItem("klyp-active-analysis-job") ?? "null");
