@@ -13,9 +13,25 @@ test("a free user who pastes a video over the Free limit gets a pop-up with an u
   assert.ok(panel.includes("Get the whole video with Pro"));
   assert.ok(panel.includes("Limited: only {PLAN_LIMITS.free.youtube / 3600} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark."));
   assert.ok(panel.includes("Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks."));
-  assert.ok(panel.includes("Get Pro, ${MONTHLY_PRICE_USD} a month"));
+  // The Pro call to action is the shared offer box: the $3 pass when offered, otherwise the plain link with the monthly price.
+  assert.ok(panel.includes('<ProOfferCta source="long_video_popup" fallbackLabel={`Get Pro, $${MONTHLY_PRICE_USD} a month`} />'));
   assert.ok(!/up to d+ clips|up to 1[052] clips/i.test(panel.slice(panel.indexOf('aria-labelledby="cap-title"'), panel.indexOf('aria-labelledby="cap-title"') + 3000)), "the pop-up never promises a clip count");
-  assert.ok(panel.includes('href="/dashboard/upgrade"'));
+  const cta = readFileSync(new URL("../components/ProOfferCta.tsx", import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
+  assert.ok(cta.includes('href="/dashboard/upgrade"'), "no offer means the plain Pro plans link");
+  assert.ok(cta.includes("Cancel anytime."));
+});
+
+test("the too-long pop-up shows the $3 pass when offered, starts checkout in one click, and always states the $28", async () => {
+  const cta = readFileSync(new URL("../components/ProOfferCta.tsx", import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
+  assert.ok(cta.includes('fetch("/api/stripe/checkout").then((r) => r.json())'));
+  assert.ok(cta.includes('body: JSON.stringify({ interval: "month" })'));
+  assert.ok(cta.includes("window.location.href = data.url;"));
+  assert.ok(cta.includes("source,") || cta.includes("source }"), "the click records which pop-up it came from");
+  const { rawOfferFrom, rawOfferCopy } = await import("../lib/raw-pro.ts");
+  const copy = rawOfferCopy(rawOfferFrom({ trial: { days: 4, sparks: 250, price_cents: 300 }, first_month: null }));
+  assert.equal(copy.button, "Start for $3");
+  assert.ok(copy.detail.includes("$28 a month unless you cancel first"));
+  assert.equal(rawOfferCopy(rawOfferFrom({ trial: null, first_month: null })), null);
 });
 
 test("'Not now' closes it for that link only, and Pro users never see it", () => {
