@@ -31,7 +31,7 @@ test("the box makes no false promise: no 'unlimited', no price that might not ap
   const box = read("components/PartUpsell.tsx");
   assert.doesNotMatch(box, /unlimited|∞|infinite/i);
   assert.doesNotMatch(box, /\$17/);
-  assert.ok(box.includes('href="/dashboard/upgrade"'));
+  assert.ok(box.includes('href="/dashboard/upgrade?need=long"'));
 });
 
 test("it shows only for a free person right after a 'best 2 hours' run, under the clips, with the source line above them", () => {

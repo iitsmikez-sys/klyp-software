@@ -116,7 +116,7 @@ export default function OutOfSparksDialog({ isPro, balance, video, onClose }: { 
                 <p className="text-sm font-semibold text-foreground">Klyp Pro</p>
                 <p className="text-xs text-foreground-muted">More Sparks every month, more benefits, no watermark</p>
               </div>
-              <a href="/dashboard/upgrade" className="whitespace-nowrap rounded-lg border border-border px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-subtle">See Pro</a>
+              <a href="/dashboard/upgrade?need=sparks" className="whitespace-nowrap rounded-lg border border-border px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-subtle">See Pro</a>
             </div>
           </>
         )}
