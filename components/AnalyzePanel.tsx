@@ -1232,7 +1232,7 @@ export default function AnalyzePanel() {
                   <p className="text-xs leading-relaxed text-amber-100/80">{planBlock}</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {!isPro && (
-                      <a href="/dashboard/upgrade" className="flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
+                      <a href="/dashboard/upgrade?need=long" className="flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
                     )}
                     {isPro ? (
                       <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
@@ -1435,7 +1435,7 @@ export default function AnalyzePanel() {
                   You have {balance} Sparks left{isPro ? "." : " this month. Pro gives you 500 every month."}
                 </p>
                 {!isPro && (
-                  <a href="/dashboard/upgrade" className="flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
+                  <a href="/dashboard/upgrade?need=sparks" className="flex min-h-9 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-background transition-colors hover:bg-accent-dim">Upgrade to Pro</a>
                 )}
               </div>
             )}

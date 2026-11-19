@@ -35,7 +35,7 @@ export default function PartUpsell({ totalSeconds, analyzedSeconds }: { totalSec
       </div>
       <div className="w-full shrink-0 text-center sm:w-56">
         <a
-          href="/dashboard/upgrade"
+          href="/dashboard/upgrade?need=long"
           onClick={() => void trackEvent("results_upsell_click", { hours: Math.round((totalSeconds / 3600) * 10) / 10 })}
           className="flex min-h-11 items-center justify-center rounded-xl bg-accent px-4 text-sm font-semibold text-background transition-colors hover:bg-accent-dim"
         >

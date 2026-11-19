@@ -69,6 +69,15 @@ export default function UpgradePage() {
   const [packId, setPackId] = useState<string>(DEFAULT_PACK_ID);
   const [packBusy, setPackBusy] = useState(false);
   const [waitedTooLong, setWaitedTooLong] = useState(false);
+  // The offer (4-day pass or first month) is looked up before the page shows a price, so nobody sees $276 a year for a moment and then the $3 pass.
+  const [offerReady, setOfferReady] = useState(false);
+  // Why they came: the pop-up they clicked sets ?need=long (video too long) or ?need=sparks (out of Sparks); no value keeps the general headline.
+  const [need, setNeed] = useState<"long" | "sparks" | null>(null);
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("need");
+    setNeed(value === "long" || value === "sparks" ? value : null);
+  }, []);
   // Monthly Pro members can switch to the yearly plan: null = not offered (or still checking).
   const [yearlyOffer, setYearlyOffer] = useState<"offer" | "confirm" | "working" | "done" | null>(null);
   const [yearlyNote, setYearlyNote] = useState<string | null>(null);
@@ -97,7 +106,7 @@ export default function UpgradePage() {
       if (cancelled || typeof d?.first_month?.price_cents !== "number") return;
       setFirstMonthCents(d.first_month.price_cents);
       setYearly(false);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => { if (!cancelled) setOfferReady(true); });
     return () => { cancelled = true; };
   }, [isPro]);
 
@@ -106,7 +115,7 @@ export default function UpgradePage() {
   useEffect(() => {
     if (viewTracked.current || balance === null || isPro) return;
     viewTracked.current = true;
-    void trackEvent("upgrade_view");
+    void trackEvent("upgrade_view", { need: new URLSearchParams(window.location.search).get("need") ?? "none" });
   }, [balance, isPro]);
 
   const allowance = SPARKS_ALLOWANCE[tier];
@@ -194,7 +203,12 @@ export default function UpgradePage() {
   };
 
   // Until the plan has loaded, show nothing: the page would otherwise flash the Free view to a Pro member.
-  if (balance === null && !waitedTooLong) return <div className="min-h-[60vh]" aria-busy="true" />;
+  if ((balance === null || (!isPro && !offerReady)) && !waitedTooLong) return <div className="min-h-[60vh]" aria-busy="true" />;
+
+  const headline = need === "long" ? "Your video is too long for Free" : need === "sparks" ? "You're out of Sparks" : "Go Pro. Lose the watermark.";
+  const subline = need === "long" ? "Free handles videos up to 2 hours. Pro handles up to 8." : need === "sparks" ? "Pro gives you 500 Sparks every month." : "More Sparks, clean exports, and every tool Klyp has — one flat price.";
+  const KEY_FEATURE = /Sparks every|No watermark|Longer videos|Raw exports|Automatic clipping/;
+  const proFeatures = isPro || showAllFeatures ? PRO_FEATURES : PRO_FEATURES.filter((f) => KEY_FEATURE.test(f.text));
 
   return (
     <div className="relative p-8 max-w-4xl mx-auto animate-fade-in pricing-grid-bg">
@@ -203,10 +217,10 @@ export default function UpgradePage() {
           Pricing
         </p>
         <h1 className="font-syne text-3xl md:text-4xl font-bold text-foreground">
-          Go Pro. Lose the watermark.
+          {headline}
         </h1>
         <p className="text-foreground-muted mt-2 text-sm max-w-md mx-auto">
-          More Sparks, clean exports, and every tool Klyp has — one flat price.
+          {subline}
         </p>
       </header>
 
@@ -294,7 +308,6 @@ export default function UpgradePage() {
                 <span className="font-syne text-4xl font-bold text-accent">${trial.priceCents / 100}</span>
                 <span className="mb-1.5 text-sm text-foreground-muted">for {trial.days} days of Pro</span>
               </div>
-              <p className="text-xs text-foreground-muted">{trial.days} days of full Pro, then ${MONTHLY_PRICE_USD}/month unless you cancel. {trial.sparks} Sparks during the {trial.days} days, 500 once the month starts. Card required. The ${trial.priceCents / 100} isn't refunded.</p>
             </div>
           ) : !isPro && firstMonthCents !== null ? (
             <div className="mb-3">
@@ -315,23 +328,10 @@ export default function UpgradePage() {
             <p className="-mt-1 mb-3 text-xs text-foreground-muted">Have a promo code? Enter it at checkout.</p>
           )}
 
-          <div className="h-px bg-border mb-5" />
-          <ul className="flex flex-col gap-2 flex-1 mb-7">
-            {PRO_FEATURES.map(({ text, pro, soon }) => (
-              <li key={text} className={FEATURE_ROW}>
-                {soon ? <Soon /> : pro ? <ProDiamond size={15} className="mt-0.5 flex-shrink-0" /> : <Check />}
-                <span className="text-sm leading-snug text-foreground-muted">
-                  {text}
-                  {soon && <span className="ml-2 inline-block rounded-full border border-accent/40 bg-accent-glow px-2 py-px align-middle text-[10px] font-semibold text-accent">Coming soon</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          <button
+                    <button
             onClick={complimentaryPro ? undefined : isPro && !billingSetupNeeded ? openPortal : startCheckout}
             disabled={busy || complimentaryPro}
-            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-60 ${
+            className={`mb-1 w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-background text-sm font-bold font-syne hover:bg-accent-dim transition-colors shadow-accent-glow-sm disabled:opacity-60 ${
               !isPro && !busy ? "pulse-glow" : ""
             }`}
           >
@@ -380,6 +380,27 @@ export default function UpgradePage() {
             >
               Cancel subscription
             </button>
+          )}
+
+          {!isPro && !yearly && trial && (
+            <p className="mb-4 mt-1 text-center text-[11px] leading-snug text-foreground-muted">{trial.days} days of full Pro, then ${MONTHLY_PRICE_USD}/month unless you cancel. {trial.sparks} Sparks during the {trial.days} days, 500 once the month starts. Card required. The ${trial.priceCents / 100} isn't refunded. Cancel any time from this page.</p>
+          )}
+
+          <div className="h-px bg-border mb-5" />
+          <ul className="flex flex-col gap-2 flex-1 mb-4">
+            {proFeatures.map(({ text, pro, soon }) => (
+              <li key={text} className={FEATURE_ROW}>
+                {soon ? <Soon /> : pro ? <ProDiamond size={15} className="mt-0.5 flex-shrink-0" /> : <Check />}
+                <span className="text-sm leading-snug text-foreground-muted">
+                  {text}
+                  {soon && <span className="ml-2 inline-block rounded-full border border-accent/40 bg-accent-glow px-2 py-px align-middle text-[10px] font-semibold text-accent">Coming soon</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {!isPro && proFeatures.length < PRO_FEATURES.length && (
+            <button type="button" onClick={() => setShowAllFeatures(true)} className="mb-5 self-start text-xs font-semibold text-accent hover:underline">See everything in Pro</button>
           )}
 
           {/* Social proof */}
