@@ -27,6 +27,7 @@ import { processClipArchiveJobs } from "@/lib/clip-archive-worker";
 import { processR2Maintenance } from "@/lib/r2-maintenance";
 import { runQueued } from "@/lib/job-queue";
 import { isTopPick } from "@/lib/clip-extras";
+import { sendClipsReady, type ClipsReadyDeps } from "@/lib/clips-ready-email";
 import { estimateSparks, analysisCharge, CLIP_COUNT_COST, DEFAULT_CLIP_COUNT } from "@/lib/sparks";
 import type { Profile } from "@/lib/tier";
 import { PLAN_LIMITS, analysisModelFor, transcriberFor } from "@/lib/plan-limits";
@@ -51,6 +52,34 @@ const SAFETY_NET_CALL_SPACING_MS = 200; // keeps well under Twitch's 800 pts/min
 const JOB_INTERVAL_MS = 30_000;
 
 const log = (...args: unknown[]) => console.log("[vod-poll]", new Date().toISOString(), ...args);
+
+/** Real sending for the "clips are ready" email: the address from the account, the same Resend key and sender as the other emails. */
+function clipsReadyDeps(admin: Admin): ClipsReadyDeps {
+  return {
+    async getRecipient(userId) {
+      const { data, error } = await admin.auth.admin.getUserById(userId);
+      if (error || !data?.user) return null;
+      const { data: profile } = await admin.from("profiles").select("activation_emails_off").eq("id", userId).maybeSingle();
+      return { email: data.user.email ?? null, emailsOff: !!profile?.activation_emails_off };
+    },
+    async send(mail) {
+      const apiKey = process.env.RESEND_API_KEY;
+      if (!apiKey) throw new Error("RESEND_API_KEY is not set");
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: process.env.ACTIVATION_FROM || "Klyp <hello@send.klyp.world>", to: [mail.to], subject: mail.subject, html: mail.html, text: mail.text,
+          ...(process.env.ACTIVATION_REPLY_TO ? { reply_to: process.env.ACTIVATION_REPLY_TO } : {}),
+          headers: { "List-Unsubscribe": `<${mail.unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) throw new Error(`the email service answered ${res.status}`);
+    },
+    log,
+  };
+}
 
 async function notify(admin: Admin, userId: string, message: string) {
   const { error } = await admin.from("notifications").insert({ user_id: userId, message });
@@ -179,6 +208,7 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
         dim_comedy: clip.dimensions?.comedy ?? null,
         dim_storyline: clip.dimensions?.storyline ?? null,
       }));
+    const clipsMadeAfter = new Date(Date.now() - 5_000).toISOString();
     const { data: committed, error: finishError } = await admin.rpc("finish_auto_vod_job", {
       p_job_id: job.id, p_clips: rows, p_cost: sparksSpent,
     });
@@ -191,6 +221,11 @@ async function processJob(admin: Admin, job: VodJob): Promise<void> {
       `Your new VOD is clipped — ${topPicks.length} clip${topPicks.length === 1 ? "" : "s"} ready in your dashboard.`
     );
     log("auto-clipped", job.stream_id, job.video_id, `${topPicks.length} clips`, `${sparksSpent}⚡`);
+    // The email is a courtesy: it never fails or repeats the clipping (see sendClipsReady).
+    await sendClipsReady(clipsReadyDeps(admin), {
+      userId: job.user_id, clips: topPicks.map((c) => ({ title: c.title, score: Math.round(c.viral_score) })), sinceIso: clipsMadeAfter,
+      siteUrl: process.env.SITE_URL || "https://www.klyp.world", secret: process.env.ACTIVATION_EMAIL_SECRET, mode: process.env.CLIPS_READY_EMAILS,
+    });
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }

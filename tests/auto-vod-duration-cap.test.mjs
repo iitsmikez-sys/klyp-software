@@ -39,6 +39,7 @@ test('automatic clipping skips an 11-hour VOD without paid work or a Sparks debi
   };
   const modules = {
     "@/lib/clip-extras": clipExtras,
+    "@/lib/clips-ready-email": { sendClipsReady: async () => "skipped" },
     'fs/promises': { mkdtemp: async () => 'fixture-dir', rm: async () => {} },
     os: { tmpdir: () => 'fixture-tmp' }, path: { join: (...parts) => parts.join('/') },
     '@/lib/supabase/admin': { createAdminClient: () => admin },

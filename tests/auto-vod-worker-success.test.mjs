@@ -35,6 +35,7 @@ test('published Twitch VOD runs analysis, saves clips, charges once, and notifie
   };
   const modules = {
     "@/lib/clip-extras": clipExtras,
+    "@/lib/clips-ready-email": { sendClipsReady: async () => "skipped" },
     'fs/promises':{mkdtemp:async()=> 'fixture-dir',rm:async()=>{}},
     os:{tmpdir:()=> 'fixture-tmp'},path:{join:(...parts)=>parts.join('/')},
     '@/lib/supabase/admin':{createAdminClient:()=>admin},
@@ -87,6 +88,7 @@ test('automatic clipping saves top picks only: near-miss extras are left for the
   };
   const modules = {
     "@/lib/clip-extras": clipExtras,
+    "@/lib/clips-ready-email": { sendClipsReady: async () => "skipped" },
     'fs/promises':{mkdtemp:async()=> 'fixture-dir',rm:async()=>{}},
     os:{tmpdir:()=> 'fixture-tmp'},path:{join:(...parts)=>parts.join('/')},
     '@/lib/supabase/admin':{createAdminClient:()=>admin},
@@ -137,6 +139,7 @@ test('insufficient Sparks stops automatic clipping before any provider call', as
   };
   const modules = {
     "@/lib/clip-extras": clipExtras,
+    "@/lib/clips-ready-email": { sendClipsReady: async () => "skipped" },
     'fs/promises':{mkdtemp:async()=> 'fixture-dir',rm:async()=>{}},os:{tmpdir:()=> 'fixture-tmp'},path:{join:(...parts)=>parts.join('/')},
     '@/lib/supabase/admin':{createAdminClient:()=>admin},'@/lib/twitch':{getRecentVods:async()=>[],parseTwitchDuration:()=>3600},
     '@/lib/vod-discovery':{unseenVods:()=>[]},'@/lib/analyze-pipeline':{runAnalysisPipeline:async()=>{providerCalls++;throw new Error('unexpected');}},
