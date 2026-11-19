@@ -510,6 +510,9 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     ? `\n\n## CREATOR FEEDBACK\n${creatorPreferences} Use this only as a tiebreaker between equally strong candidates. Never lower the quality floor or change factual scoring to match taste.`
     : "";
 
+  // The long fixed instructions come first and are marked for reuse: when a long video is read in several windows, windows after the
+  // first pay about a tenth of the price for them. Only the parts that differ per window (chat spikes, loud moments, topic) come after.
+  const systemChanging = `${spikeSection}${loudSection}${keywordSection}`;
   const request = {
     model,
     // 16,000 is the most the cost guard (lib/provider-budget-core.ts) will price, and the early budget check is built on it. Adaptive
@@ -517,7 +520,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     // in the near-miss list after the main one. When that happens the complete clips are kept (salvageClipsJson) instead of failing.
     max_tokens: maxOutputTokens,
     thinking: { type: "adaptive" },
-    system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
+    system: [{ type: "text", cache_control: { type: "ephemeral" }, text: `You are MIDAS — Klyp's Moment Identification & Analysis System.
 
 You are the analysis brain of a professional clipping pipeline. Think of yourself as a veteran short-form editor who has cut thousands of Twitch and YouTube VODs into clips that hit millions of views on TikTok, Shorts, and Reels. Streamers pay for your judgment: you watch hours of footage so they don't have to, and you surface ONLY the moments a top human editor would fight to clip. Your picks go straight into production — the top of your main list must be precise, but creators also want plenty of clips to choose from, so a long VOD should rarely return only a couple of moments in total.
 
@@ -631,7 +634,7 @@ Wrong: {"type": "REACTION_SPIKE", ...} — REACTION_SPIKE is a signal, not a typ
 
 ## ALSO CONSIDER (near-misses, separate list)
 
-After your main list, fill "also_consider" with the next-best moments that scored 25-64, below the quality floor, best first, so the full list reaches ${clipCount} clips whenever the footage has enough real moments. Do this whenever your main list has fewer than ${clipCount} clips; if the main list is already full, return an empty list. If NO moment cleared 65 ("best of this stream"), still return the best real moments you found here (scores 25-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones and never filler; if nothing scored at least 25, return an empty list. VOLUME MODE: creators asked for MANY clips and will pick for themselves, so be generous in this list. This list is REQUIRED to be filled, not optional: a one-hour VOD nearly always holds 8 or more distinct moments of this kind, and a list with only a couple of moments means you stopped looking too early. The "never pad" and quality-floor rules apply to the main "clips" list only; here, modest real moments are exactly what is wanted. Include every distinct, self-contained moment with a real trigger (a funny line, a short story, a reaction, a quotable take, a relatable confession, a good play), even a modest one that would not go viral, down to a score of 25. Quiet and talky streams still have these: scan every part of the VOD, not just the loud parts, and fill the list to the requested count whenever the footage has that many distinct moments. Never repeat a moment, never invent one, and never include dead air or flat talking with no turn. At most (${clipCount} minus your main list length) moments. Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${roleplaySection}${languageNote}${keywordSection}`,
+After your main list, fill "also_consider" with the next-best moments that scored 25-64, below the quality floor, best first, so the full list reaches ${clipCount} clips whenever the footage has enough real moments. Do this whenever your main list has fewer than ${clipCount} clips; if the main list is already full, return an empty list. If NO moment cleared 65 ("best of this stream"), still return the best real moments you found here (scores 25-64), so a quiet or small streamer is never left empty-handed. Only real moments the footage supports, never invented ones and never filler; if nothing scored at least 25, return an empty list. VOLUME MODE: creators asked for MANY clips and will pick for themselves, so be generous in this list. This list is REQUIRED to be filled, not optional: a one-hour VOD nearly always holds 8 or more distinct moments of this kind, and a list with only a couple of moments means you stopped looking too early. The "never pad" and quality-floor rules apply to the main "clips" list only; here, modest real moments are exactly what is wanted. Include every distinct, self-contained moment with a real trigger (a funny line, a short story, a reaction, a quotable take, a relatable confession, a good play), even a modest one that would not go viral, down to a score of 25. Quiet and talky streams still have these: scan every part of the VOD, not just the loud parts, and fill the list to the requested count whenever the footage has that many distinct moments. Never repeat a moment, never invent one, and never include dead air or flat talking with no turn. At most (${clipCount} minus your main list length) moments. Use the same fields as a clip, and the same rules: they must not overlap, or start within 60 seconds of, any main pick or each other. These are extras, never replacements: do not move a 65+ moment here, do not lower any main pick's score to fit, and do not change anything in your main list because of them.${spikeSection}${loudSection}${roleplaySection}${languageNote}` }, ...(systemChanging ? [{ type: "text", text: systemChanging }] : [])],
     messages: [
       {
         role: "user",
@@ -782,13 +785,17 @@ export async function findClipsAcrossVod(args: {
   }
   const each = perChunkCount(args.poolSize, plan.length);
   console.log(`[analyze] reading ${Math.round((spanEnd - spanStart) / 60)} min in ${plan.length} windows, ${each} moments each`);
-  const settled = await Promise.allSettled(plan.map((w) => {
+  const askWindow = (w: { start: number; end: number }) => {
     const inWin = (s: number) => s >= w.start && s < w.end;
     const text = formatTranscript(args.words.filter((x) => x.start / 1000 >= w.start && x.start / 1000 < w.end), { dropFillers: true });
     return findClips(text, args.durationSeconds, args.chatSpikes ? args.chatSpikes.filter((s) => inWin(s.seconds)) : null, each, args.contentType, args.keyword,
       args.keywordMatchSeconds.filter(inWin), args.priorWindows.filter((p) => p.end_seconds > w.start && p.start_seconds < w.end), args.creatorPreferences,
       args.costRunId, [{ start: w.start, end: w.end }], args.model, args.loudMoments.filter((m) => inWin(m.peak_seconds)), args.quietStream, args.nonEnglish, 8000);
-  }));
+  };
+  // The first window goes alone so the others can reuse the instructions it saves; the rest then run together.
+  const first = await Promise.allSettled([askWindow(plan[0])]);
+  const rest = await Promise.allSettled(plan.slice(1).map(askWindow));
+  const settled = [...first, ...rest];
   const done = settled.filter((r): r is PromiseFulfilledResult<{ clips: Clip[]; skipped: number }> => r.status === "fulfilled");
   if (done.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
   if (done.length < settled.length) console.warn(`[analyze] ${settled.length - done.length} of ${settled.length} windows failed; kept the others`);
