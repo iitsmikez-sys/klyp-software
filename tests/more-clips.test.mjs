@@ -54,7 +54,7 @@ test("the roleplay section lists the patterns that make standalone GTA RP clips,
 
 test("the clip finder never asks for more output than the cost guard accepts, or every analysis would be refused", async () => {
   const pipeline = read("lib/analyze-pipeline.ts");
-  const asked = [...pipeline.matchAll(/max_tokens: (\d+)/g)].map((m) => Number(m[1]));
+  const asked = [...pipeline.matchAll(/maxOutputTokens = (\d+)/g), ...pipeline.matchAll(/nonEnglish, (\d+)\)/g)].map((m) => Number(m[1]));
   assert.ok(asked.length >= 1);
   const guard = read("lib/provider-budget-core.ts");
   const limit = Number(/maxOutputTokens > ([\d_]+)\)/.exec(guard)[1].replaceAll("_", ""));

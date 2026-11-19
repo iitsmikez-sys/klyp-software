@@ -32,5 +32,5 @@ test("the pipeline only uses it when the output limit was the reason, and otherw
   const pipeline = read("lib/analyze-pipeline.ts");
   assert.ok(pipeline.includes('response.stop_reason === "max_tokens" ? salvageClipsJson(text) : null'));
   assert.ok(pipeline.includes('if (!kept) throw new Error("Claude returned output that was not valid JSON.");'));
-  assert.ok(pipeline.includes("max_tokens: 16000,"), "still within the cost guard");
+  assert.ok(pipeline.includes("maxOutputTokens = 16000") && pipeline.includes("max_tokens: maxOutputTokens,"), "still within the cost guard");
 });

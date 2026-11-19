@@ -50,7 +50,7 @@ import { reviewProcessingBudget, runLimitForSeconds } from "@/lib/vod-budget";
 import { LIVE_DOWNLOAD_REASON, liveDownloadDetected } from "@/lib/live-download";
 import { budgetForRun } from "@/lib/provider-budget";
 import { quoteSelectMessage, quoteTranscription } from "@/lib/provider-budget-core";
-import { pickExtras, salvageClipsJson } from "@/lib/clip-extras";
+import { pickExtras, salvageClipsJson, planChunks, perChunkCount, mergeChunkClips } from "@/lib/clip-extras";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
@@ -466,7 +466,9 @@ export async function findClips(
   /** The streamer talks very little, so loud moments and chat carry more weight. */
   quietStream = false,
   /** The transcript is not English: write titles and hooks in the streamer's language. */
-  nonEnglish = false
+  nonEnglish = false,
+  /** The answer budget for this call. A window of a longer video asks for fewer moments, so it reserves less. */
+  maxOutputTokens = 16000
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -513,7 +515,7 @@ Chat replay spikes are provided below the transcript. A spike means the live aud
     // 16,000 is the most the cost guard (lib/provider-budget-core.ts) will price, and the early budget check is built on it. Adaptive
     // thinking spends output tokens too, so 15 clips plus the longer gaming instructions can reach it and cut the answer off, usually
     // in the near-miss list after the main one. When that happens the complete clips are kept (salvageClipsJson) instead of failing.
-    max_tokens: 16000,
+    max_tokens: maxOutputTokens,
     thinking: { type: "adaptive" },
     system: `You are MIDAS — Klyp's Moment Identification & Analysis System.
 
@@ -760,6 +762,37 @@ After your main list, fill "also_consider" with the next-best moments that score
   );
 
   return { clips, skipped };
+}
+
+/**
+ * Finds clips across the whole video. A long video is read in windows of about 30 minutes (see planChunks), each asked for its own
+ * best moments, and the answers are merged; a short one is read in one call, as before.
+ */
+export async function findClipsAcrossVod(args: {
+  words: TimedWord[]; durationSeconds: number; chatSpikes: ChatSpike[] | null; poolSize: ClipCount; contentType: ContentType;
+  keyword?: string; keywordMatchSeconds: number[]; priorWindows: { start_seconds: number; end_seconds: number }[]; creatorPreferences: string;
+  costRunId?: string; observedPart?: AudioWindow[]; model?: string; loudMoments: LoudMoment[]; quietStream: boolean; nonEnglish: boolean; transcriptText: string;
+}): Promise<{ clips: Clip[]; skipped: number }> {
+  const spanStart = args.observedPart?.[0]?.start ?? 0;
+  const spanEnd = args.observedPart?.[0]?.end ?? args.durationSeconds;
+  const plan = planChunks(spanStart, spanEnd);
+  if (plan.length === 1) {
+    return findClips(args.transcriptText, args.durationSeconds, args.chatSpikes, args.poolSize, args.contentType, args.keyword,
+      args.keywordMatchSeconds, args.priorWindows, args.creatorPreferences, args.costRunId, args.observedPart, args.model, args.loudMoments, args.quietStream, args.nonEnglish);
+  }
+  const each = perChunkCount(args.poolSize, plan.length);
+  console.log(`[analyze] reading ${Math.round((spanEnd - spanStart) / 60)} min in ${plan.length} windows, ${each} moments each`);
+  const settled = await Promise.allSettled(plan.map((w) => {
+    const inWin = (s: number) => s >= w.start && s < w.end;
+    const text = formatTranscript(args.words.filter((x) => x.start / 1000 >= w.start && x.start / 1000 < w.end), { dropFillers: true });
+    return findClips(text, args.durationSeconds, args.chatSpikes ? args.chatSpikes.filter((s) => inWin(s.seconds)) : null, each, args.contentType, args.keyword,
+      args.keywordMatchSeconds.filter(inWin), args.priorWindows.filter((p) => p.end_seconds > w.start && p.start_seconds < w.end), args.creatorPreferences,
+      args.costRunId, [{ start: w.start, end: w.end }], args.model, args.loudMoments.filter((m) => inWin(m.peak_seconds)), args.quietStream, args.nonEnglish, 8000);
+  }));
+  const done = settled.filter((r): r is PromiseFulfilledResult<{ clips: Clip[]; skipped: number }> => r.status === "fulfilled");
+  if (done.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
+  if (done.length < settled.length) console.warn(`[analyze] ${settled.length - done.length} of ${settled.length} windows failed; kept the others`);
+  return { clips: mergeChunkClips(done.map((r) => r.value.clips), args.poolSize), skipped: done.reduce((n, r) => n + r.value.skipped, 0) };
 }
 
 export type PipelineProgress = (stage: AnalyzeStage, status: "running" | "done", etaSeconds?: number, reused?: boolean) => void;
@@ -1010,15 +1043,15 @@ export async function runAnalysisPipeline(opts: {
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
     // "relatable-v1": results found before relatable moments and the share trigger were added; "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
-    signals: ["trim-v1", "story-v1", "relatable-v1", "floor25-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
+    signals: ["trim-v1", "story-v1", "relatable-v1", "floor25-v1", "chunk-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
   let skipped = 0;
   if (judged === null) {
     const selected = await withMem("find-clips", () =>
-      findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-        keywordMatchSeconds, [], opts.creatorPreferences ?? "", opts.costRunId, observedPart, opts.model, loudMoments, quietStream, nonEnglish));
+      findClipsAcrossVod({ words, durationSeconds, chatSpikes, poolSize, contentType, keyword, keywordMatchSeconds, priorWindows: [],
+        creatorPreferences: opts.creatorPreferences ?? "", costRunId: opts.costRunId, observedPart, model: opts.model, loudMoments, quietStream, nonEnglish, transcriptText }));
     judged = selected.clips;
     skipped = selected.skipped;
     await cache?.save(judged);
@@ -1043,8 +1076,8 @@ export async function runAnalysisPipeline(opts: {
     let nextJudged = await nextCache.load();
     if (nextJudged === null) {
       const next = await withMem("find-clips-more", () =>
-        findClips(transcriptText, durationSeconds, chatSpikes, poolSize, contentType, keyword,
-          keywordMatchSeconds, priorWindows, opts.creatorPreferences ?? "", opts.costRunId, observedPart, opts.model, loudMoments, quietStream, nonEnglish));
+        findClipsAcrossVod({ words, durationSeconds, chatSpikes, poolSize, contentType, keyword, keywordMatchSeconds, priorWindows,
+          creatorPreferences: opts.creatorPreferences ?? "", costRunId: opts.costRunId, observedPart, model: opts.model, loudMoments, quietStream, nonEnglish, transcriptText }));
       nextJudged = next.clips;
       skipped += next.skipped;
       await nextCache.save(nextJudged);

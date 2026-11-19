@@ -51,7 +51,7 @@ test("the pipeline scans the loudness, takes the best part, and puts words back 
   assert.ok(p.includes("start: w.start + windowStart * 1000, end: w.end + windowStart * 1000"));
   assert.ok(p.includes("durationSeconds = windowStart + result.durationSeconds;"));
   assert.ok(p.includes("const observedPart = partSeconds ? [{ start: windowStart, end: durationSeconds }] : undefined;"));
-  assert.equal(p.split("opts.costRunId, observedPart, opts.model").length - 1, 2, "both clip-finder calls know only the part was transcribed");
+  assert.equal(p.split("costRunId: opts.costRunId, observedPart, model: opts.model").length - 1, 2, "both clip-finder calls know only the part was transcribed");
   assert.ok(p.includes("start_seconds: m.start_seconds + windowStart"), "loud-moment hints shifted too");
   assert.ok(read("app/api/analyze/route.ts").includes("sourceSeconds: verifiedDuration"));
 });
