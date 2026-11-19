@@ -93,3 +93,47 @@ export function salvageClipsJson(text: string): string | null {
   try { JSON.parse(json); } catch { return null; }
   return json;
 }
+
+/**
+ * Chunked clip finding. One call over a whole long transcript sometimes stops after a clip or two (the same VOD gave 1 clip on one run
+ * and 8 on the next). So a long video is read in windows of about 30 minutes, each asked for its own best moments, and the answers are
+ * merged. Videos under CHUNK_MIN_SPAN_SECONDS are still read in one call, exactly as before.
+ */
+export const CHUNK_MIN_SPAN_SECONDS = 50 * 60;
+export const CHUNK_SECONDS = 30 * 60;
+/** Never more than this many calls for one video, however long (a longer video gets longer windows). */
+export const MAX_CHUNKS = 6;
+/** Windows overlap a little so a moment on a boundary is still seen whole by one of them. */
+export const CHUNK_OVERLAP_SECONDS = 60;
+
+export function planChunks(start: number, end: number): { start: number; end: number }[] {
+  const span = end - start;
+  if (!Number.isFinite(span) || span < CHUNK_MIN_SPAN_SECONDS) return [{ start, end }];
+  const n = Math.min(MAX_CHUNKS, Math.ceil(span / CHUNK_SECONDS));
+  const len = span / n;
+  return Array.from({ length: n }, (_, i) => ({
+    start: Math.max(start, Math.round(start + i * len - (i === 0 ? 0 : CHUNK_OVERLAP_SECONDS))),
+    end: Math.min(end, Math.round(start + (i + 1) * len + (i === n - 1 ? 0 : CHUNK_OVERLAP_SECONDS))),
+  }));
+}
+
+const ALLOWED_COUNTS = [1, 2, 3, 5, 7, 10, 12, 15, 20] as const;
+/** How many moments each window is asked for: its share of the total plus two spare, at least 4, as an allowed clip count (the merge keeps the best). */
+export function perChunkCount(total: number, chunks: number): (typeof ALLOWED_COUNTS)[number] {
+  const wanted = Math.max(4, Math.ceil(total / chunks) + 2);
+  return ALLOWED_COUNTS.find((c) => c >= wanted) ?? 20;
+}
+
+/** Top picks first (best first), then near-misses (best first), moments that overlap or start within 30s of a better one dropped, cut to `total`. */
+export function mergeChunkClips<T extends Scored>(perChunk: T[][], total: number): T[] {
+  const all = perChunk.flat().filter((c) => Number.isFinite(c.viral_score));
+  const ranked = [...all.filter((c) => c.viral_score >= QUALITY_BAR).sort((a, b) => b.viral_score - a.viral_score),
+    ...all.filter((c) => c.viral_score < QUALITY_BAR).sort((a, b) => b.viral_score - a.viral_score)];
+  const kept: T[] = [];
+  for (const clip of ranked) {
+    if (kept.length >= total) break;
+    if (kept.some((other) => collides(other, clip))) continue;
+    kept.push(clip);
+  }
+  return kept;
+}

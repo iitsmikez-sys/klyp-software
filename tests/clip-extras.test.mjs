@@ -176,7 +176,8 @@ test("findClips: an old-style answer with no also_consider list still works exac
 test("findClips: the near-miss instruction is in the prompt, and the main list's quality bar is unchanged", async () => {
   const h = harness({ clips: [full(1000, 85)] });
   await h.run();
-  const system = h.seen.created[0].system;
+  const sys = h.seen.created[0].system;
+  const system = typeof sys === "string" ? sys : sys.map((b) => b.text).join("\n");
   assert.match(system, /ALSO CONSIDER/);
   assert.match(system, /scored 25-64/);
   assert.match(system, /reaches \d+ clips|reaches 10 clips/);

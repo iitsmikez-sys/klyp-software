@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback, FormEvent } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { AnalyzeEvent, AnalyzeStage, ClipWithWords, CaptionStyle, ExportFormat, ContentType } from "@/lib/clips";
 import { CONTENT_TYPES, CONTENT_TYPE_LABELS, DEFAULT_CONTENT_TYPE, resolveExportFormat } from "@/lib/clips";
@@ -1563,14 +1563,21 @@ export default function AnalyzePanel() {
             </p>
           )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
-            {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <FoundClipCard
-              key={i} clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy} keptDays={resultsKeptDays(isPro)} showWatermarkNudge={!isPro}
+            {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <Fragment key={i}>
+              {extraCount > 0 && !isTopPick(clip) && i > 0 && isTopPick(clips[i - 1]) && (
+                <div data-more-moments className="lg:col-span-2 mt-2 border-t border-border pt-4">
+                  <p className="text-sm font-semibold text-foreground">More moments to browse</p>
+                  <p className="text-xs text-foreground-muted">These scored a little lower, but they're real moments you can use.</p>
+                </div>
+              )}
+              <FoundClipCard
+              clip={editorClips[i]} topPick={extraCount > 0 && isTopPick(clip)} kept={clipStatus[i] === "kept"} busy={busy} keptDays={resultsKeptDays(isPro)} showWatermarkNudge={!isPro}
               saving={saving === i || saving === "all"} exporting={downloading === i}
               rawSeconds={downloading === i ? downloadElapsed : 0} exportKind={downloadKind}
               onReadyExport={() => void downloadClip(clip, i, undefined, false, true)}
               onPreview={() => { if (!busy) setPreviewIndex(i); }} onCustomize={() => void editClip(i)}
               onRawExport={() => { if (rawLocked) setRawLockOpen(true); else void downloadClip(clip, i, undefined, true); }}
-              onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} />)}
+              onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} /></Fragment>)}
           </div>
           {partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}
           {partRunTotal === null && !isPro && clips.some((_, i) => clipStatus[i] !== "discarded") && (

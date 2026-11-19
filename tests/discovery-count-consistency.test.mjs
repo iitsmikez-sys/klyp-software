@@ -104,7 +104,7 @@ test('requests of 1, 2, 3, 5, and 10 use the same complete discovery pool', asyn
   }
   assert.equal(calls.selection, 1, 'repeat requests must reuse the judged pool');
   assert.deepEqual(calls.visualPools, [6], 'all strong candidates are visually ranked once before delivery is limited');
-  assert.match(calls.prompts[0].system, /top 10/i);
+  assert.match(typeof calls.prompts[0].system === "string" ? calls.prompts[0].system : calls.prompts[0].system.map((b) => b.text).join(" "), /top 10/i);
   assert.ok(calls.prompts[0].messages[0].content.includes('quiet joke'));
 });
 
