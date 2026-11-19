@@ -110,6 +110,11 @@ type UploadedFile = {
   sparks: number;
 };
 
+/** Phone or computer, so a dropped connection can be matched to the device (Safari on a phone is the usual one). Saved with download events only. */
+function deviceKind(): "mobile" | "desktop" {
+  return typeof navigator !== "undefined" && /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent) ? "mobile" : "desktop";
+}
+
 export default function AnalyzePanel() {
   const [url, setUrl] = useState("");
   const [analyzedUrl, setAnalyzedUrl] = useState(""); // URL snapshot the clips belong to
@@ -879,6 +884,7 @@ export default function AnalyzePanel() {
       clip_seconds: Math.round(clip.end_seconds - clip.start_seconds),
       score: Math.round(clip.viral_score),
       plan: isPro ? "pro" : "free",
+      device: deviceKind(),
       ...extra,
     });
     if (raw && rawCache.current[index]) {
@@ -951,10 +957,10 @@ export default function AnalyzePanel() {
 
       const zipBlob = await zip.generateAsync({ type: "blob" });
       saveBlob(zipBlob, "klyp_clips.zip");
-      void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", ok: true, took_ms: Date.now() - zipStarted });
+      void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", device: deviceKind(), ok: true, took_ms: Date.now() - zipStarted });
     } catch (err) {
       setDownloadError(err instanceof Error ? userFacingClipError(err.message) : "ZIP download failed.");
-      void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", ok: false, took_ms: Date.now() - zipStarted });
+      void trackEvent("download", { kind: "zip", clips: total, plan: isPro ? "pro" : "free", device: deviceKind(), ok: false, took_ms: Date.now() - zipStarted, error: (err instanceof Error ? err.message : "ZIP download failed.").slice(0, 80) });
     } finally {
       exportLock.current = false;
       setZipProgress(null);

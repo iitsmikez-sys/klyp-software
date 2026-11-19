@@ -34,8 +34,8 @@ test("every kind of download on the results page is recorded, with length, time 
   assert.match(panel, /downloadProps\(\{ ok: true, cached: false, took_ms: Date\.now\(\) - rawStarted \}\)/);
   assert.match(panel, /downloadProps\(\{ ok: false, cached: false, took_ms: Date\.now\(\) - rawStarted, error:/);
   assert.equal((panel.match(/cached: true, took_ms: 0/g) ?? []).length, 2, "a repeat download from the cache is recorded too");
-  assert.match(panel, /kind: "zip", clips: total, plan: isPro \? "pro" : "free", ok: true/);
-  assert.match(panel, /kind: "zip", clips: total, plan: isPro \? "pro" : "free", ok: false/);
+  assert.match(panel, /kind: "zip", clips: total, plan: isPro \? "pro" : "free", device: deviceKind\(\), ok: true/);
+  assert.match(panel, /kind: "zip", clips: total, plan: isPro \? "pro" : "free", device: deviceKind\(\), ok: false/);
 });
 
 test("the steps to payment are recorded: upgrade page visit, click on Get Pro, checkout started, header link", () => {
