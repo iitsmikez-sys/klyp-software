@@ -68,3 +68,9 @@ test("results with near-misses show a 'More moments to browse' heading before th
   assert.ok(panel.includes("extraCount > 0 && !isTopPick(clip) && i > 0 && isTopPick(clips[i - 1])"));
   assert.ok(panel.includes("More moments to browse"));
 });
+
+test("each window is told it is one part of a longer stream and to score on the whole-stream scale", () => {
+  const src = read("lib/analyze-pipeline.ts");
+  assert.ok(src.includes("ONE PART of a much longer stream"), "the scoring note exists");
+  assert.ok(src.includes("args.nonEnglish, 8000, true)"), "windows turn the note on");
+});

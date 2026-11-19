@@ -468,7 +468,9 @@ export async function findClips(
   /** The transcript is not English: write titles and hooks in the streamer's language. */
   nonEnglish = false,
   /** The answer budget for this call. A window of a longer video asks for fewer moments, so it reserves less. */
-  maxOutputTokens = 16000
+  maxOutputTokens = 16000,
+  /** Set when this call reads one part of a longer video, so scores stay on the whole-video scale. */
+  partOfLonger = false
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -639,7 +641,7 @@ After your main list, fill "also_consider" with the next-best moments that score
       {
         role: "user",
         content:
-      `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor in "clips". Then, whenever that list has fewer than ${clipCount}, fill "also_consider" with the best remaining distinct moments (scores 25-64) until the two lists together reach ${clipCount}. The creator wants MANY clips to choose from, so an answer with 1-3 clips in total is almost always wrong for a VOD over 30 minutes: look again through the whole transcript for funny lines, stories, reactions and quotable takes.${observedWindows ? " Only the supplied timestamp windows were transcribed; gaps are unobserved, not boring. Return a clip only when its entire setup and payoff fit within observed footage." : ""}\n\n${transcriptText}${priorSection}${preferenceSection}` +
+      `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor in "clips". Then, whenever that list has fewer than ${clipCount}, fill "also_consider" with the best remaining distinct moments (scores 25-64) until the two lists together reach ${clipCount}. The creator wants MANY clips to choose from, so an answer with 1-3 clips in total is almost always wrong for a VOD over 30 minutes: look again through the whole transcript for funny lines, stories, reactions and quotable takes.${observedWindows ? " Only the supplied timestamp windows were transcribed; gaps are unobserved, not boring. Return a clip only when its entire setup and payoff fit within observed footage." : ""}${partOfLonger ? " This is only ONE PART of a much longer stream, read on its own. Score on the same absolute scale you would use for the whole stream, never on a curve against the other moments in this part, and never lower a moment because this part has no bigger one. A moment that makes a stranger stop scrolling, a clips channel would post, and a viewer would send to a friend scores 65 or more and belongs in the main list: a typical 30-minute part of a stream holds one to three of those, so if you found none, look again at the moments with the cleanest hook and payoff, and score them honestly by that." : ""}\n\n${transcriptText}${priorSection}${preferenceSection}` +
           (chatSpikes ? `\n\n${formatSpikesForPrompt(chatSpikes)}` : ""),
       },
     ],
@@ -790,7 +792,7 @@ export async function findClipsAcrossVod(args: {
     const text = formatTranscript(args.words.filter((x) => x.start / 1000 >= w.start && x.start / 1000 < w.end), { dropFillers: true });
     return findClips(text, args.durationSeconds, args.chatSpikes ? args.chatSpikes.filter((s) => inWin(s.seconds)) : null, each, args.contentType, args.keyword,
       args.keywordMatchSeconds.filter(inWin), args.priorWindows.filter((p) => p.end_seconds > w.start && p.start_seconds < w.end), args.creatorPreferences,
-      args.costRunId, [{ start: w.start, end: w.end }], args.model, args.loudMoments.filter((m) => inWin(m.peak_seconds)), args.quietStream, args.nonEnglish, 8000);
+      args.costRunId, [{ start: w.start, end: w.end }], args.model, args.loudMoments.filter((m) => inWin(m.peak_seconds)), args.quietStream, args.nonEnglish, 8000, true);
   };
   // The first window goes alone so the others can reuse the instructions it saves; the rest then run together.
   const first = await Promise.allSettled([askWindow(plan[0])]);
