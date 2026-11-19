@@ -124,6 +124,8 @@ export async function getTwitchUser(userAccessToken: string): Promise<TwitchUser
 
 export type TwitchVideo = {
   id: string;
+  /** The channel the VOD belongs to (Twitch sends it; older saved fixtures may lack it). */
+  user_id?: string;
   title: string;
   url: string;
   duration: string; // e.g. "3h21m10s", "45m10s", "10s"

@@ -48,6 +48,8 @@ import { bestMomentsText } from "@/lib/clip-expectation";
 import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
 import UnsavedClipsDialog from "./UnsavedClipsDialog";
+import LiveStreamNotice from "./LiveStreamNotice";
+import type { LiveMode } from "@/lib/live-vod";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
 import { YOUTUBE_ENABLED, YOUTUBE_LINK, YOUTUBE_OFF_MESSAGE } from "@/lib/youtube-switch";
 
@@ -159,6 +161,8 @@ export default function AnalyzePanel() {
   const [previewMeta, setPreviewMeta] = useState<{ title: string | null; thumbnail: string | null } | null>(null);
   const [previewImageFailed, setPreviewImageFailed] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  /** Set when the pasted Twitch link is a stream that is still going: Analyze would only fail, so the page explains instead. */
+  const [liveMode, setLiveMode] = useState<LiveMode | null>(null);
   /** The plan's length limit was hit for this link (shown as an upgrade card, not an error). */
   const [planBlock, setPlanBlock] = useState<string | null>(null);
   /** The link's video offers only sound (e.g. a subscriber-only Twitch VOD): no clip can be cut, so Analyze stays off. */
@@ -234,7 +238,7 @@ export default function AnalyzePanel() {
     // Counts how many free people run into the 2 hour limit (best effort, never shown).
     void trackEvent("long_video_limit", { hours: Math.round(((previewDuration ?? 0) / 3600) * 10) / 10, source: platformName(url) });
   }, [showCapPopup, url, previewDuration]);
-  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !audioOnly && (!planBlock || firstPart || !!activeWindow) && !busy && !loading && !outOfSparks && !cantAfford;
+  const canSubmit = sourceReady && totalEstimate !== null && !estimating && !estimateError && !audioOnly && !liveMode && (!planBlock || firstPart || !!activeWindow) && !busy && !loading && !outOfSparks && !cantAfford;
 
   const editorClips = useMemo<SavedClip[]>(() => (clips ?? []).map((clip, index) => ({
     id: savedIds[index] ?? "", url: analyzedUrl, title: clip.title, clip_type: clip.type,
@@ -297,6 +301,7 @@ export default function AnalyzePanel() {
     setPreviewImageFailed(false);
     setEstimateError(null);
     setPlanBlock(null);
+    setLiveMode(null);
     setProWindow(null);
     setAudioOnly(false);
     if (!VOD_URL_PATTERN.test(url)) {
@@ -320,7 +325,9 @@ export default function AnalyzePanel() {
           setPreviewMeta({ title: typeof data.title === "string" ? data.title : null, thumbnail: typeof data.thumbnail === "string" ? data.thumbnail : null });
           setAudioOnly(data.videoAvailable === false);
           // The plan's length limit for this link (the server enforces it again on Analyze).
-          if (data.planLimit && data.planLimit.ok === false && typeof data.planLimit.message === "string") {
+          const liveFromServer: LiveMode | null = data.live === "upsell" || data.live === "auto" || data.live === "connect" || data.live === "wait" ? data.live : null;
+          setLiveMode(liveFromServer);
+          if (!liveFromServer && data.planLimit && data.planLimit.ok === false && typeof data.planLimit.message === "string") {
             setPlanBlock(data.planLimit.message);
           }
         }
@@ -1197,7 +1204,8 @@ export default function AnalyzePanel() {
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
                 <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
               </div>}
-              {previewDuration !== null && !estimating && <div className="mt-2 flex min-w-0 items-center gap-3 rounded-lg border border-border bg-surface-2/75 p-2">
+              {liveMode && !estimating && <LiveStreamNotice mode={liveMode} />}
+              {previewDuration !== null && !estimating && !liveMode && <div className="mt-2 flex min-w-0 items-center gap-3 rounded-lg border border-border bg-surface-2/75 p-2">
                 <div className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md bg-background text-xs text-foreground-muted sm:w-28">
                   {previewMeta?.thumbnail && !previewImageFailed
                     ? <img src={previewMeta.thumbnail} alt="" onError={() => setPreviewImageFailed(true)} className="h-full w-full object-cover" />
