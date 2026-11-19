@@ -82,3 +82,10 @@ test("automatic clipping sends the email after saving, and the review page keeps
   assert.ok(page.includes('rpc("record_clip_feedback"') && page.includes('.from("clips").delete()'));
   assert.ok(page.includes("!rated.has(c.id)"), "already rated clips are not shown again");
 });
+
+test("every download event says which device it came from, and a failed zip says why", () => {
+  const panel = read("components/AnalyzePanel.tsx");
+  assert.ok(panel.includes("device: deviceKind(),"), "single downloads carry the device");
+  assert.ok(panel.includes('kind: "zip", clips: total, plan: isPro ? "pro" : "free", device: deviceKind(), ok: false'), "a failed zip carries the device");
+  assert.ok(/ok: false, took_ms: Date\.now\(\) - zipStarted, error: /.test(panel), "a failed zip carries its reason");
+});
