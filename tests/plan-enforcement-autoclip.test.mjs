@@ -35,6 +35,7 @@ function toggleHarness(plan, { enabled = true, flag = false, failOn = null, stre
     jobs: [{ stream_id: "s1", status: "pending" }] });
   const modules = {
     "@/lib/clip-extras": clipExtras,
+    "@/lib/clips-ready-email": { sendClipsReady: async () => "skipped" },
     "next/server": { NextResponse: response },
     "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: PROFILES[plan].id } } }) } }) },
     "@/lib/supabase/admin": { createAdminClient: () => admin },
@@ -86,6 +87,7 @@ function eventsubHarness(plan) {
   const admin = world(plan);
   const modules = {
     "@/lib/clip-extras": clipExtras,
+    "@/lib/clips-ready-email": { sendClipsReady: async () => "skipped" },
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/twitch": { verifyEventSubSignature: () => true },
     "@/lib/supabase/admin": { createAdminClient: () => admin },
@@ -130,6 +132,7 @@ function workerHarness(plan, { job, pendingCheck = false, duration = 3600 } = {}
   };
   const modules = {
     "@/lib/clip-extras": clipExtras,
+    "@/lib/clips-ready-email": { sendClipsReady: async () => "skipped" },
     "fs/promises": { mkdtemp: async () => "fixture-dir", rm: async () => {} },
     os: { tmpdir: () => "fixture-tmp" }, path: { join: (...p) => p.join("/") },
     "@/lib/supabase/admin": { createAdminClient: () => admin },
