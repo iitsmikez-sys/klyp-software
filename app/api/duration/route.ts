@@ -16,6 +16,9 @@ import { runQueued } from "@/lib/job-queue";
 import { parseVodProbe, type VodProbe } from "@/lib/vod-probe";
 import { checkSourceLimit, describeLimits, planOf, sourceKindOf } from "@/lib/plan-limits";
 import { vodSourceKey } from "@/lib/vod-source";
+import { getVideosByIds, parseTwitchDuration } from "@/lib/twitch";
+import { isStillLive, liveModeFor, type LiveMode } from "@/lib/live-vod";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -32,6 +35,29 @@ const YOUTUBE_OFF_MESSAGE = "YouTube links aren't supported right now. Paste a T
 const durationCache = new Map<string, { probe: VodProbe; at: number }>();
 /** Kick's thumbnail links are signed and stop working after 5 minutes, so a cached one must not be reused for long. */
 const SIGNED_THUMBNAIL_TTL_MS = 4 * 60_000;
+
+/**
+ * Is this Twitch VOD of a stream that is still going? Asked of Twitch itself (when the VOD began and how long it is so far),
+ * and never allowed to break the preview: any failure here just means "not known to be live".
+ */
+async function liveModeOf(url: string, profileId: string, isPro: boolean): Promise<LiveMode | null> {
+  const key = vodSourceKey(url);
+  const id = key?.startsWith("twitch:") ? key.slice("twitch:".length) : null;
+  if (!id) return null;
+  try {
+    const video = (await getVideosByIds([id]))[0];
+    if (!video || !isStillLive(video.created_at, parseTwitchDuration(video.duration))) return null;
+    let channels: { twitch_user_id: string | null; auto_clip_enabled: boolean }[] = [];
+    if (isPro) {
+      const { data } = await createAdminClient().from("streams").select("twitch_user_id, auto_clip_enabled").eq("user_id", profileId);
+      channels = data ?? [];
+    }
+    return liveModeFor({ isPro, channels, streamUserId: video.user_id });
+  } catch (err) {
+    console.warn("[duration] live check skipped:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 export async function GET(req: NextRequest) {
   // This route only runs on the processing service — set DEPLOYMENT_TARGET
@@ -103,6 +129,8 @@ export async function GET(req: NextRequest) {
       title: probe.title,
       thumbnail: probe.thumbnail,
       videoAvailable: probe.videoAvailable,
+      // Set when the stream is still going: Analyze would only fail, so the page says so instead (and sells or explains auto-clipping).
+      live: await liveModeOf(url, profile.id, planOf(profile) === "pro"),
     })
   );
 }

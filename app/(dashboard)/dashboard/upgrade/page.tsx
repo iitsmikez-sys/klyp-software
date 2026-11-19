@@ -72,11 +72,11 @@ export default function UpgradePage() {
   // The offer (4-day pass or first month) is looked up before the page shows a price, so nobody sees $276 a year for a moment and then the $3 pass.
   const [offerReady, setOfferReady] = useState(false);
   // Why they came: the pop-up they clicked sets ?need=long (video too long) or ?need=sparks (out of Sparks); no value keeps the general headline.
-  const [need, setNeed] = useState<"long" | "sparks" | null>(null);
+  const [need, setNeed] = useState<"long" | "sparks" | "live" | null>(null);
   const [showAllFeatures, setShowAllFeatures] = useState(false);
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("need");
-    setNeed(value === "long" || value === "sparks" ? value : null);
+    setNeed(value === "long" || value === "sparks" || value === "live" ? value : null);
   }, []);
   // Monthly Pro members can switch to the yearly plan: null = not offered (or still checking).
   const [yearlyOffer, setYearlyOffer] = useState<"offer" | "confirm" | "working" | "done" | null>(null);
@@ -205,8 +205,8 @@ export default function UpgradePage() {
   // Until the plan has loaded, show nothing: the page would otherwise flash the Free view to a Pro member.
   if ((balance === null || (!isPro && !offerReady)) && !waitedTooLong) return <div className="min-h-[60vh]" aria-busy="true" />;
 
-  const headline = need === "long" ? "Your video is too long for Free" : need === "sparks" ? "You're out of Sparks" : "Go Pro. Lose the watermark.";
-  const subline = need === "long" ? "Free handles videos up to 2 hours. Pro handles up to 8." : need === "sparks" ? "Pro gives you 500 Sparks every month." : "More Sparks, clean exports, and every tool Klyp has — one flat price.";
+  const headline = need === "long" ? "Your video is too long for Free" : need === "sparks" ? "You're out of Sparks" : need === "live" ? "Get clips the moment your stream ends" : "Go Pro. Lose the watermark.";
+  const subline = need === "long" ? "Free handles videos up to 2 hours. Pro handles up to 8." : need === "sparks" ? "Pro gives you 500 Sparks every month." : need === "live" ? "Connect Twitch once. Pro clips every stream automatically when it ends." : "More Sparks, clean exports, and every tool Klyp has — one flat price.";
   const KEY_FEATURE = /Sparks every|No watermark|Longer videos|Raw exports|Automatic clipping/;
   const proFeatures = isPro || showAllFeatures ? PRO_FEATURES : PRO_FEATURES.filter((f) => KEY_FEATURE.test(f.text));
 
