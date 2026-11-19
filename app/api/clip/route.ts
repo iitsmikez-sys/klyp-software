@@ -30,6 +30,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
+import { clipPreset, clipCrf } from "@/lib/clip-encode";
 import { generateAss, generateTimedCueAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
@@ -183,8 +184,8 @@ async function cutClip(
     ...(raw ? [] : composed ? ["-filter_complex_threads", String(FFMPEG_THREADS), "-filter_complex", composed.filter, "-map", `[${composed.videoLabel}]`, "-map", overlayAudio.audioLabel?`[${overlayAudio.audioLabel}]`:"0:a?"] : ["-vf", vf]),
     "-t", String(duration),
     "-c:v", "libx264",
-    "-preset", "fast",
-    "-crf", "18",
+    "-preset", clipPreset(),
+    "-crf", clipCrf(),
     "-threads", String(FFMPEG_THREADS),
     "-c:a", "aac",
     "-b:a", "128k",

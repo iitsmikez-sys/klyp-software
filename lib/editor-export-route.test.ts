@@ -43,6 +43,7 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/editor-cutaway-render':{...cutawayRenderer,loadEditorCutawayAssets:async(...args:any[])=>{record('loadAssets',...args);if(options.failAssetDownload)throw new EditorAssetError('Media is missing.',404);return [{id:'asset',localPath:'/trusted/asset.png',kind:options.assetKind??'photo',mime_type:options.assetKind==='video'?'video/mp4':'image/png',width:128,height:64,duration_ms:options.assetKind==='video'?3000:null}];}},
  '@/lib/clip-edit-draft':{ClipEditDraftError},'@/lib/editor-captions':{resolveEditorCues,captionAppearance,parseCaptionOptions},
  '@/lib/bin':{resolveBin:(s:string)=>s,FFMPEG_THREADS:2,runCapture:async(_bin:string,args:string[])=>args.includes('a:0')?'{"streams":[{"codec_type":"audio"}]}':'1920,1080',run:async(...args:any[])=>record('encode',...args)},
+ '@/lib/clip-encode':{clipPreset:()=>'veryfast',clipCrf:()=>'21'},
  '@/lib/captions':{generateAss:(...args:any[])=>{record('legacyCaptions',...args);return 'legacy';},generateTimedCueAss:(...args:any[])=>{record('cues',...args);return 'ass';},generateHookAss:()=> 'hook',toFfmpegPath:(s:string)=>s,HOOK_STYLES:['IMPACT']},
  '@/lib/clips':{CAPTION_STYLES,EXPORT_FORMATS,FORMAT_DIMENSIONS,resolveExportFormat,resolveCaptionStyle},
  '@/lib/video-cache':{CACHE_DIR:'/cache',isUploadRef:()=>false,resolveSourceSegment:async(...args:any[])=>{record('download',...args);return {path:'/source.mp4',offsetSeconds:100};}},
