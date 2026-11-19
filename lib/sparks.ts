@@ -20,14 +20,15 @@ export const DEFAULT_CLIP_COUNT: ClipCount = 10;
 export const MAX_CLIP_COUNT: ClipCount = 10;
 
 /**
- * How many clips a manual analysis looks for, by video length: 10 up to 2 hours, 12 up to 4 hours, 15 beyond
- * (15 is the cap). A long VOD has far more good moments than a short one. Still included in the price, and
+ * How many clips a manual analysis looks for, by video length: 12 up to 1 hour, 15 up to 2 hours, 20 beyond
+ * (20 is the cap). A long VOD has far more good moments than a short one. Still included in the price, and
  * still only moments above the quality floor are returned. The database does not list 15, so the accounting
- * call sends the next value it accepts (see accountAnalysisJob in lib/analysis-jobs.ts).
+ * call sends the next value it accepts (20) (see accountAnalysisJob in lib/analysis-jobs.ts).
  */
 export function clipCountForDuration(durationSeconds: number): ClipCount {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 2 * 3600) return 12;
-  return 15;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 3600) return 12;
+  if (durationSeconds <= 2 * 3600) return 15;
+  return 20;
 }
 
 /** Clips are included in the video price, so a returned clip adds no charge. */

@@ -20,13 +20,15 @@ test("the screen names the ceiling for this video's length and never states a pl
   assert.match(src, /clipCountForDuration\(/);
 });
 
-test("longer videos look for more clips: 12 up to 2 hours, 15 beyond (the cap)", async () => {
+test("longer videos look for more clips: 12 up to 1 hour, 15 up to 2 hours, 20 beyond (the cap)", async () => {
   const { clipCountForDuration } = await import("../lib/sparks.ts");
   assert.equal(clipCountForDuration(15 * 60), 12);
-  assert.equal(clipCountForDuration(2 * 3600), 12);
-  assert.equal(clipCountForDuration(2 * 3600 + 1), 15);
-  assert.equal(clipCountForDuration(8 * 3600), 15);
-  assert.equal(clipCountForDuration(24 * 3600), 15, "never more than 15");
+  assert.equal(clipCountForDuration(3600), 12);
+  assert.equal(clipCountForDuration(3600 + 1), 15);
+  assert.equal(clipCountForDuration(2 * 3600), 15);
+  assert.equal(clipCountForDuration(2 * 3600 + 1), 20);
+  assert.equal(clipCountForDuration(8 * 3600), 20);
+  assert.equal(clipCountForDuration(24 * 3600), 20, "never more than 20");
   assert.equal(clipCountForDuration(Number.NaN), 12);
   assert.equal(clipCountForDuration(0), 12);
 });

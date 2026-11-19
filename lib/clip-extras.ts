@@ -118,9 +118,9 @@ export function planChunks(start: number, end: number): { start: number; end: nu
 }
 
 const ALLOWED_COUNTS = [1, 2, 3, 5, 7, 10, 12, 15, 20] as const;
-/** How many moments each window is asked for: its share of the total plus some slack, at least 3, as an allowed clip count. */
+/** How many moments each window is asked for: its share of the total plus two spare, at least 4, as an allowed clip count (the merge keeps the best). */
 export function perChunkCount(total: number, chunks: number): (typeof ALLOWED_COUNTS)[number] {
-  const wanted = Math.max(3, Math.ceil(total / chunks) + 1);
+  const wanted = Math.max(4, Math.ceil(total / chunks) + 2);
   return ALLOWED_COUNTS.find((c) => c >= wanted) ?? 20;
 }
 

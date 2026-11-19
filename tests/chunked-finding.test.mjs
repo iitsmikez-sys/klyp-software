@@ -30,11 +30,12 @@ test("never more than 6 windows, however long, and a part of a video starts wher
   assert.equal(part.at(-1).end, 5 * H);
 });
 
-test("each window is asked for its share plus slack, at least 3, as an allowed clip count", () => {
+test("each window is asked for its share plus two spare, at least 4, as an allowed clip count", () => {
   assert.equal(perChunkCount(10, 4), 5);
   assert.equal(perChunkCount(10, 2), 7);
-  assert.equal(perChunkCount(20, 6), 5);
-  assert.equal(perChunkCount(10, 10), 3);
+  assert.equal(perChunkCount(20, 5), 7);
+  assert.equal(perChunkCount(20, 6), 7);
+  assert.equal(perChunkCount(10, 10), 5);
   assert.ok([1, 2, 3, 5, 7, 10, 12, 15, 20].includes(perChunkCount(15, 4)));
 });
 
@@ -60,4 +61,10 @@ test("the pipeline uses the windowed finder for both clip-finding passes and kee
   assert.ok(p.includes("if (plan.length === 1) {"), "a short video is one call");
   assert.ok(p.includes("Promise.allSettled"), "one failed window does not lose the others");
   assert.ok(p.includes("[{ start: w.start, end: w.end }], args.model"), "a window only keeps clips inside itself");
+});
+
+test("results with near-misses show a 'More moments to browse' heading before the first one, only when top picks come first", () => {
+  const panel = read("components/AnalyzePanel.tsx");
+  assert.ok(panel.includes("extraCount > 0 && !isTopPick(clip) && i > 0 && isTopPick(clips[i - 1])"));
+  assert.ok(panel.includes("More moments to browse"));
 });
