@@ -8,7 +8,7 @@ test("a free user who pastes a video over the Free limit gets a pop-up with an u
   assert.ok(panel.includes("const showCapPopup = !!planBlock && !isPro && !firstPart && previewDuration !== null && !estimating && capDismissedFor !== url;"));
   assert.ok(panel.includes('aria-labelledby="cap-title"'));
   assert.ok(panel.includes("This video is {fmtTime(previewDuration ?? 0)} long"));
-  assert.ok(panel.includes("Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours."));
+  assert.ok(panel.includes("Free covers videos up to {FREE_HOURS_TEXT}."));
   assert.ok(panel.includes("Klyp looks at all {lengthWords(previewDuration ?? 0)}, so more of your stream's great moments become clips. No watermark."));
   assert.ok(panel.includes("Get the whole video with Pro"));
   assert.ok(panel.includes("Limited: only {PLAN_LIMITS.free.youtube / 3600} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark."));

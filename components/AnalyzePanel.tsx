@@ -117,6 +117,11 @@ function deviceKind(): "mobile" | "desktop" {
   return typeof navigator !== "undefined" && /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent) ? "mobile" : "desktop";
 }
 
+/** The free video length in words, so "1 hour" never reads "1 hours" (see PLAN_LIMITS.free). */
+const FREE_HOURS = PLAN_LIMITS.free.youtube / 3600;
+const FREE_HOURS_TEXT = FREE_HOURS === 1 ? "1 hour" : `${FREE_HOURS} hours`;
+const FREE_HOURS_WORD = FREE_HOURS === 1 ? "hour" : `${FREE_HOURS} hours`;
+
 export default function AnalyzePanel() {
   const [url, setUrl] = useState("");
   const [analyzedUrl, setAnalyzedUrl] = useState(""); // URL snapshot the clips belong to
@@ -1141,12 +1146,12 @@ export default function AnalyzePanel() {
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="cap-title">
           <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-7 shadow-2xl">
             <h3 id="cap-title" className="font-syne text-xl font-bold text-foreground">This video is {fmtTime(previewDuration ?? 0)} long</h3>
-            <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours.</p>
+            <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {FREE_HOURS_TEXT}.</p>
             <div className="mt-5 rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-semibold text-foreground">Clip the best {PLAN_LIMITS.free.youtube / 3600} hours <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the most active {PLAN_LIMITS.free.youtube / 3600} hours and clips the best moments in them. Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks.</p>
-              <p className="mt-2 text-[13px] leading-relaxed text-red-300/90">Limited: only {PLAN_LIMITS.free.youtube / 3600} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark.</p>
-              <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the best {PLAN_LIMITS.free.youtube / 3600} hours</button>
+              <p className="text-sm font-semibold text-foreground">Clip the best {FREE_HOURS_WORD} <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the most active {FREE_HOURS_WORD} and clips the best moments in {FREE_HOURS === 1 ? "it" : "them"}. Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks.</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-red-300/90">Limited: only {FREE_HOURS_TEXT} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark.</p>
+              <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the best {FREE_HOURS_WORD}</button>
             </div>
             <div className="mt-3 rounded-xl border border-accent/40 bg-accent-glow p-4">
               <p className="text-sm font-semibold text-foreground">Get the whole video with Pro</p>
@@ -1233,7 +1238,7 @@ export default function AnalyzePanel() {
               </div>}
               {firstPart && previewDuration !== null && !estimating && (
                 <p className="mt-2 rounded-lg border border-accent/30 bg-accent-glow px-3 py-2 text-xs text-foreground">
-                  Clipping the best {PLAN_LIMITS.free.youtube / 3600} hours of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
+                  Clipping the best {FREE_HOURS_WORD} of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
                 </p>
               )}
               {audioOnly && previewDuration !== null && !estimating && (
@@ -1257,7 +1262,7 @@ export default function AnalyzePanel() {
                       <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
                     ) : (
                       // Free: instead of sending them away, Klyp takes the liveliest hour of the video (Smart pick).
-                      <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the best {PLAN_LIMITS.free.youtube / 3600} hours, free</button>
+                      <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the best {FREE_HOURS_WORD}, free</button>
                     )}
                   </div>
                 </div>
