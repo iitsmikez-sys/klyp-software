@@ -44,6 +44,8 @@ async function exportRoute(options:{userId?:string;archive?:boolean;archiveStart
  '@/lib/clip-edit-draft':{ClipEditDraftError},'@/lib/editor-captions':{resolveEditorCues,captionAppearance,parseCaptionOptions},
  '@/lib/bin':{resolveBin:(s:string)=>s,FFMPEG_THREADS:2,runCapture:async(_bin:string,args:string[])=>args.includes('a:0')?'{"streams":[{"codec_type":"audio"}]}':'1920,1080',run:async(...args:any[])=>record('encode',...args)},
  '@/lib/clip-encode':{clipPreset:()=>'veryfast',clipCrf:()=>'21'},
+ '@/lib/free-lock':{isClipLockedForFree:async()=>false},
+ '@/lib/free-taste':{CLIP_LOCKED_MESSAGE:'locked'},
  '@/lib/captions':{generateAss:(...args:any[])=>{record('legacyCaptions',...args);return 'legacy';},generateTimedCueAss:(...args:any[])=>{record('cues',...args);return 'ass';},generateHookAss:()=> 'hook',toFfmpegPath:(s:string)=>s,HOOK_STYLES:['IMPACT']},
  '@/lib/clips':{CAPTION_STYLES,EXPORT_FORMATS,FORMAT_DIMENSIONS,resolveExportFormat,resolveCaptionStyle},
  '@/lib/video-cache':{CACHE_DIR:'/cache',isUploadRef:()=>false,resolveSourceSegment:async(...args:any[])=>{record('download',...args);return {path:'/source.mp4',offsetSeconds:100};}},

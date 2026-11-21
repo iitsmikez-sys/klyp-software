@@ -6,6 +6,7 @@ import { SPARKS_ALLOWANCE } from "./tier.ts";
 import { PLAN_LIMITS } from "./plan-limits.ts";
 import { CAPTION_STYLES, FREE_CAPTION_STYLES, type CaptionStyle } from "./clips.ts";
 import { YOUTUBE_ENABLED } from "./youtube-switch.ts";
+import { FREE_TOP_UNLOCKED } from "./free-taste.ts";
 
 /** How each free caption style is named for people. Adding a free style without a name here fails a test. */
 export const FREE_STYLE_NAMES: Partial<Record<CaptionStyle, string>> = {
@@ -26,8 +27,10 @@ export const FREE_FEATURES: { ok: boolean; text: string }[] = [
   { ok: true, text: "Clip editor: trim, split and edit captions" },
   { ok: true, text: "9:16 vertical and Original (no crop) exports" },
   { ok: true, text: `AI captions: ${freeCaptionList}` },
+  { ok: true, text: `Your best ${FREE_TOP_UNLOCKED} clips of each video unlocked` },
   { ok: true, text: "Save clips to your library" },
-  { ok: true, text: `${YOUTUBE_ENABLED ? "YouTube, Twitch and Kick videos" : "Twitch and Kick VODs"} up to ${freeHours} hours` },
+  { ok: true, text: `${YOUTUBE_ENABLED ? "YouTube, Twitch and Kick videos" : "Twitch and Kick VODs"} up to ${freeHours} ${freeHours === 1 ? "hour" : "hours"}` },
+  { ok: false, text: "The rest of your clips stay locked (Pro unlocks them all)" },
   { ok: false, text: "No direct video uploads or automatic clipping (Pro)" },
   { ok: false, text: "Animated Klyp watermark on free exports" },
 ];

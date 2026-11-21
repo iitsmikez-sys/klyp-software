@@ -10,7 +10,7 @@ const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").re
 
 test("lengths read as plain words", () => {
   assert.equal(lengthWords(17643), "4 hours 54 minutes");
-  assert.equal(lengthWords(17643 - 7140), "2 hours 55 minutes");
+  assert.equal(lengthWords(17643 - 3600), "3 hours 54 minutes");
   assert.equal(lengthWords(3600), "1 hour");
   assert.equal(lengthWords(2700), "45 minutes");
   assert.equal(lengthWords(0), "0 minutes");
@@ -24,7 +24,7 @@ test("every number in the upgrade box comes from the app's own rules", () => {
   const box = read("components/PartUpsell.tsx");
   for (const piece of ["CAPTION_STYLES.length - FREE_CAPTION_STYLES.length", "resultsKeptDays(true)", "resultsKeptDays(false)", "MONTHLY_PRICE_USD"]) assert.ok(box.includes(piece), piece);
   assert.doesNotMatch(box, /up to ${|clips`,|clipCountForDuration/, "no clip count is promised");
-  assert.ok(box.includes("The whole stream analyzed, not just 2 hours"));
+  assert.ok(box.includes("The whole stream analyzed, not just one hour"));
 });
 
 test("the box makes no false promise: no 'unlimited', no price that might not apply", () => {
@@ -34,13 +34,13 @@ test("the box makes no false promise: no 'unlimited', no price that might not ap
   assert.ok(box.includes('href="/dashboard/upgrade?need=long"'));
 });
 
-test("it shows only for a free person right after a 'best 2 hours' run, under the clips, with the source line above them", () => {
+test("it shows only for a free person right after a 'best hour' run, under the clips, with the source line above them", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes("submittedPartTotal.current = firstPart && previewDuration ? previewDuration : null;"));
   assert.ok(panel.includes("setPartRunTotal(submittedPartTotal.current);"));
   assert.ok(panel.includes("setPartRunTotal(null);"), "cleared when a new analysis starts");
   assert.ok(panel.includes("{partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}"));
-  assert.ok(panel.includes("These clips come from the best 2 hours of your stream, which is {lengthWords(partRunTotal)} long."));
+  assert.ok(panel.includes("These clips come from the best hour of your stream, which is {lengthWords(partRunTotal)} long."));
   assert.ok(panel.indexOf("<PartUpsell") > panel.indexOf("clips.map((clip, i) =>"), "after the clips");
 });
 

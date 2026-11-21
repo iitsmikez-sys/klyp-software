@@ -49,6 +49,8 @@ import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
 import UnsavedClipsDialog from "./UnsavedClipsDialog";
 import LiveStreamNotice from "./LiveStreamNotice";
+import LockedClips from "./LockedClips";
+import { unlockedIndexes } from "@/lib/free-taste";
 import type { LiveMode } from "@/lib/live-vod";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
 import { YOUTUBE_ENABLED, YOUTUBE_LINK, YOUTUBE_OFF_MESSAGE } from "@/lib/youtube-switch";
@@ -219,6 +221,9 @@ export default function AnalyzePanel() {
   const busy = downloading !== null || zipProgress !== null || saving !== null;
   /** Clips below the quality bar (near-miss extras). When there are none, every clip is a top pick and no badges are shown. */
   const extraCount = (clips ?? []).filter((clip) => !isTopPick(clip)).length;
+  /** Free accounts get only their best few clips open; the rest are listed as locked until the Pro pass (lib/free-taste.ts). */
+  const openClips = unlockedIndexes(clips ?? [], isPro);
+  const lockedClips = (clips ?? []).flatMap((clip, i) => (openClips.has(i) ? [] : [{ title: clip.title, score: clip.viral_score }]));
   const outOfSparks = balance !== null && balance < MIN_ANALYZE_COST;
   const animateHint = !urlFocused && url === "" && !loading && !reduceMotion;
   // Full estimate = VOD length cost (probed) + clip count cost.
@@ -875,7 +880,7 @@ export default function AnalyzePanel() {
     if (id) window.location.href = `/dashboard/clips/${id}/edit`;
   };
   const discardClip = (index: number) => setClipStatus((previous) => ({ ...previous, [index]: "discarded" }));
-  const keepAll = () => { if (clips) void keepIndices(clips.flatMap((_, index) => clipStatus[index] === "unsaved" ? [index] : [])); };
+  const keepAll = () => { if (clips) void keepIndices(clips.flatMap((_, index) => clipStatus[index] === "unsaved" && openClips.has(index) ? [index] : [])); };
 
   const downloadClip = async (clip: ClipWithWords, index: number, styleOverride?: CaptionStyle, raw = false, ready = false) => {
     if (busy || exportLock.current) return;
@@ -1206,7 +1211,7 @@ export default function AnalyzePanel() {
                 {loading ? "Analyzing…" : "✦ Find Clips"}
               </button>
               </div>
-              {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">{"Free: "}{YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"}{" videos up to 2 hours."}</p>}
+              {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">{"Free: "}{YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"}{" videos up to 1 hour, or the best hour of a longer one."}</p>}
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
                 <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
               </div>}
@@ -1251,7 +1256,7 @@ export default function AnalyzePanel() {
                     {isPro ? (
                       <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
                     ) : (
-                      // Free: instead of sending them away, Klyp takes the liveliest 2 hours of the video (Smart pick).
+                      // Free: instead of sending them away, Klyp takes the liveliest hour of the video (Smart pick).
                       <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the best {PLAN_LIMITS.free.youtube / 3600} hours, free</button>
                     )}
                   </div>
@@ -1573,12 +1578,12 @@ export default function AnalyzePanel() {
           )}
           {partRunTotal !== null && !isPro && clips.length > 0 && (
             <p className="mb-4 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-foreground-muted">
-              These clips come from the best 2 hours of your stream, which is {lengthWords(partRunTotal)} long.
+              These clips come from the best hour of your stream, which is {lengthWords(partRunTotal)} long.
             </p>
           )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
-            {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <Fragment key={i}>
-              {extraCount > 0 && !isTopPick(clip) && i > 0 && isTopPick(clips[i - 1]) && (
+            {clips.map((clip, i) => clipStatus[i] === "discarded" || !openClips.has(i) ? null : <Fragment key={i}>
+              {extraCount > 0 && !isTopPick(clip) && i > 0 && isTopPick(clips[i - 1]) && openClips.has(i - 1) && (
                 <div data-more-moments className="lg:col-span-2 mt-2 border-t border-border pt-4">
                   <p className="text-sm font-semibold text-foreground">More moments to browse</p>
                   <p className="text-xs text-foreground-muted">These scored a little lower, but they're real moments you can use.</p>
@@ -1593,8 +1598,9 @@ export default function AnalyzePanel() {
               onRawExport={() => { if (rawLocked) setRawLockOpen(true); else void downloadClip(clip, i, undefined, true); }}
               onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} /></Fragment>)}
           </div>
+          {!isPro && <LockedClips clips={lockedClips} />}
           {partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}
-          {partRunTotal === null && !isPro && clips.some((_, i) => clipStatus[i] !== "discarded") && (
+          {partRunTotal === null && !isPro && lockedClips.length === 0 && clips.some((_, i) => clipStatus[i] !== "discarded") && (
             <ResultsUpsell clipCount={clips.filter((_, i) => clipStatus[i] !== "discarded").length} />
           )}
         </div>

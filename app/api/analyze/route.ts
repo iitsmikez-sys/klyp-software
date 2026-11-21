@@ -181,7 +181,8 @@ async function handlePOST(req: NextRequest): Promise<Response> {
   const askedStart = Number(requestedWindow.start);
   const askedSeconds = Number(requestedWindow.seconds);
   const windowAsked = !uploadId && Number.isFinite(askedStart) && Number.isFinite(askedSeconds) && askedStart >= 0 && askedSeconds >= MIN_WINDOW_SECONDS;
-  const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null, ...(windowAsked ? { window: [Math.round(askedStart), Math.round(askedSeconds)] } : {}) };
+  // A Free analysis is recorded as such, so only its best clips are unlocked later (lib/free-taste.ts, lib/free-lock.ts).
+  const intent = { sourceKey, clipCount, contentType, keyword: keyword ?? null, ...(windowAsked ? { window: [Math.round(askedStart), Math.round(askedSeconds)] } : {}), ...(plan === "free" ? { freeTaste: true } : {}) };
   let job;
   try {
     job = await createOrLoadAnalysisJob(profile.id, requestedJobId ?? randomUUID(), sourceKey, intent);
