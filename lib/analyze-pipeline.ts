@@ -50,7 +50,7 @@ import { reviewProcessingBudget, runLimitForSeconds } from "@/lib/vod-budget";
 import { LIVE_DOWNLOAD_REASON, liveDownloadDetected } from "@/lib/live-download";
 import { budgetForRun } from "@/lib/provider-budget";
 import { quoteSelectMessage, quoteTranscription } from "@/lib/provider-budget-core";
-import { pickExtras, salvageClipsJson, planChunks, perChunkCount, mergeChunkClips } from "@/lib/clip-extras";
+import { pickExtras, salvageClipsJson, planChunks, perChunkCount, mergeChunkClips, THIN_WINDOW_CLIPS, THIN_WINDOW_MIN_WORDS } from "@/lib/clip-extras";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export { formatTranscript } from "@/lib/format-transcript";
 
@@ -470,7 +470,9 @@ export async function findClips(
   /** The answer budget for this call. A window of a longer video asks for fewer moments, so it reserves less. */
   maxOutputTokens = 16000,
   /** Set when this call reads one part of a longer video, so scores stay on the whole-video scale. */
-  partOfLonger = false
+  partOfLonger = false,
+  /** A second try for a window whose first answer held almost nothing: the answer was too short, so look harder. */
+  retryThin = false
 ) {
   // Reads ANTHROPIC_API_KEY from env. An organization-scoped key (sk-ant-usr-…)
   // is rejected with "This API key is not scoped to a workspace" unless the
@@ -641,7 +643,7 @@ After your main list, fill "also_consider" with the next-best moments that score
       {
         role: "user",
         content:
-      `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor in "clips". Then, whenever that list has fewer than ${clipCount}, fill "also_consider" with the best remaining distinct moments (scores 25-64) until the two lists together reach ${clipCount}. The creator wants MANY clips to choose from, so an answer with 1-3 clips in total is almost always wrong for a VOD over 30 minutes: look again through the whole transcript for funny lines, stories, reactions and quotable takes.${observedWindows ? " Only the supplied timestamp windows were transcribed; gaps are unobserved, not boring. Return a clip only when its entire setup and payoff fit within observed footage." : ""}${partOfLonger ? " This is only ONE PART of a much longer stream, read on its own. Score on the same absolute scale you would use for the whole stream, never on a curve against the other moments in this part, and never lower a moment because this part has no bigger one. A moment that makes a stranger stop scrolling, a clips channel would post, and a viewer would send to a friend scores 65 or more and belongs in the main list: a typical 30-minute part of a stream holds one to three of those, so if you found none, look again at the moments with the cleanest hook and payoff, and score them honestly by that." : ""}\n\n${transcriptText}${priorSection}${preferenceSection}` +
+      `Here is the transcript of the VOD (duration: ${durationSeconds}s). Find up to ${clipCount} clippable moments that clear the quality floor in "clips". Then, whenever that list has fewer than ${clipCount}, fill "also_consider" with the best remaining distinct moments (scores 25-64) until the two lists together reach ${clipCount}. The creator wants MANY clips to choose from, so an answer with 1-3 clips in total is almost always wrong for a VOD over 30 minutes: look again through the whole transcript for funny lines, stories, reactions and quotable takes.${observedWindows ? " Only the supplied timestamp windows were transcribed; gaps are unobserved, not boring. Return a clip only when its entire setup and payoff fit within observed footage." : ""}${partOfLonger ? " This is only ONE PART of a much longer stream, read on its own. Score on the same absolute scale you would use for the whole stream, never on a curve against the other moments in this part, and never lower a moment because this part has no bigger one. A moment that makes a stranger stop scrolling, a clips channel would post, and a viewer would send to a friend scores 65 or more and belongs in the main list: a typical 30-minute part of a stream holds one to three of those, so if you found none, look again at the moments with the cleanest hook and payoff, and score them honestly by that." : ""}${retryThin ? " A first read of this part found almost nothing, which is very unlikely for this much speech. Read it again slowly from the first minute to the last, and list every distinct self-contained moment with a real trigger (a funny line, a story, a reaction, a quotable take, a relatable confession, a good play), even a modest one, down to a score of 25. Fill the list to the requested count whenever the part holds that many." : ""}\n\n${transcriptText}${priorSection}${preferenceSection}` +
           (chatSpikes ? `\n\n${formatSpikesForPrompt(chatSpikes)}` : ""),
       },
     ],
@@ -787,12 +789,23 @@ export async function findClipsAcrossVod(args: {
   }
   const each = perChunkCount(args.poolSize, plan.length);
   console.log(`[analyze] reading ${Math.round((spanEnd - spanStart) / 60)} min in ${plan.length} windows, ${each} moments each`);
-  const askWindow = (w: { start: number; end: number }) => {
+  const askWindow = async (w: { start: number; end: number }) => {
     const inWin = (s: number) => s >= w.start && s < w.end;
-    const text = formatTranscript(args.words.filter((x) => x.start / 1000 >= w.start && x.start / 1000 < w.end), { dropFillers: true });
-    return findClips(text, args.durationSeconds, args.chatSpikes ? args.chatSpikes.filter((s) => inWin(s.seconds)) : null, each, args.contentType, args.keyword,
+    const windowWords = args.words.filter((x) => x.start / 1000 >= w.start && x.start / 1000 < w.end);
+    const text = formatTranscript(windowWords, { dropFillers: true });
+    const ask = (retryThin: boolean) => findClips(text, args.durationSeconds, args.chatSpikes ? args.chatSpikes.filter((s) => inWin(s.seconds)) : null, each, args.contentType, args.keyword,
       args.keywordMatchSeconds.filter(inWin), args.priorWindows.filter((p) => p.end_seconds > w.start && p.start_seconds < w.end), args.creatorPreferences,
-      args.costRunId, [{ start: w.start, end: w.end }], args.model, args.loudMoments.filter((m) => inWin(m.peak_seconds)), args.quietStream, args.nonEnglish, 8000, true);
+      args.costRunId, [{ start: w.start, end: w.end }], args.model, args.loudMoments.filter((m) => inWin(m.peak_seconds)), args.quietStream, args.nonEnglish, 8000, true, retryThin);
+    const firstTry = await ask(false);
+    // A window full of speech that gave back almost nothing is asked once more; the better of the two answers is kept.
+    if (firstTry.clips.length >= THIN_WINDOW_CLIPS || windowWords.length < THIN_WINDOW_MIN_WORDS) return firstTry;
+    console.log(`[analyze] window ${Math.round(w.start / 60)}-${Math.round(w.end / 60)} min gave ${firstTry.clips.length} moment(s) for ${windowWords.length} words; asking once more`);
+    try {
+      const secondTry = await ask(true);
+      return secondTry.clips.length > firstTry.clips.length ? secondTry : firstTry;
+    } catch {
+      return firstTry;
+    }
   };
   // The first window goes alone so the others can reuse the instructions it saves; the rest then run together.
   const first = await Promise.allSettled([askWindow(plan[0])]);
@@ -1052,7 +1065,7 @@ export async function runAnalysisPipeline(opts: {
     // Results found with loud-moment hints are kept apart from older ones.
     // "trim-v1": results found before the tighter-cut rules are kept apart from new ones.
     // "relatable-v1": results found before relatable moments and the share trigger were added; "story-v1": results found before stories were looked for on purpose; "pool20": long videos look for more clips.
-    signals: ["trim-v1", "story-v1", "relatable-v1", "floor25-v1", "chunk-v1", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
+    signals: ["trim-v1", "story-v1", "relatable-v1", "floor25-v1", "chunk-v2", contentType === "gaming" ? "rp-v1" : "", poolSize > 10 ? "pool20" : "", loudMoments.length ? "loud-v1" : "", nonEnglish ? "lang-v1" : ""].filter(Boolean).join("+") };
   const cache = opts.client && opts.userId && opts.sourceKey
     ? createResultCache(opts.client, opts.userId, opts.sourceKey, durationSeconds, resultCacheKey(cacheInput)) : null;
   let judged = cache ? await cache.load() : null;
