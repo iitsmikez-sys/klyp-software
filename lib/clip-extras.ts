@@ -99,10 +99,15 @@ export function salvageClipsJson(text: string): string | null {
  * and 8 on the next). So a long video is read in windows of about 30 minutes, each asked for its own best moments, and the answers are
  * merged. Videos under CHUNK_MIN_SPAN_SECONDS are still read in one call, exactly as before.
  */
-export const CHUNK_MIN_SPAN_SECONDS = 50 * 60;
-export const CHUNK_SECONDS = 30 * 60;
+export const CHUNK_MIN_SPAN_SECONDS = 36 * 60;
+/** Windows of about 20 minutes: a 30-minute window sometimes came back with no moments at all, a smaller one rarely does. */
+export const CHUNK_SECONDS = 20 * 60;
 /** Never more than this many calls for one video, however long (a longer video gets longer windows). */
-export const MAX_CHUNKS = 6;
+export const MAX_CHUNKS = 9;
+/** A window that comes back with fewer moments than this, while it holds plenty of speech, is asked once more. */
+export const THIN_WINDOW_CLIPS = 3;
+/** A window needs at least this many spoken words before a thin answer is retried (a quiet stretch really can be empty). */
+export const THIN_WINDOW_MIN_WORDS = 700;
 /** Windows overlap a little so a moment on a boundary is still seen whole by one of them. */
 export const CHUNK_OVERLAP_SECONDS = 60;
 

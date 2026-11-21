@@ -1,20 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { planChunks, perChunkCount, mergeChunkClips, CHUNK_MIN_SPAN_SECONDS, MAX_CHUNKS, CHUNK_OVERLAP_SECONDS } from "../lib/clip-extras.ts";
+import { planChunks, perChunkCount, mergeChunkClips, CHUNK_MIN_SPAN_SECONDS, MAX_CHUNKS, CHUNK_OVERLAP_SECONDS, THIN_WINDOW_CLIPS } from "../lib/clip-extras.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 const H = 3600;
 const clip = (start, score) => ({ start_seconds: start, end_seconds: start + 30, viral_score: score });
 
-test("a video under 50 minutes is read in one piece, exactly as before", () => {
+test("a video under 36 minutes is read in one piece, exactly as before", () => {
   assert.deepEqual(planChunks(0, CHUNK_MIN_SPAN_SECONDS - 1), [{ start: 0, end: CHUNK_MIN_SPAN_SECONDS - 1 }]);
   assert.deepEqual(planChunks(0, 30 * 60), [{ start: 0, end: 1800 }]);
 });
 
-test("a long video is read in windows of about 30 minutes that cover all of it and overlap a little", () => {
+test("a long video is read in windows of about 20 minutes that cover all of it and overlap a little", () => {
   const plan = planChunks(0, 2 * H);
-  assert.equal(plan.length, 4);
+  assert.equal(plan.length, 6);
   assert.equal(plan[0].start, 0);
   assert.equal(plan.at(-1).end, 2 * H);
   for (let i = 1; i < plan.length; i++) {
@@ -23,7 +23,7 @@ test("a long video is read in windows of about 30 minutes that cover all of it a
   }
 });
 
-test("never more than 6 windows, however long, and a part of a video starts where the part starts", () => {
+test("never more than 9 windows, however long, and a part of a video starts where the part starts", () => {
   assert.equal(planChunks(0, 10 * H).length, MAX_CHUNKS);
   const part = planChunks(3 * H, 5 * H);
   assert.equal(part[0].start, 3 * H);
@@ -56,7 +56,7 @@ test("the merge never returns more than asked and ignores bad scores", () => {
 test("the pipeline uses the windowed finder for both clip-finding passes and keeps the old result cache apart", () => {
   const p = read("lib/analyze-pipeline.ts");
   assert.equal(p.split("findClipsAcrossVod({").length - 1, 2);
-  assert.ok(p.includes('"chunk-v1"'));
+  assert.ok(p.includes('"chunk-v2"'));
   assert.ok(p.includes("const plan = planChunks(spanStart, spanEnd);"));
   assert.ok(p.includes("if (plan.length === 1) {"), "a short video is one call");
   assert.ok(p.includes("Promise.allSettled"), "one failed window does not lose the others");
@@ -72,5 +72,13 @@ test("results with near-misses show a 'More moments to browse' heading before th
 test("each window is told it is one part of a longer stream and to score on the whole-stream scale", () => {
   const src = read("lib/analyze-pipeline.ts");
   assert.ok(src.includes("ONE PART of a much longer stream"), "the scoring note exists");
-  assert.ok(src.includes("args.nonEnglish, 8000, true)"), "windows turn the note on");
+  assert.ok(src.includes("args.nonEnglish, 8000, true, retryThin)"), "windows turn the note on");
+});
+
+test("a window full of speech that came back almost empty is asked once more, and the better answer is kept", () => {
+  const p = read("lib/analyze-pipeline.ts");
+  assert.ok(p.includes("firstTry.clips.length >= THIN_WINDOW_CLIPS || windowWords.length < THIN_WINDOW_MIN_WORDS"));
+  assert.ok(p.includes("secondTry.clips.length > firstTry.clips.length ? secondTry : firstTry"));
+  assert.ok(p.includes("A first read of this part found almost nothing"));
+  assert.equal(THIN_WINDOW_CLIPS, 3);
 });
