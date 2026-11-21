@@ -5,6 +5,7 @@ import SavedClips from "@/components/SavedClips";
 import ConnectStreamBanner from "@/components/ConnectStreamBanner";
 import DashboardStats from "@/components/DashboardStats";
 import AudienceQuestion from "@/components/AudienceQuestion";
+import PassPopup from "@/components/PassPopup";
 
 export default function DashboardPage() {
   return (
@@ -30,6 +31,7 @@ export default function DashboardPage() {
 
       <DashboardStats />
       <AudienceQuestion />
+      <PassPopup />
     </div>
   );
 }
