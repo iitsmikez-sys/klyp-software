@@ -115,3 +115,15 @@ test("Free analyzes the first hour and the upgrade page opens on the unlock reas
   assert.equal(planLimits.PLAN_LIMITS.free.twitch, 3600);
   assert.ok(read("app/(dashboard)/dashboard/upgrade/page.tsx").includes('"Unlock all your clips"'));
 });
+
+test("a free person can pick their own hour with the bar, or let Klyp pick the busiest one", () => {
+  const panel = read("components/AnalyzePanel.tsx");
+  assert.ok(panel.includes("const [ownHourFor, setOwnHourFor] = useState<string | null>(null);"));
+  assert.ok(panel.includes("const windowCapSeconds = isPro ? PLAN_LIMITS.pro.twitch : FREE_PART_SECONDS;"), "the bar's limit is the plan's");
+  assert.ok(panel.includes("(isPro || ownHourFor === url)"), "Pro always gets the bar; Free after choosing to pick");
+  assert.ok(panel.includes("Pick my own {FREE_HOURS_WORD}") && panel.includes("Use the busiest {FREE_HOURS_WORD}"), "both choices are in the pop-up");
+  assert.ok(panel.includes("Let Klyp pick the busiest {FREE_HOURS_WORD} instead"), "and they can switch back");
+  assert.ok(panel.includes("capSeconds={windowCapSeconds}"));
+  const route = read("app/api/analyze/route.ts");
+  assert.ok(route.includes('capSeconds: plan === "free" ? FREE_PART_SECONDS'), "the server caps a chosen part at the free length");
+});

@@ -83,7 +83,7 @@ export default function VodWindowPicker({ totalSeconds, capSeconds, start, end, 
     <div className="mt-2 rounded-xl border border-accent/30 bg-accent-glow p-4" data-testid="vod-window-picker">
       <p className="text-sm font-semibold text-foreground">Pick the part to clip</p>
       <p className="mt-0.5 text-xs leading-relaxed text-foreground-muted">
-        This video is {fmtWindowLength(totalSeconds)}. Your plan clips up to {capHours} hours at a time. Drag the handles, or pick a shortcut.
+        This video is {fmtWindowLength(totalSeconds)}. Your plan clips up to {capHours === 1 ? "1 hour" : `${capHours} hours`} at a time. Drag the handles, or pick a shortcut.
       </p>
 
       <div className="px-3 pb-1 pt-10">

@@ -20,7 +20,7 @@ export default function PartUpsell({ totalSeconds, analyzedSeconds }: { totalSec
       <div className="min-w-0 flex-1">
         <h3 className="font-syne text-lg font-bold text-foreground">Want the other {lengthWords(rest)} too?</h3>
         <p className="mt-1 text-sm leading-relaxed text-foreground-muted">
-          You clipped the best hour of your stream, which is {lengthWords(totalSeconds)} long. Pro analyzes the whole thing and finds more moments.
+          You clipped the busiest hour of your stream, which is {lengthWords(totalSeconds)} long. Pro analyzes the whole thing and finds more moments.
         </p>
         <ul className="mt-3 space-y-1.5 text-sm text-foreground">
           {[

@@ -74,11 +74,12 @@ test("the price follows the part, the clip times follow the video: billed second
   assert.ok(sql.includes("record_analysis_clips(\n    v_job.source_key, p_clips, p_duration_seconds, p_requested_clips, p_billed_seconds)"));
 });
 
-test("the pop-up says the best hour (the free length, in words)", () => {
+test("the pop-up offers one hour two ways: Klyp's busiest hour, or your own (the free length, in words)", () => {
   const panel = read("components/AnalyzePanel.tsx");
-  assert.ok(panel.includes("Clip the best {FREE_HOURS_WORD}"));
-  assert.ok(panel.includes("Use the best {FREE_HOURS_WORD}"));
-  assert.ok(panel.includes("Clipping the best {FREE_HOURS_WORD} of this"));
+  assert.ok(panel.includes("Clip {FREE_HOURS === 1 ? \"one hour\" : FREE_HOURS_WORD}"));
+  assert.ok(panel.includes("Use the busiest {FREE_HOURS_WORD}"));
+  assert.ok(panel.includes("Pick my own {FREE_HOURS_WORD}"));
+  assert.ok(panel.includes("Clipping the busiest {FREE_HOURS_WORD} of this"));
 });
 
 test("on the warning box a free person gets Smart pick instead of being sent away; Pro still gets 'Try a shorter video'", () => {
@@ -88,5 +89,5 @@ test("on the warning box a free person gets Smart pick instead of being sent awa
   const block = panel.slice(start, start + 1100);
   assert.ok(block.includes("Try a shorter video"));
   assert.ok(block.includes("setFirstPartFor(url)"));
-  assert.ok(block.includes("Clip the best {FREE_HOURS_WORD}, free"));
+  assert.ok(block.includes("Clip the busiest {FREE_HOURS_WORD}, free"));
 });

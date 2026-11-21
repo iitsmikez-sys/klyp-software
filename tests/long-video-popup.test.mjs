@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const panel = readFileSync(new URL("../components/AnalyzePanel.tsx", import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 
 test("a free user who pastes a video over the Free limit gets a pop-up with an upgrade button", () => {
-  assert.ok(panel.includes("const showCapPopup = !!planBlock && !isPro && !firstPart && previewDuration !== null && !estimating && capDismissedFor !== url;"));
+  assert.ok(panel.includes("const showCapPopup = !!planBlock && !isPro && !firstPart && ownHourFor !== url && previewDuration !== null && !estimating && capDismissedFor !== url;"));
   assert.ok(panel.includes('aria-labelledby="cap-title"'));
   assert.ok(panel.includes("This video is {fmtTime(previewDuration ?? 0)} long"));
   assert.ok(panel.includes("Free covers videos up to {FREE_HOURS_TEXT}."));

@@ -187,6 +187,8 @@ export default function AnalyzePanel() {
   const submittedPartTotal = useRef<number | null>(null);
   /** The link a free person chose to clip only the first 2 hours of (see FREE_PART_SECONDS in lib/plan-limits.ts). */
   const [firstPartFor, setFirstPartFor] = useState<string | null>(null);
+  /** The link a free person chose to pick their own hour of (the bar), instead of letting Klyp pick the busiest one. */
+  const [ownHourFor, setOwnHourFor] = useState<string | null>(null);
   /** The part of an over-long video a Pro person picked on the bar (reset with each new link). */
   const [proWindow, setProWindow] = useState<{ start: number; end: number } | null>(null);
   /** A Free person tapped Download Raw (a Pro feature): show the pop-up instead of downloading. */
@@ -233,10 +235,11 @@ export default function AnalyzePanel() {
   const animateHint = !urlFocused && url === "" && !loading && !reduceMotion;
   // Full estimate = VOD length cost (probed) + clip count cost.
   const firstPart = firstPartFor === url && !!planBlock && !isPro;
-  // Pro and a video longer than the plan's length: the bar picks which part to clip (the middle until they move it).
-  const proCapSeconds = PLAN_LIMITS.pro.twitch;
-  const windowOffered = inputMode === "url" && isPro && !!planBlock && previewDuration !== null && previewDuration > proCapSeconds;
-  const activeWindow = windowOffered ? (proWindow ?? windowShortcut("middle", previewDuration!, proCapSeconds)) : null;
+  // A video longer than the plan's length: the bar picks which part to clip (the middle until they move it). Pro always gets the bar;
+  // a free person gets it after choosing "Pick my own hour" (otherwise Klyp picks the busiest hour).
+  const windowCapSeconds = isPro ? PLAN_LIMITS.pro.twitch : FREE_PART_SECONDS;
+  const windowOffered = inputMode === "url" && (isPro || ownHourFor === url) && !!planBlock && previewDuration !== null && previewDuration > windowCapSeconds;
+  const activeWindow = windowOffered ? (proWindow ?? windowShortcut("middle", previewDuration!, windowCapSeconds)) : null;
   const totalEstimate = firstPart ? estimateSparks(FREE_PART_SECONDS) + CLIP_COUNT_COST[clipCount]
     : activeWindow ? estimateSparks(activeWindow.end - activeWindow.start) + CLIP_COUNT_COST[clipCount]
     : estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
@@ -246,7 +249,7 @@ export default function AnalyzePanel() {
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
-  const showCapPopup = !!planBlock && !isPro && !firstPart && previewDuration !== null && !estimating && capDismissedFor !== url;
+  const showCapPopup = !!planBlock && !isPro && !firstPart && ownHourFor !== url && previewDuration !== null && !estimating && capDismissedFor !== url;
   useEffect(() => {
     if (!showCapPopup || capTrackedFor.current === url) return;
     capTrackedFor.current = url;
@@ -1148,10 +1151,11 @@ export default function AnalyzePanel() {
             <h3 id="cap-title" className="font-syne text-xl font-bold text-foreground">This video is {fmtTime(previewDuration ?? 0)} long</h3>
             <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {FREE_HOURS_TEXT}.</p>
             <div className="mt-5 rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-semibold text-foreground">Clip the best {FREE_HOURS_WORD} <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
+              <p className="text-sm font-semibold text-foreground">Clip {FREE_HOURS === 1 ? "one hour" : FREE_HOURS_WORD} <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
               <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the most active {FREE_HOURS_WORD} and clips the best moments in {FREE_HOURS === 1 ? "it" : "them"}. Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks.</p>
               <p className="mt-2 text-[13px] leading-relaxed text-red-300/90">Limited: only {FREE_HOURS_TEXT} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark.</p>
-              <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the best {FREE_HOURS_WORD}</button>
+              <button type="button" onClick={() => { setOwnHourFor(null); setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the busiest {FREE_HOURS_WORD}</button>
+              <button type="button" data-own-hour onClick={() => { setFirstPartFor(null); setProWindow(null); setOwnHourFor(url); void trackEvent("long_video_own_part", { source: platformName(url) }); }} className="mt-2 flex min-h-10 w-full items-center justify-center rounded-lg border border-accent/40 px-4 text-sm font-semibold text-accent transition-colors hover:bg-accent-glow">Pick my own {FREE_HOURS_WORD}</button>
             </div>
             <div className="mt-3 rounded-xl border border-accent/40 bg-accent-glow p-4">
               <p className="text-sm font-semibold text-foreground">Get the whole video with Pro</p>
@@ -1238,7 +1242,7 @@ export default function AnalyzePanel() {
               </div>}
               {firstPart && previewDuration !== null && !estimating && (
                 <p className="mt-2 rounded-lg border border-accent/30 bg-accent-glow px-3 py-2 text-xs text-foreground">
-                  Clipping the best {FREE_HOURS_WORD} of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
+                  Clipping the busiest {FREE_HOURS_WORD} of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
                 </p>
               )}
               {audioOnly && previewDuration !== null && !estimating && (
@@ -1248,7 +1252,10 @@ export default function AnalyzePanel() {
                 </div>
               )}
               {activeWindow && previewDuration !== null && !estimating && (
-                <VodWindowPicker totalSeconds={previewDuration} capSeconds={proCapSeconds} start={activeWindow.start} end={activeWindow.end} onChange={(start, end) => setProWindow({ start, end })} />
+                <>
+                  <VodWindowPicker totalSeconds={previewDuration} capSeconds={windowCapSeconds} start={activeWindow.start} end={activeWindow.end} onChange={(start, end) => setProWindow({ start, end })} />
+                  {!isPro && <button type="button" data-let-klyp-pick onClick={() => { setOwnHourFor(null); setProWindow(null); setFirstPartFor(url); }} className="mt-2 text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">Let Klyp pick the busiest {FREE_HOURS_WORD} instead</button>}
+                </>
               )}
               {planBlock && !firstPart && !activeWindow && previewDuration !== null && !estimating && (
                 <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
@@ -1262,7 +1269,7 @@ export default function AnalyzePanel() {
                       <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
                     ) : (
                       // Free: instead of sending them away, Klyp takes the liveliest hour of the video (Smart pick).
-                      <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the best {FREE_HOURS_WORD}, free</button>
+                      <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the busiest {FREE_HOURS_WORD}, free</button>
                     )}
                   </div>
                 </div>
@@ -1583,7 +1590,7 @@ export default function AnalyzePanel() {
           )}
           {partRunTotal !== null && !isPro && clips.length > 0 && (
             <p className="mb-4 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-foreground-muted">
-              These clips come from the best hour of your stream, which is {lengthWords(partRunTotal)} long.
+              These clips come from the busiest hour of your stream, which is {lengthWords(partRunTotal)} long.
             </p>
           )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">

@@ -34,13 +34,13 @@ test("the box makes no false promise: no 'unlimited', no price that might not ap
   assert.ok(box.includes('href="/dashboard/upgrade?need=long"'));
 });
 
-test("it shows only for a free person right after a 'best hour' run, under the clips, with the source line above them", () => {
+test("it shows only for a free person right after a 'busiest hour' run, under the clips, with the source line above them", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes("submittedPartTotal.current = firstPart && previewDuration ? previewDuration : null;"));
   assert.ok(panel.includes("setPartRunTotal(submittedPartTotal.current);"));
   assert.ok(panel.includes("setPartRunTotal(null);"), "cleared when a new analysis starts");
   assert.ok(panel.includes("{partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}"));
-  assert.ok(panel.includes("These clips come from the best hour of your stream, which is {lengthWords(partRunTotal)} long."));
+  assert.ok(panel.includes("These clips come from the busiest hour of your stream, which is {lengthWords(partRunTotal)} long."));
   assert.ok(panel.indexOf("<PartUpsell") > panel.indexOf("clips.map((clip, i) =>"), "after the clips");
 });
 

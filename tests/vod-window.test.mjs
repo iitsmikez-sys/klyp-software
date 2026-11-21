@@ -85,7 +85,7 @@ test("the pipeline downloads only the chosen part and keeps parts apart in the r
 
 test("the panel shows the bar only for Pro on a video over 8 hours, prices the part, and sends it", () => {
   const panel = read("components/AnalyzePanel.tsx");
-  assert.ok(panel.includes('const windowOffered = inputMode === "url" && isPro && !!planBlock && previewDuration !== null && previewDuration > proCapSeconds;'));
+  assert.ok(panel.includes('const windowOffered = inputMode === "url" && (isPro || ownHourFor === url) && !!planBlock && previewDuration !== null && previewDuration > windowCapSeconds;'));
   assert.ok(panel.includes("<VodWindowPicker totalSeconds={previewDuration}"));
   assert.ok(panel.includes("windowStart: activeWindow.start, windowSeconds: activeWindow.end - activeWindow.start"));
   assert.ok(panel.includes("estimateSparks(activeWindow.end - activeWindow.start) + CLIP_COUNT_COST[clipCount]"));
