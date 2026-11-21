@@ -41,7 +41,7 @@ test("Free names every free caption style (Highlighter included); Pro counts the
 });
 
 test("Kick is named, and nothing says unlimited or promises what the product cannot keep", () => {
-  assert.ok(freeText.includes("YouTube, Twitch and Kick videos up to 2 hours"));
+  assert.ok(freeText.includes("YouTube, Twitch and Kick videos up to 1 hour"));
   assert.ok(proText.some((t) => /Longer videos from Twitch, Kick and YouTube, plus direct video uploads/.test(t)));
   for (const t of proText) assert.doesNotMatch(t, /up to \d+ hours/i, "the Pro card names no hour limit");
   for (const t of [...freeText, ...proText]) assert.doesNotMatch(t, /unlimited|∞/i, t);

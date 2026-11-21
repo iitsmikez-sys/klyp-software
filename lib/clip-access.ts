@@ -3,6 +3,7 @@ import { vodSourceKey } from "@/lib/vod-source";
 import { sameClipWindow, withinClipWindow } from "@/lib/clip-access-core";
 import { isMediaExpired } from "@/lib/clip-expiry";
 import { resultsCutoffIso } from "@/lib/results-retention";
+import { isClipLockedForFree } from "@/lib/free-lock";
 export { acquireUserProcessingSlot } from "@/lib/clip-access-core";
 
 const sourceKey = (url: string) => vodSourceKey(url, url.startsWith("upload:") ? url.slice(7) : undefined);
@@ -26,7 +27,7 @@ export async function canProcessClip(
     if (isMediaExpired(data)) return false;
     if (data && withinClipWindow(requested, {
       source_key: sourceKey(data.url), start_seconds: data.start_seconds, end_seconds: data.end_seconds,
-    })) return true;
+    })) return !(await isClipLockedForFree(userId, url, start, end));
   }
   if (!requested.source_key) return false;
   // A moment whose saved copy has expired cannot be re-made from the source by leaving out the clip id.
@@ -40,7 +41,7 @@ export async function canProcessClip(
     .lte("start_seconds", start + 0.001).gte("end_seconds", end - 0.001)
     .limit(1);
   if (error) throw error;
-  return !!data?.length;
+  return !!data?.length && !(await isClipLockedForFree(userId, url, start, end));
 }
 
 /** Results older than this are too old for the user's plan (Pro matches the database rule: tier = 'pro'). */
@@ -81,8 +82,9 @@ export async function canDownloadRawMoment(userId: string, url: string, start: n
     .gte("end_seconds", end - 0.001).lte("end_seconds", end + 0.001)
     .limit(1);
   if (error) throw error;
-  return !!data?.some(row => sameClipWindow(
+  const found = !!data?.some(row => sameClipWindow(
     { source_key: key, start_seconds: start, end_seconds: end },
     { source_key: key, start_seconds: row.start_seconds, end_seconds: row.end_seconds },
   ));
+  return found && !(await isClipLockedForFree(userId, url, start, end));
 }

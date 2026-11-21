@@ -49,6 +49,8 @@ import { resultsKeptDays } from "@/lib/results-retention";
 import LastAnalysisBanner, { type LastAnalysis } from "./LastAnalysisBanner";
 import UnsavedClipsDialog from "./UnsavedClipsDialog";
 import LiveStreamNotice from "./LiveStreamNotice";
+import LockedClips from "./LockedClips";
+import { unlockedIndexes } from "@/lib/free-taste";
 import type { LiveMode } from "@/lib/live-vod";
 import { uploadFileToR2 } from "@/lib/r2-browser-upload";
 import { YOUTUBE_ENABLED, YOUTUBE_LINK, YOUTUBE_OFF_MESSAGE } from "@/lib/youtube-switch";
@@ -115,6 +117,11 @@ function deviceKind(): "mobile" | "desktop" {
   return typeof navigator !== "undefined" && /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent) ? "mobile" : "desktop";
 }
 
+/** The free video length in words, so "1 hour" never reads "1 hours" (see PLAN_LIMITS.free). */
+const FREE_HOURS = PLAN_LIMITS.free.youtube / 3600;
+const FREE_HOURS_TEXT = FREE_HOURS === 1 ? "1 hour" : `${FREE_HOURS} hours`;
+const FREE_HOURS_WORD = FREE_HOURS === 1 ? "hour" : `${FREE_HOURS} hours`;
+
 export default function AnalyzePanel() {
   const [url, setUrl] = useState("");
   const [analyzedUrl, setAnalyzedUrl] = useState(""); // URL snapshot the clips belong to
@@ -180,6 +187,8 @@ export default function AnalyzePanel() {
   const submittedPartTotal = useRef<number | null>(null);
   /** The link a free person chose to clip only the first 2 hours of (see FREE_PART_SECONDS in lib/plan-limits.ts). */
   const [firstPartFor, setFirstPartFor] = useState<string | null>(null);
+  /** The link a free person chose to pick their own hour of (the bar), instead of letting Klyp pick the busiest one. */
+  const [ownHourFor, setOwnHourFor] = useState<string | null>(null);
   /** The part of an over-long video a Pro person picked on the bar (reset with each new link). */
   const [proWindow, setProWindow] = useState<{ start: number; end: number } | null>(null);
   /** A Free person tapped Download Raw (a Pro feature): show the pop-up instead of downloading. */
@@ -219,14 +228,18 @@ export default function AnalyzePanel() {
   const busy = downloading !== null || zipProgress !== null || saving !== null;
   /** Clips below the quality bar (near-miss extras). When there are none, every clip is a top pick and no badges are shown. */
   const extraCount = (clips ?? []).filter((clip) => !isTopPick(clip)).length;
+  /** Free accounts get only their best few clips open; the rest are listed as locked until the Pro pass (lib/free-taste.ts). */
+  const openClips = unlockedIndexes(clips ?? [], isPro);
+  const lockedClips = (clips ?? []).flatMap((clip, i) => (openClips.has(i) ? [] : [{ title: clip.title, score: clip.viral_score }]));
   const outOfSparks = balance !== null && balance < MIN_ANALYZE_COST;
   const animateHint = !urlFocused && url === "" && !loading && !reduceMotion;
   // Full estimate = VOD length cost (probed) + clip count cost.
   const firstPart = firstPartFor === url && !!planBlock && !isPro;
-  // Pro and a video longer than the plan's length: the bar picks which part to clip (the middle until they move it).
-  const proCapSeconds = PLAN_LIMITS.pro.twitch;
-  const windowOffered = inputMode === "url" && isPro && !!planBlock && previewDuration !== null && previewDuration > proCapSeconds;
-  const activeWindow = windowOffered ? (proWindow ?? windowShortcut("middle", previewDuration!, proCapSeconds)) : null;
+  // A video longer than the plan's length: the bar picks which part to clip (the middle until they move it). Pro always gets the bar;
+  // a free person gets it after choosing "Pick my own hour" (otherwise Klyp picks the busiest hour).
+  const windowCapSeconds = isPro ? PLAN_LIMITS.pro.twitch : FREE_PART_SECONDS;
+  const windowOffered = inputMode === "url" && (isPro || ownHourFor === url) && !!planBlock && previewDuration !== null && previewDuration > windowCapSeconds;
+  const activeWindow = windowOffered ? (proWindow ?? windowShortcut("middle", previewDuration!, windowCapSeconds)) : null;
   const totalEstimate = firstPart ? estimateSparks(FREE_PART_SECONDS) + CLIP_COUNT_COST[clipCount]
     : activeWindow ? estimateSparks(activeWindow.end - activeWindow.start) + CLIP_COUNT_COST[clipCount]
     : estimatedSparks !== null ? estimatedSparks + CLIP_COUNT_COST[clipCount] : null;
@@ -236,7 +249,7 @@ export default function AnalyzePanel() {
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
-  const showCapPopup = !!planBlock && !isPro && !firstPart && previewDuration !== null && !estimating && capDismissedFor !== url;
+  const showCapPopup = !!planBlock && !isPro && !firstPart && ownHourFor !== url && previewDuration !== null && !estimating && capDismissedFor !== url;
   useEffect(() => {
     if (!showCapPopup || capTrackedFor.current === url) return;
     capTrackedFor.current = url;
@@ -875,7 +888,7 @@ export default function AnalyzePanel() {
     if (id) window.location.href = `/dashboard/clips/${id}/edit`;
   };
   const discardClip = (index: number) => setClipStatus((previous) => ({ ...previous, [index]: "discarded" }));
-  const keepAll = () => { if (clips) void keepIndices(clips.flatMap((_, index) => clipStatus[index] === "unsaved" ? [index] : [])); };
+  const keepAll = () => { if (clips) void keepIndices(clips.flatMap((_, index) => clipStatus[index] === "unsaved" && openClips.has(index) ? [index] : [])); };
 
   const downloadClip = async (clip: ClipWithWords, index: number, styleOverride?: CaptionStyle, raw = false, ready = false) => {
     if (busy || exportLock.current) return;
@@ -1136,12 +1149,13 @@ export default function AnalyzePanel() {
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="cap-title">
           <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-7 shadow-2xl">
             <h3 id="cap-title" className="font-syne text-xl font-bold text-foreground">This video is {fmtTime(previewDuration ?? 0)} long</h3>
-            <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {PLAN_LIMITS.free.youtube / 3600} hours.</p>
+            <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {FREE_HOURS_TEXT}.</p>
             <div className="mt-5 rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-semibold text-foreground">Clip the best {PLAN_LIMITS.free.youtube / 3600} hours <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the most active {PLAN_LIMITS.free.youtube / 3600} hours and clips the best moments in them. Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks.</p>
-              <p className="mt-2 text-[13px] leading-relaxed text-red-300/90">Limited: only {PLAN_LIMITS.free.youtube / 3600} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark.</p>
-              <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the best {PLAN_LIMITS.free.youtube / 3600} hours</button>
+              <p className="text-sm font-semibold text-foreground">Clip {FREE_HOURS === 1 ? "one hour" : FREE_HOURS_WORD} <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the most active {FREE_HOURS_WORD} and clips the best moments in {FREE_HOURS === 1 ? "it" : "them"}. Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks.</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-red-300/90">Limited: only {FREE_HOURS_TEXT} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark.</p>
+              <button type="button" onClick={() => { setOwnHourFor(null); setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the busiest {FREE_HOURS_WORD}</button>
+              <button type="button" data-own-hour onClick={() => { setFirstPartFor(null); setProWindow(null); setOwnHourFor(url); void trackEvent("long_video_own_part", { source: platformName(url) }); }} className="mt-2 flex min-h-10 w-full items-center justify-center rounded-lg border border-accent/40 px-4 text-sm font-semibold text-accent transition-colors hover:bg-accent-glow">Pick my own {FREE_HOURS_WORD}</button>
             </div>
             <div className="mt-3 rounded-xl border border-accent/40 bg-accent-glow p-4">
               <p className="text-sm font-semibold text-foreground">Get the whole video with Pro</p>
@@ -1206,7 +1220,7 @@ export default function AnalyzePanel() {
                 {loading ? "Analyzing…" : "✦ Find Clips"}
               </button>
               </div>
-              {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">{"Free: "}{YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"}{" videos up to 2 hours."}</p>}
+              {!isPro &&<p className="mt-1.5 text-[11px] text-foreground-muted">{"Free: "}{YOUTUBE_ENABLED ? "Twitch, Kick and YouTube" : "Twitch and Kick"}{" videos up to 1 hour, or the best hour of a longer one."}</p>}
               {estimating && <div role="status" className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs text-foreground-muted">
                 <span className="h-3.5 w-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" /> Checking VOD details and Sparks cost…
               </div>}
@@ -1228,7 +1242,7 @@ export default function AnalyzePanel() {
               </div>}
               {firstPart && previewDuration !== null && !estimating && (
                 <p className="mt-2 rounded-lg border border-accent/30 bg-accent-glow px-3 py-2 text-xs text-foreground">
-                  Clipping the best {PLAN_LIMITS.free.youtube / 3600} hours of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
+                  Clipping the busiest {FREE_HOURS_WORD} of this {fmtTime(previewDuration)} video, free. <button type="button" onClick={() => setFirstPartFor(null)} className="font-semibold underline underline-offset-2">Change</button>
                 </p>
               )}
               {audioOnly && previewDuration !== null && !estimating && (
@@ -1238,7 +1252,10 @@ export default function AnalyzePanel() {
                 </div>
               )}
               {activeWindow && previewDuration !== null && !estimating && (
-                <VodWindowPicker totalSeconds={previewDuration} capSeconds={proCapSeconds} start={activeWindow.start} end={activeWindow.end} onChange={(start, end) => setProWindow({ start, end })} />
+                <>
+                  <VodWindowPicker totalSeconds={previewDuration} capSeconds={windowCapSeconds} start={activeWindow.start} end={activeWindow.end} onChange={(start, end) => setProWindow({ start, end })} />
+                  {!isPro && <button type="button" data-let-klyp-pick onClick={() => { setOwnHourFor(null); setProWindow(null); setFirstPartFor(url); }} className="mt-2 text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">Let Klyp pick the busiest {FREE_HOURS_WORD} instead</button>}
+                </>
               )}
               {planBlock && !firstPart && !activeWindow && previewDuration !== null && !estimating && (
                 <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
@@ -1251,8 +1268,8 @@ export default function AnalyzePanel() {
                     {isPro ? (
                       <button type="button" onClick={() => setUrl("")} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Try a shorter video</button>
                     ) : (
-                      // Free: instead of sending them away, Klyp takes the liveliest 2 hours of the video (Smart pick).
-                      <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the best {PLAN_LIMITS.free.youtube / 3600} hours, free</button>
+                      // Free: instead of sending them away, Klyp takes the liveliest hour of the video (Smart pick).
+                      <button type="button" onClick={() => { setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="flex min-h-9 items-center justify-center rounded-lg border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Clip the busiest {FREE_HOURS_WORD}, free</button>
                     )}
                   </div>
                 </div>
@@ -1573,12 +1590,12 @@ export default function AnalyzePanel() {
           )}
           {partRunTotal !== null && !isPro && clips.length > 0 && (
             <p className="mb-4 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-foreground-muted">
-              These clips come from the best 2 hours of your stream, which is {lengthWords(partRunTotal)} long.
+              These clips come from the busiest hour of your stream, which is {lengthWords(partRunTotal)} long.
             </p>
           )}
           <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
-            {clips.map((clip, i) => clipStatus[i] === "discarded" ? null : <Fragment key={i}>
-              {extraCount > 0 && !isTopPick(clip) && i > 0 && isTopPick(clips[i - 1]) && (
+            {clips.map((clip, i) => clipStatus[i] === "discarded" || !openClips.has(i) ? null : <Fragment key={i}>
+              {extraCount > 0 && !isTopPick(clip) && i > 0 && isTopPick(clips[i - 1]) && openClips.has(i - 1) && (
                 <div data-more-moments className="lg:col-span-2 mt-2 border-t border-border pt-4">
                   <p className="text-sm font-semibold text-foreground">More moments to browse</p>
                   <p className="text-xs text-foreground-muted">These scored a little lower, but they're real moments you can use.</p>
@@ -1593,8 +1610,9 @@ export default function AnalyzePanel() {
               onRawExport={() => { if (rawLocked) setRawLockOpen(true); else void downloadClip(clip, i, undefined, true); }}
               onKeep={() => keepClip(i)} onDiscard={() => discardClip(i)} /></Fragment>)}
           </div>
+          {!isPro && <LockedClips clips={lockedClips} />}
           {partRunTotal !== null && !isPro && clips.length > 0 && <PartUpsell totalSeconds={partRunTotal} analyzedSeconds={FREE_PART_SECONDS} />}
-          {partRunTotal === null && !isPro && clips.some((_, i) => clipStatus[i] !== "discarded") && (
+          {partRunTotal === null && !isPro && lockedClips.length === 0 && clips.some((_, i) => clipStatus[i] !== "discarded") && (
             <ResultsUpsell clipCount={clips.filter((_, i) => clipStatus[i] !== "discarded").length} />
           )}
         </div>

@@ -22,7 +22,7 @@ test("Kick uses the same length limits as Twitch for each plan", () => {
   assert.equal(sourceKindOf(`kick:${ID}`), "kick");
   assert.deepEqual(checkSourceLimit("free", "kick", 3600), { ok: true });
   assert.equal(checkSourceLimit("free", "kick", 3 * 3600).ok, false);
-  assert.match(checkSourceLimit("free", "kick", 3 * 3600).message, /Kick VODs up to 2 hours/);
+  assert.match(checkSourceLimit("free", "kick", 3 * 3600).message, /Kick VODs up to 1 hour/);
   assert.equal(checkSourceLimit("pro", "kick", 7 * 3600).ok, true);
   assert.equal(describeLimits("free").kickMaxSeconds, describeLimits("free").twitchMaxSeconds);
 });

@@ -14,17 +14,17 @@ export type SourceKind = "youtube" | "twitch" | "kick" | "upload";
 const HOUR = 3600;
 
 export const PLAN_LIMITS = {
-  // Free has 40 Sparks and a 2 hour video costs 35 (a 4 hour one costs 60), so 2 hours is the longest video a Free
-  // account can actually run, for either source.
-  free: { youtube: 2 * HOUR, twitch: 2 * HOUR, kick: 2 * HOUR, upload: 0, autoClip: false },
+  // Free analyzes the first hour of a video (25 Sparks): enough to show what Klyp finds without the cost of a long run.
+  // A longer video is clipped from its first hour (see FREE_PART_SECONDS), and only the best few clips are unlocked (lib/free-taste.ts).
+  free: { youtube: 1 * HOUR, twitch: 1 * HOUR, kick: 1 * HOUR, upload: 0, autoClip: false },
   pro: { youtube: 8 * HOUR, twitch: 8 * HOUR, kick: 8 * HOUR, upload: 8 * HOUR, autoClip: true },
 } as const satisfies Record<PlanName, { youtube: number; twitch: number; kick: number; upload: number; autoClip: boolean }>;
 
 /**
- * "Clip the first 2 hours": a free person who pastes a longer video can analyze just the start of it. 119 minutes, not 120,
- * (a 2 hour video costs 35 Sparks and Free has 40; see estimateSparks in lib/sparks.ts). It stays at 119 so nothing about the free part changes.
+ * "Clip the first hour": a free person who pastes a longer video can analyze just the start of it. One hour costs 25 Sparks
+ * (see estimateSparks in lib/sparks.ts).
  */
-export const FREE_PART_SECONDS = 119 * 60;
+export const FREE_PART_SECONDS = 60 * 60;
 
 /** Pro needs a real subscription or complimentary access — the raw tier flag alone is not trusted. */
 export function planOf(profile: Pick<Profile, "tier" | "stripe_subscription_id" | "complimentary_pro">): PlanName {

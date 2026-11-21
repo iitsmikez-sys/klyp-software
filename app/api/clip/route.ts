@@ -31,6 +31,8 @@ import { tmpdir } from "os";
 import path from "path";
 import { resolveBin, run, runCapture, FFMPEG_THREADS } from "@/lib/bin";
 import { clipPreset, clipCrf } from "@/lib/clip-encode";
+import { isClipLockedForFree } from "@/lib/free-lock";
+import { CLIP_LOCKED_MESSAGE } from "@/lib/free-taste";
 import { generateAss, generateTimedCueAss, generateHookAss, toFfmpegPath, HOOK_STYLES, type HookStyle } from "@/lib/captions";
 import {
   CAPTION_STYLES,
@@ -349,6 +351,10 @@ async function handlePOST(req: NextRequest): Promise<Response> {
     if (raw && !clipId ? !await canDownloadRawMoment(profile.id, url, start, end) : !await canProcessClip(profile.id, clipId, url, start, end)) {
       // What was asked for, so a refusal like this can be explained (no account details).
       log("denied: not in saved clips or analysis results", url.slice(0, 100), `${start}-${end}s`, `clipId=${clipId ? "yes" : "no"}`, raw ? "raw" : "export");
+      // A clip that is locked on the Free plan gets its own answer (it is theirs, it just needs the pass).
+      if (!isPro && await isClipLockedForFree(profile.id, url, start, end).catch(() => false)) {
+        return NextResponse.json({ error: CLIP_LOCKED_MESSAGE, code: "clip_locked" }, { status: 402 });
+      }
       return NextResponse.json({ error: "This clip is not in your saved clips or analysis results." }, { status: 403 });
     }
   } catch (err) {

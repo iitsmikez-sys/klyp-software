@@ -25,7 +25,7 @@ test("people who are not Pro see five key reasons first, with a link to the rest
 });
 
 test("the headline follows why the person came (?need=long or ?need=sparks), and the general headline stays the default", () => {
-  assert.ok(page.includes('value === "long" || value === "sparks" || value === "live" ? value : null'));
+  assert.ok(page.includes('value === "long" || value === "sparks" || value === "live" || value === "unlock" ? value : null'));
   assert.ok(page.includes('"Your video is too long for Free"'));
   assert.ok(page.includes('"You\'re out of Sparks"'));
   assert.ok(page.includes('"Go Pro. Lose the watermark."'));

@@ -6,11 +6,11 @@ import { estimateSparks } from "../lib/sparks.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 
-test("the free first part fits inside the Free limit and costs no more than the 40 free Sparks", () => {
-  assert.equal(FREE_PART_SECONDS, 7140);
+test("the free first part fits inside the Free limit and is one hour and costs 25 Sparks, well inside the free Sparks", () => {
+  assert.equal(FREE_PART_SECONDS, 3600);
   assert.ok(FREE_PART_SECONDS <= PLAN_LIMITS.free.youtube);
   assert.equal(checkSourceLimit("free", "youtube", FREE_PART_SECONDS).ok, true);
-  assert.equal(estimateSparks(FREE_PART_SECONDS), 35);
+  assert.equal(estimateSparks(FREE_PART_SECONDS), 25);
   assert.ok(estimateSparks(FREE_PART_SECONDS) <= 40, "a Free account can afford it");
   assert.equal(checkSourceLimit("free", "youtube", 5.5 * 3600).ok, false, "the whole 5.5 hour video is still refused");
 });

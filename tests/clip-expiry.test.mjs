@@ -64,6 +64,7 @@ function access({ clips = [], history = [], r2 = "1", now = new Date().toISOStri
     "@/lib/supabase/admin": { createAdminClient: () => ({ from: builder }) },
     "@/lib/vod-source": { vodSourceKey: (url) => sourceOf(url) },
     "@/lib/clip-access-core": { ...core, acquireUserProcessingSlot: () => () => {} },
+    "@/lib/free-lock": { isClipLockedForFree: async () => false },
     "@/lib/clip-expiry": expiry,
     "@/lib/results-retention": retention,
   };
