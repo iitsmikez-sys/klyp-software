@@ -1160,17 +1160,15 @@ export default function AnalyzePanel() {
             <p className="mt-1 text-sm text-foreground-muted">Free covers videos up to {FREE_HOURS_TEXT}.</p>
             <div className="mt-5 rounded-xl border border-border bg-background/50 p-4">
               <p className="text-sm font-semibold text-foreground">Clip {FREE_HOURS === 1 ? "one hour" : FREE_HOURS_WORD} <span className="ml-1 rounded-full border border-accent/40 bg-accent-glow px-2 py-0.5 text-[11px] font-semibold text-accent">Free</span></p>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp finds the most active {FREE_HOURS_WORD} and clips the best moments in {FREE_HOURS === 1 ? "it" : "them"}. Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks.</p>
-              <p className="mt-2 text-[13px] leading-relaxed text-red-300/90">Limited: only {FREE_HOURS_TEXT} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark.</p>
-              <button type="button" onClick={() => { setOwnHourFor(null); setFirstPartFor(url); void trackEvent("long_video_first_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:border-subtle">Use the busiest {FREE_HOURS_WORD}</button>
-              <button type="button" data-own-hour onClick={() => { setFirstPartFor(null); setProWindow(null); setOwnHourFor(url); void trackEvent("long_video_own_part", { source: platformName(url) }); }} className="mt-2 flex min-h-10 w-full items-center justify-center rounded-lg border border-accent/40 px-4 text-sm font-semibold text-accent transition-colors hover:bg-accent-glow">Pick my own {FREE_HOURS_WORD}</button>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Choose which {FREE_HOURS_WORD} of this video to clip. Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks.</p>
+              <button type="button" data-own-hour onClick={() => { setFirstPartFor(null); setProWindow(null); setOwnHourFor(url); void trackEvent("long_video_own_part", { source: platformName(url) }); }} className="mt-3 flex min-h-10 w-full items-center justify-center rounded-lg border border-accent/40 px-4 text-sm font-semibold text-accent transition-colors hover:bg-accent-glow">Pick my own {FREE_HOURS_WORD}</button>
             </div>
             <div className="mt-3 rounded-xl border border-accent/40 bg-accent-glow p-4">
               <p className="text-sm font-semibold text-foreground">Get the whole video with Pro</p>
               <p className="mt-1 text-[13px] leading-relaxed text-foreground-muted">Klyp looks at all {lengthWords(previewDuration ?? 0)}, so more of your stream's great moments become clips. No watermark.</p>
               <ProOfferCta source="long_video_popup" fallbackLabel={`Get Pro, $${MONTHLY_PRICE_USD} a month`} />
             </div>
-            <button type="button" onClick={() => setCapDismissedFor(url)} className="mt-3 w-full text-center text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">Not now</button>
+            <button type="button" onClick={() => setCapDismissedFor(url)} className="mt-3 w-full text-center text-[13px] text-foreground-muted underline underline-offset-2 hover:text-foreground">No thanks</button>
           </div>
         </div>
       )}
