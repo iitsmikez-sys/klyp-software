@@ -24,19 +24,20 @@ test("with a pasted video the pop-up shows it, what it costs, and exactly how ma
   assert.ok(dialog.includes("Math.max(0, video.cost - balance)") && dialog.includes("packToCover(shortfall)"));
   assert.doesNotMatch(dialog, /needs \{video/);
   const panel = read("components/AnalyzePanel.tsx");
-  assert.ok(panel.includes("video={inputMode === \"url\" && previewDuration !== null && totalEstimate !== null"));
+  assert.ok(panel.includes("const pending = inputMode === \"url\" && previewDuration !== null && totalEstimate !== null"));
   assert.ok(panel.includes("cost: totalEstimate"));
 });
 
 test("running low no longer locks the link box: they can paste a VOD, and only Find Clips opens the pack pop-up", () => {
   const panel = read("components/AnalyzePanel.tsx");
-  assert.ok(panel.includes("<OutOfSparksDialog isPro={isPro}"));
+  assert.ok(panel.includes("<OutOfSparksDialog isPro={isPro}"), "Pro still gets the Spark packs");
+  assert.ok(panel.includes("<FreeVideoUsedDialog balance={balance}"), "a Free account sees the pass first");
   // the link box is only locked while analyzing; clicking or pasting into it never opens the pop-up
   assert.ok(panel.includes('aria-label="VOD URL"'));
   assert.ok(!panel.includes("onFocus={() => { if (outOfSparks)"));
   // Find Clips stays clickable when out of Sparks and opens the pop-up instead of analyzing
-  assert.ok(panel.includes("disabled={!canSubmit && !outOfSparks}"));
-  assert.ok(panel.includes("if (outOfSparks) { setSparksDialog(true); return; }"));
+  assert.ok(panel.includes("disabled={!canSubmit && !needsMoreSparks}"));
+  assert.ok(panel.includes("if (needsMoreSparks) { setSparksDialog(true); return; }"));
   assert.ok(!panel.includes("disabled={loading || outOfSparks}"));
 });
 

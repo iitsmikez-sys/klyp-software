@@ -23,7 +23,7 @@ test("the glow only breathes for people who have not asked for less motion, and 
 test("the file-upload mode keeps its own Find Clips button, so there is never a second one next to the link box", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes('{inputMode === "file" && <div className="mt-3 flex justify-end">'));
-  assert.equal((panel.match(/type="submit" disabled=\{!canSubmit && !outOfSparks\}/g) ?? []).length, 2, "one in the bar, one for uploads");
+  assert.equal((panel.match(/type="submit" disabled=\{!canSubmit && !needsMoreSparks\}/g) ?? []).length, 2, "one in the bar, one for uploads");
 });
 
 test("the animated hint lines up with the bigger text in the bar", () => {

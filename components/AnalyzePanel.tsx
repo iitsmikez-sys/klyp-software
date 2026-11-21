@@ -17,6 +17,7 @@ import PasteBoxHint from "./PasteBoxHint";
 import { useSparks } from "./SparksProvider";
 import { SparkIcon } from "./SparksBalance";
 import OutOfSparksDialog from "./OutOfSparksDialog";
+import FreeVideoUsedDialog from "./FreeVideoUsedDialog";
 import ClipPreviewModal from "./ResultsClipPreviewModal";
 import FoundClipCard from "./FoundClipCard";
 import { isTopPick } from "@/lib/clip-extras";
@@ -248,6 +249,8 @@ export default function AnalyzePanel() {
   // What the screen promises: the ceiling, lowered for short videos. Wording only; the request is unchanged.
   const cantAfford =
     !outOfSparks && balance !== null && totalEstimate !== null && totalEstimate > balance;
+  /** Not enough Sparks for this video (none left, or fewer than it costs): clicking Find Clips explains and offers a way forward instead of doing nothing. */
+  const needsMoreSparks = outOfSparks || cantAfford;
   const sourceReady = inputMode === "file" ? uploadedFile !== null && uploadPct === null : VOD_URL_PATTERN.test(url) && estimatedForUrl === url;
   const showCapPopup = !!planBlock && !isPro && !firstPart && ownHourFor !== url && previewDuration !== null && !estimating && capDismissedFor !== url;
   useEffect(() => {
@@ -651,7 +654,7 @@ export default function AnalyzePanel() {
 
   const analyze = (e: FormEvent) => {
     e.preventDefault();
-    if (outOfSparks) { setSparksDialog(true); return; }
+    if (needsMoreSparks) { setSparksDialog(true); return; }
     if (!canSubmit) return;
     void runAnalysis();
   };
@@ -1059,7 +1062,12 @@ export default function AnalyzePanel() {
         <UnsavedClipsDialog count={unsavedCount} keptDays={keptDays} isPro={tier === "pro"} saving={saving !== null}
           onStay={() => setLeaveTarget(null)} onLeave={leaveNow} onSaveAll={saveAllThenLeave} />
       )}
-      {sparksDialog && outOfSparks && <OutOfSparksDialog isPro={isPro} balance={balance} video={inputMode === "url" && previewDuration !== null && totalEstimate !== null ? { title: previewMeta?.title || `${platformName(url)} VOD`, thumbnail: previewImageFailed ? null : previewMeta?.thumbnail, platform: platformName(url), duration: fmtTime(previewDuration), cost: totalEstimate } : null} onClose={() => setSparksDialog(false)} />}
+      {sparksDialog && needsMoreSparks && (() => {
+        const pending = inputMode === "url" && previewDuration !== null && totalEstimate !== null ? { title: previewMeta?.title || `${platformName(url)} VOD`, thumbnail: previewImageFailed ? null : previewMeta?.thumbnail, platform: platformName(url), duration: fmtTime(previewDuration), cost: totalEstimate } : null;
+        return isPro
+          ? <OutOfSparksDialog isPro={isPro} balance={balance} video={pending} onClose={() => setSparksDialog(false)} />
+          : <FreeVideoUsedDialog balance={balance} video={pending} onClose={() => setSparksDialog(false)} />;
+      })()}
       {/* ── Full-screen pipeline progress overlay ── */}
       {loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
@@ -1216,7 +1224,7 @@ export default function AnalyzePanel() {
                 {animateHint && <PasteBoxHint />}
                 <span id="vod-url-hint" className="sr-only">{PASTE_PLACEHOLDER}</span>
               </div>
-              <button type="submit" disabled={!canSubmit && !outOfSparks} onClick={(e) => { if (outOfSparks) { e.preventDefault(); setSparksDialog(true); } }} className="paste-bar-button w-full sm:w-auto">
+              <button type="submit" disabled={!canSubmit && !needsMoreSparks} onClick={(e) => { if (needsMoreSparks) { e.preventDefault(); setSparksDialog(true); } }} className="paste-bar-button w-full sm:w-auto">
                 {loading ? "Analyzing…" : "✦ Find Clips"}
               </button>
               </div>
@@ -1473,7 +1481,7 @@ export default function AnalyzePanel() {
           </div>
         )}
         {inputMode === "file" && <div className="mt-3 flex justify-end">
-          <button type="submit" disabled={!canSubmit && !outOfSparks} onClick={(e) => { if (outOfSparks) { e.preventDefault(); setSparksDialog(true); } }}
+          <button type="submit" disabled={!canSubmit && !needsMoreSparks} onClick={(e) => { if (needsMoreSparks) { e.preventDefault(); setSparksDialog(true); } }}
             className="flex min-h-10 w-full items-center justify-center rounded-lg bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45 sm:w-48">
             {loading ? "Analyzing…" : "Find Clips"}
           </button>
