@@ -11,7 +11,7 @@ test("a free user who pastes a video over the Free limit gets a pop-up with an u
   assert.ok(panel.includes("Free covers videos up to {FREE_HOURS_TEXT}."));
   assert.ok(panel.includes("Klyp looks at all {lengthWords(previewDuration ?? 0)}, so more of your stream's great moments become clips. No watermark."));
   assert.ok(panel.includes("Get the whole video with Pro"));
-  assert.ok(panel.includes("Limited: only {FREE_HOURS_TEXT} of this video's {lengthWords(previewDuration ?? 0)}, and downloads carry the Klyp watermark."));
+  assert.ok(!panel.includes("Limited: only {FREE_HOURS_TEXT}"), "the red limit line is gone");
   assert.ok(panel.includes("Uses {estimateSparks(FREE_PART_SECONDS)} of your free Sparks."));
   // The Pro call to action is the shared offer box: the $3 pass when offered, otherwise the plain link with the monthly price.
   assert.ok(panel.includes('<ProOfferCta source="long_video_popup" fallbackLabel={`Get Pro, $${MONTHLY_PRICE_USD} a month`} />'));
@@ -34,7 +34,7 @@ test("the too-long pop-up shows the $3 pass when offered, starts checkout in one
   assert.equal(rawOfferCopy(rawOfferFrom({ trial: null, first_month: null })), null);
 });
 
-test("'Not now' closes it for that link only, and Pro users never see it", () => {
+test("'No thanks' closes it for that link only, and Pro users never see it", () => {
   assert.ok(panel.includes("onClick={() => setCapDismissedFor(url)}"));
   assert.ok(panel.includes("!isPro"));
 });

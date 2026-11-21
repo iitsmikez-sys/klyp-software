@@ -74,10 +74,9 @@ test("the price follows the part, the clip times follow the video: billed second
   assert.ok(sql.includes("record_analysis_clips(\n    v_job.source_key, p_clips, p_duration_seconds, p_requested_clips, p_billed_seconds)"));
 });
 
-test("the pop-up offers one hour two ways: Klyp's busiest hour, or your own (the free length, in words)", () => {
+test("the pop-up asks one thing: pick your own hour, or no (the free length, in words)", () => {
   const panel = read("components/AnalyzePanel.tsx");
   assert.ok(panel.includes("Clip {FREE_HOURS === 1 ? \"one hour\" : FREE_HOURS_WORD}"));
-  assert.ok(panel.includes("Use the busiest {FREE_HOURS_WORD}"));
   assert.ok(panel.includes("Pick my own {FREE_HOURS_WORD}"));
   assert.ok(panel.includes("Clipping the busiest {FREE_HOURS_WORD} of this"));
 });

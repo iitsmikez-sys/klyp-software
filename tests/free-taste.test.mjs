@@ -125,7 +125,8 @@ test("a free person can pick their own hour with the bar, or let Klyp pick the b
   assert.ok(panel.includes("const [ownHourFor, setOwnHourFor] = useState<string | null>(null);"));
   assert.ok(panel.includes("const windowCapSeconds = isPro ? PLAN_LIMITS.pro.twitch : FREE_PART_SECONDS;"), "the bar's limit is the plan's");
   assert.ok(panel.includes("(isPro || ownHourFor === url)"), "Pro always gets the bar; Free after choosing to pick");
-  assert.ok(panel.includes("Pick my own {FREE_HOURS_WORD}") && panel.includes("Use the busiest {FREE_HOURS_WORD}"), "both choices are in the pop-up");
+  assert.ok(panel.includes("Pick my own {FREE_HOURS_WORD}") && panel.includes(">No thanks</button>"), "the pop-up asks only: pick my own hour, or no");
+  assert.ok(!panel.includes("Use the busiest {FREE_HOURS_WORD}") && !panel.includes("Limited: only {FREE_HOURS_TEXT}"), "no second button and no red limit line");
   assert.ok(panel.includes("Let Klyp pick the busiest {FREE_HOURS_WORD} instead"), "and they can switch back");
   assert.ok(panel.includes("capSeconds={windowCapSeconds}"));
   const route = read("app/api/analyze/route.ts");
