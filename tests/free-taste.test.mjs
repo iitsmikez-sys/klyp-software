@@ -131,3 +131,11 @@ test("a free person can pick their own hour with the bar, or let Klyp pick the b
   const route = read("app/api/analyze/route.ts");
   assert.ok(route.includes('capSeconds: plan === "free" ? FREE_PART_SECONDS'), "the server caps a chosen part at the free length");
 });
+
+test("the locked box blurs the titles, keeps the scores readable, and fits a phone (list above, offer below)", () => {
+  const box = read("components/LockedClips.tsx");
+  assert.ok(box.includes("blur-[3px]") && box.includes('aria-hidden="true" className="min-w-0 flex-1 select-none truncate blur-[3px]"'), "titles are blurred and hidden from screen readers");
+  assert.ok(box.includes("Locked clip.") && box.includes("aria-label={`Score "), "but a screen reader still hears a locked clip with its score");
+  assert.ok(box.includes("grid-cols-[minmax(0,1fr)]") && box.includes("md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"), "one column on a phone, side by side on a computer, never wider than the screen");
+  assert.ok(box.includes("Unlock every clip") && box.includes("OpenPadlock"));
+});
