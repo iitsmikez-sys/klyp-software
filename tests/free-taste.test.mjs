@@ -106,8 +106,12 @@ test("the results page lists the locked clips instead of opening them, and the p
   assert.ok(panel.includes("{!isPro && <LockedClips clips={lockedClips} />}"));
   assert.ok(panel.includes('clipStatus[index] === "unsaved" && openClips.has(index)'), "Keep all never keeps a locked clip");
   const box = read("components/LockedClips.tsx");
-  assert.ok(box.includes("/dashboard/upgrade?need=unlock") && box.includes("with no extra Sparks"));
-  assert.ok(box.includes("unless you cancel"), "the $28 line stays next to the offer");
+  assert.ok(box.includes("with no extra Sparks"));
+  assert.ok(box.includes('fetch("/api/stripe/checkout", { method: "POST"') && box.includes("window.location.href = data.url;"), "the button goes straight to checkout");
+  assert.ok(box.includes("data-unlock-checkout"));
+  assert.ok(box.includes("then $28 a month unless you cancel first") && box.includes("Cancel any time."), "the $28 line stays next to the offer");
+  assert.ok(box.includes('fetch("/api/stripe/checkout").then'), "the wording follows the offer this person really gets (pass, first month or plain)");
+  assert.ok(box.includes("/dashboard/upgrade?need=unlock"), "a failed checkout still has a way to the plans");
 });
 
 test("Free analyzes the first hour and the upgrade page opens on the unlock reason", () => {
