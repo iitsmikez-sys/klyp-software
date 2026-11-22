@@ -28,13 +28,14 @@ function loadLock(rows) {
   const source = read("lib/free-lock.ts");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const table = (name) => {
-    const q = { _f: [], select() { return q; }, eq(c, v) { q._f.push([c, v]); return q; }, order() { return q; }, limit() { return q; },
-      maybeSingle: async () => ({ data: rows.profile, error: null }),
+    const q = { _f: [], select(cols) { q._cols = cols; return q; }, eq(c, v) { q._f.push([c, v]); return q; }, order() { return q; }, limit() { return q; },
+      // The real profiles table has no complimentary_pro column: asking for it is an error (this broke every download once).
+      maybeSingle: async () => (String(q._cols).includes("complimentary_pro") ? { data: null, error: { code: "42703", message: "column profiles.complimentary_pro does not exist" } } : { data: rows.profile, error: null }),
       then: (ok) => ok({ data: rows.jobs, error: null }) };
     return q;
   };
   const modules = {
-    "@/lib/supabase/admin": { createAdminClient: () => ({ from: table }) },
+    "@/lib/supabase/admin": { createAdminClient: () => ({ from: table, auth: { admin: { getUserById: async () => ({ data: { user: { app_metadata: { klyp_complimentary_pro: rows.comp === true } } }, error: null }) } } }) },
     "@/lib/vod-source": vodSource,
     "@/lib/clip-access-core": clipCore,
     "@/lib/plan-limits": planLimits,
@@ -139,4 +140,14 @@ test("the locked box blurs the titles, keeps the scores readable, and fits a pho
   assert.ok(box.includes("Locked clip.") && box.includes("aria-label={`Score "), "but a screen reader still hears a locked clip with its score");
   assert.ok(box.includes("grid-cols-[minmax(0,1fr)]") && box.includes("md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"), "one column on a phone, side by side on a computer, never wider than the screen");
   assert.ok(box.includes("Unlock every clip") && box.includes("OpenPadlock"));
+});
+
+test("the plan lookup only asks for columns the profiles table has, and a complimentary Pro account is still never locked", async () => {
+  const src = read("lib/free-lock.ts");
+  assert.ok(!/select\("[^"]*complimentary_pro/.test(src), "complimentary_pro is not a profiles column");
+  const comp = { tier: "pro", stripe_subscription_id: null };
+  assert.equal(await loadLock({ profile: comp, comp: true, jobs: flagged })("u", URL_, 900, 930), false, "complimentary Pro is open");
+  assert.equal(await loadLock({ profile: comp, comp: false, jobs: flagged })("u", URL_, 900, 930), true, "a pro flag with no subscription and no grant is not Pro");
+  assert.equal(await loadLock({ profile: pro, jobs: flagged })("u", URL_, 900, 930), false, "subscribed Pro is open");
+  assert.equal(await loadLock({ profile: free, jobs: flagged })("u", URL_, 900, 930), true, "Free still locks");
 });
