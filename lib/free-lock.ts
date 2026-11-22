@@ -17,9 +17,17 @@ export async function isClipLockedForFree(userId: string, url: string, start: nu
   if (!key || !Number.isFinite(start) || !Number.isFinite(end)) return false;
   const admin = createAdminClient();
   const { data: profile, error: profileError } = await admin.from("profiles")
-    .select("tier,stripe_subscription_id,complimentary_pro").eq("id", userId).maybeSingle();
+    .select("tier,stripe_subscription_id").eq("id", userId).maybeSingle();
   if (profileError) throw profileError;
-  if (!profile || planOf(profile as Parameters<typeof planOf>[0]) === "pro") return false;
+  if (!profile) return false;
+  // Complimentary Pro is an account flag (Auth app_metadata), not a profiles column; it only matters for a "pro" profile with no subscription.
+  let complimentary = false;
+  if (profile.tier === "pro" && !profile.stripe_subscription_id) {
+    const { data: account, error: accountError } = await admin.auth.admin.getUserById(userId);
+    if (accountError) throw accountError;
+    complimentary = account?.user?.app_metadata?.klyp_complimentary_pro === true;
+  }
+  if (planOf({ tier: profile.tier, stripe_subscription_id: profile.stripe_subscription_id ?? null, complimentary_pro: complimentary }) === "pro") return false;
   const { data, error } = await admin.from("analysis_jobs")
     .select("analysis_clips,request_payload")
     .eq("user_id", userId).eq("source_key", key).eq("status", "completed")
