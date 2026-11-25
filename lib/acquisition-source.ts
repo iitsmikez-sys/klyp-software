@@ -54,6 +54,7 @@ export function sourceFromVisit(search: URLSearchParams, referrer: string | null
     if (tagged) return tagged;
   }
   if (search.get("offer") === "17") return "offer-17";
+  if (search.get("offer") === "14") return "offer-14";
   return sourceFromReferrer(referrer, ownHost) ?? DIRECT_SOURCE;
 }
 

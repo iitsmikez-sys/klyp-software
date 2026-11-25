@@ -98,3 +98,14 @@ test("the sign-in callback uses the same rule and goes back to /claim, wiring is
   assert.equal((login.match(/router\.push\(nextAfterLogin\(\)\)/g) ?? []).length, 2);
   assert.ok(!login.includes('router.push("/dashboard")'));
 });
+
+test("the Black Friday link (offer=14) goes straight to Stripe with the $14 offer passed on, and a made-up price is refused", async () => {
+  const until = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  const h = harness();
+  const res = await h.get(`/claim?offer=14&until=${until}`);
+  assert.equal(res.headers.get("location"), "https://checkout.stripe.com/s1");
+  assert.match(h.posted[0].cookie, /^klyp_offer=14\|\d+$/);
+  const bad = harness();
+  assert.equal((await bad.get(`/claim?offer=15&until=${until}`)).headers.get("location"), "https://www.klyp.world/dashboard/upgrade");
+  assert.equal(bad.posted.length, 0);
+});
