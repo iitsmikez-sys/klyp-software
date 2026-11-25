@@ -43,3 +43,13 @@ test("the banners are on the landing page and the dashboard, the checkout answer
   assert.ok(banner.includes("href={BLACK_FRIDAY_LINK}") && banner.includes("setActive(blackFridayActive())"), "the link, and the end date is checked in the browser");
   assert.ok(banner.includes("$28 a month, cancel any time"), "the card states what comes after the first month");
 });
+
+test("the monthly Pro card shows only the $14 first month while the deal runs (no $3 pass), and is the normal card again afterwards", () => {
+  const pricing = read("components/PricingSection.tsx");
+  assert.ok(pricing.includes("setBlackFriday(blackFridayActive())"), "the end date is checked in the browser");
+  assert.ok(pricing.includes('plan.id === "pro" && blackFriday && !yearly ? BLACK_FRIDAY_LINK : plan.cta.href'), "the button opens the $14 link, only on the monthly view");
+  assert.ok(pricing.includes("`Get Pro for $${BLACK_FRIDAY_PRICE_DOLLARS}`"), "the $14 button");
+  assert.ok(!pricing.includes("data-pass-link") && !pricing.includes("or try {trial.days}"), "no $3 pass link next to the $14 offer");
+  assert.ok(pricing.includes("Then ${MONTHLY_PRICE_USD}/month unless you cancel"), "the $28 after the first month is stated");
+  assert.ok(pricing.includes('plan.id === "pro" && trial && !yearly ? `Start for $${trial.priceCents / 100}`'), "outside the deal the card still says Start for $3");
+});
