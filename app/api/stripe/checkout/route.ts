@@ -46,9 +46,12 @@ export async function GET(req: NextRequest) {
       first_month: offered ? { price_cents: firstMonthCents(req) } : null,
       // New monthly subscribers without the ad offer can type a promo code on Stripe's checkout page.
       promo_code_field: !offered && !trial && isNewCustomer(profile),
+      // For the Black Friday banners (lib/black-friday.ts): is anyone signed in, and could they use the deal?
+      signed_in: !!viewer,
+      new_customer: isNewCustomer(profile),
     });
   } catch {
-    return NextResponse.json({ trial: null, first_month: null, promo_code_field: false });
+    return NextResponse.json({ trial: null, first_month: null, promo_code_field: false, signed_in: false, new_customer: false });
   }
 }
 

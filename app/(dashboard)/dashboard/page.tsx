@@ -6,6 +6,7 @@ import ConnectStreamBanner from "@/components/ConnectStreamBanner";
 import DashboardStats from "@/components/DashboardStats";
 import AudienceQuestion from "@/components/AudienceQuestion";
 import PassPopup from "@/components/PassPopup";
+import BlackFridayBanner from "@/components/BlackFridayBanner";
 
 export default function DashboardPage() {
   return (
@@ -22,6 +23,8 @@ export default function DashboardPage() {
           <UpgradeButton />
         </div>
       </header>
+
+      <BlackFridayBanner variant="card" />
 
       <AnalyzePanel />
 

@@ -8,6 +8,7 @@ import Stars from "@/components/Stars";
 import { SPARKS_ALLOWANCE } from "@/lib/tier";
 import AmbientAudio from "@/components/AmbientAudio";
 import NavButtons from "@/components/NavButtons";
+import BlackFridayBanner from "@/components/BlackFridayBanner";
 import BeforeAfterBand from "@/components/hero/BeforeAfterBand";
 import { YOUTUBE_ENABLED } from "@/lib/youtube-switch";
 
@@ -207,6 +208,8 @@ export default function LandingPage({ beforeAfter = false, firstMonthForAll = fa
   return (
     <div className="min-h-screen bg-background flex flex-col font-geist">
       <AmbientAudio />
+
+      <BlackFridayBanner variant="strip" />
 
       {/* ── Nav ── */}
       <nav className="sticky top-0 z-50 flex items-center justify-between gap-4 px-5 sm:px-8 h-16 border-b border-border bg-background/80 backdrop-blur-md">
