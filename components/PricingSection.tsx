@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import FadeIn from "./FadeIn";
 import { FREE_FEATURES, PRO_FEATURES } from "@/lib/plan-features";
 import { MONTHLY_PRICE_USD, YEARLY_PER_MONTH_USD, YEARLY_PRICE_USD, YEARLY_SAVE_PERCENT } from "@/lib/pricing";
+import { BLACK_FRIDAY_ENDS_TEXT, BLACK_FRIDAY_LINK, BLACK_FRIDAY_PRICE_DOLLARS, blackFridayActive } from "@/lib/black-friday";
 
 /* ─── Icons ─── */
 function CheckIcon() {
@@ -140,6 +141,9 @@ function FeatureRow({ item }: { item: FeatureItem }) {
 /** `trial` is set only when the 4-day pass is on (PRO_TRIAL=on); with it, the monthly Pro card offers the pass. */
 export default function PricingSection({ trial }: { trial?: { days: number; priceCents: number } }) {
   const [yearly, setYearly] = useState(false);
+  // While the Black Friday deal runs, the monthly Pro card shows only the $14 first month (the 4-day pass is not offered on it). After the end date it is the normal card again, with "Start for $3".
+  const [blackFriday, setBlackFriday] = useState(false);
+  useEffect(() => { setBlackFriday(blackFridayActive()); }, []);
   return (
     <section id="pricing" className="px-4 sm:px-6 py-24 max-w-[90rem] mx-auto w-full">
       {/* Header */}
@@ -201,7 +205,16 @@ export default function PricingSection({ trial }: { trial?: { days: number; pric
                     {plan.name}
                   </p>
                   <p className="text-xs text-foreground-muted leading-snug mb-4">{plan.tagline}</p>
-                  {plan.id === "pro" && yearly ? (
+                  {plan.id === "pro" && blackFriday && !yearly ? (
+                    <div data-black-friday-price>
+                      <div className="flex items-end gap-2 min-h-[3.5rem]">
+                        <span className="font-syne text-4xl font-bold text-accent">${BLACK_FRIDAY_PRICE_DOLLARS}</span>
+                        <span className="mb-1.5 text-base text-foreground-muted line-through">${MONTHLY_PRICE_USD}</span>
+                        <span className="mb-1.5 text-sm text-foreground-muted">first month</span>
+                      </div>
+                      <p className="text-xs text-[#ffd978]">Black Friday · half off · {BLACK_FRIDAY_ENDS_TEXT}</p>
+                    </div>
+                  ) : plan.id === "pro" && yearly ? (
                     <div>
                       <div className="flex items-end gap-2 min-h-[3.5rem]">
                         <span className="font-syne text-4xl font-bold text-accent">${YEARLY_PER_MONTH_USD}</span>
@@ -228,16 +241,18 @@ export default function PricingSection({ trial }: { trial?: { days: number; pric
                 {/* CTA */}
                 <div className="flex flex-col items-center gap-1.5">
                   <Link
-                    href={plan.cta.href}
+                    href={plan.id === "pro" && blackFriday && !yearly ? BLACK_FRIDAY_LINK : plan.cta.href}
                     className={`w-full text-center py-2.5 px-4 rounded-xl text-sm font-bold font-syne transition-colors ${
                       isHighlighted
                         ? "bg-accent text-background hover:bg-accent-dim shadow-accent-glow-sm"
                         : "bg-surface-2 border border-border text-foreground hover:border-subtle"
                     }`}
                   >
-                    {plan.id === "pro" && trial && !yearly ? `Start for $${trial.priceCents / 100}` : plan.cta.label}
+                    {plan.id === "pro" && blackFriday && !yearly ? `Get Pro for $${BLACK_FRIDAY_PRICE_DOLLARS}` : plan.id === "pro" && trial && !yearly ? `Start for $${trial.priceCents / 100}` : plan.cta.label}
                   </Link>
-                  {plan.id === "pro" && trial && !yearly ? (
+                  {plan.id === "pro" && blackFriday && !yearly ? (
+                    <p className="text-[12px] text-foreground-muted">Then ${MONTHLY_PRICE_USD}/month unless you cancel. Card required.</p>
+                  ) : plan.id === "pro" && trial && !yearly ? (
                     <>
                       <p className="text-[12px] text-foreground-muted">{trial.days} days of full Pro, then ${MONTHLY_PRICE_USD}/month unless you cancel.</p>
                       <p className="text-[11px] text-subtle">Card required. The ${trial.priceCents / 100} isn't refunded.</p>
