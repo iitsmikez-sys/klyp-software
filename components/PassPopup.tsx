@@ -6,6 +6,7 @@ import ProOfferCta from "@/components/ProOfferCta";
 import { trackEvent } from "@/lib/track";
 import { rawOfferFrom, type RawOffer } from "@/lib/raw-pro";
 import { PASS_REASONS, POPUP_DELAY_MS, shouldShowPassPopup, type PassReason } from "@/lib/pass-popup";
+import { blackFridayActive } from "@/lib/black-friday";
 
 const STORAGE_KEY = "klyp-pass-popup-closed-at";
 /** The picture in the pop-up. If the file is not there, a plain Klyp banner is shown instead. */
@@ -104,6 +105,8 @@ export default function PassPopup() {
 
   useEffect(() => {
     if (!shouldShowPassPopup({ loaded, isFree, offer, closedAt: readClosedAt(), now: Date.now() })) return;
+    // While the Black Friday box is on the dashboard it is the one offer on screen, so the pass pop-up waits.
+    if (blackFridayActive()) return;
     const timer = window.setTimeout(() => {
       // Never on top of another dialog (out of Sparks, long video, and so on).
       if (document.querySelector('[role="dialog"]')) return;
