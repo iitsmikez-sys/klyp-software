@@ -10,3 +10,12 @@ export function shouldShowPassPopup(args: { loaded: boolean; isFree: boolean; of
   if (!args.loaded || !args.isFree || args.offer.kind === "none") return false;
   return args.closedAt === null || args.now - args.closedAt >= POPUP_QUIET_MS;
 }
+
+/** The one-tap question shown after "Not now": why they did not take the pass. The ids are what gets counted; keep them stable. */
+export const PASS_REASONS = [
+  { id: "too_expensive", label: "It costs too much" },
+  { id: "not_sure_it_works", label: "Not sure it works for me" },
+  { id: "missing_something", label: "Something I need is missing" },
+  { id: "just_looking", label: "Just looking around" },
+] as const;
+export type PassReason = (typeof PASS_REASONS)[number]["id"];

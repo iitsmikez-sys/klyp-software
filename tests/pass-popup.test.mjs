@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { shouldShowPassPopup, POPUP_QUIET_MS, POPUP_DELAY_MS } from "../lib/pass-popup.ts";
+import { shouldShowPassPopup, POPUP_QUIET_MS, POPUP_DELAY_MS, PASS_REASONS } from "../lib/pass-popup.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 const NOW = 1_800_000_000_000;
@@ -41,4 +41,14 @@ test("it can be closed four ways, which are counted, and a missing picture falls
   assert.ok(popup.includes('trackEvent("pass_popup_view"') && popup.includes('trackEvent("pass_popup_close"'));
   assert.ok(popup.includes('role="dialog"') && popup.includes('aria-modal="true"') && popup.includes('aria-label="Close"'));
   assert.ok(popup.includes("onError={() => setImageOk(false)}"));
+});
+
+test("Not now asks what stopped them with one tap, counts the answer, and never gets in the way", () => {
+  const popup = read("components/PassPopup.tsx");
+  assert.deepEqual(PASS_REASONS.map((r) => r.id), ["too_expensive", "not_sure_it_works", "missing_something", "just_looking"]);
+  assert.ok(popup.includes('data-pass-popup-not-now onClick={() => setStep("ask")}'), "Not now opens the question instead of closing");
+  assert.ok(popup.includes("data-pass-popup-skip") && popup.includes("data-pass-reason={reason.id}"), "a Skip link and one button per reason");
+  assert.ok(popup.includes('trackEvent("pass_popup_reason", { reason, offer: offer.kind })'), "the answer is counted");
+  assert.ok(popup.includes("localStorage.setItem(STORAGE_KEY"), "answering keeps the pop-up away for a day too");
+  assert.ok(popup.includes('close("x")') && popup.includes('close("backdrop")'), "the X and a tap outside still close it at once");
 });
