@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/profile";
 import { resolveBillingState } from "@/lib/stripe-billing";
 import { validateProPrice } from "@/lib/checkout-price";
-import { OFFER_COOKIE, offerCookieActive } from "@/lib/offer-cookie";
+import { OFFER_COOKIE, offerCookieActive, offerPriceCents } from "@/lib/offer-cookie";
 import { ensureFirstMonthCoupon, firstMonthOfferAvailable, isNewCustomer, FIRST_MONTH_PRICE_CENTS } from "@/lib/first-month-offer";
 import { TRIAL_DAYS, TRIAL_PRICE_CENTS, TRIAL_SPARKS, emailTrialKey, proTrialOffered, trialMode } from "@/lib/pro-trial";
 import { trialKeysUsedByOthers } from "@/lib/trial-uses";
@@ -21,6 +21,8 @@ export const runtime = "nodejs";
 
 /** Did this person arrive from the ad link? The proxy saved that in a cookie. */
 const hasOfferLink = (req: NextRequest) => offerCookieActive(req.cookies.get(OFFER_COOKIE)?.value);
+/** The first-month price this visit is offered: $14 from the Black Friday link, otherwise the everyday $17. */
+const firstMonthCents = (req: NextRequest) => (hasOfferLink(req) ? offerPriceCents(req.cookies.get(OFFER_COOKIE)?.value) : null) ?? FIRST_MONTH_PRICE_CENTS;
 
 /**
  * Is this person offered the free trial (lib/pro-trial.ts)? It also fails closed: if the used-trials table cannot be read (for example
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest) {
     const offered = !trial && firstMonthOfferAvailable(profile, process.env, hasOfferLink(req));
     return NextResponse.json({
       trial: trial ? { days: TRIAL_DAYS, sparks: TRIAL_SPARKS, price_cents: TRIAL_PRICE_CENTS } : null,
-      first_month: offered ? { price_cents: FIRST_MONTH_PRICE_CENTS } : null,
+      first_month: offered ? { price_cents: firstMonthCents(req) } : null,
       // New monthly subscribers without the ad offer can type a promo code on Stripe's checkout page.
       promo_code_field: !offered && !trial && isNewCustomer(profile),
     });
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest) {
     // Stripe does not allow a preset discount and the promo code box together: ad-link visitors get the
     // preset $17, other new monthly subscribers get the box (codes are made in the Stripe dashboard).
     const promoField = newMonthly && !firstMonth && !trial;
-    const couponId = firstMonth ? await ensureFirstMonthCoupon(stripe) : null;
+    const couponId = firstMonth ? await ensureFirstMonthCoupon(stripe, firstMonthCents(req)) : null;
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),

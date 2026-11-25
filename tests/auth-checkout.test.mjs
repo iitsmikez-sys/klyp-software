@@ -14,8 +14,9 @@ class NextResponse extends Response {
   static redirect(url) { return new NextResponse(null, {status: 307, headers: {location: url}}); }
 }
 
-function checkoutHarness({signedIn = true, subscribed = false, validPrice = true, offer = false, link = true, newCustomer = true, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
+function checkoutHarness({linkValue = '17', signedIn = true, subscribed = false, validPrice = true, offer = false, link = true, newCustomer = true, env = {STRIPE_PRICE_PRO: 'price_test'}} = {}) {
   let created;
+  const couponCents = [];
   const validated = [];
   const stripe = {
     prices: {retrieve: async () => ({id: 'price_test'})},
@@ -27,8 +28,8 @@ function checkoutHarness({signedIn = true, subscribed = false, validPrice = true
     '@/lib/supabase/server': {createClient: async () => ({auth: {getUser: async () => ({data: {user: signedIn ? {id: 'user-1', email: 'test@example.com'} : null}})}})},
     '@/lib/profile': {getProfile: async () => ({stripe_customer_id: null, stripe_subscription_id: null})},
     '@/lib/stripe-billing': {resolveBillingState: async () => ({checkoutCustomerId: null, portalCustomerId: subscribed ? 'cus_existing' : null})},
-    '@/lib/offer-cookie': {OFFER_COOKIE: 'klyp_offer', OFFER_VALUE: '17', offerCookieActive: value => value === '17'},
-    '@/lib/first-month-offer': {firstMonthOfferAvailable: (_profile, _env, fromLink) => offer && fromLink === true, isNewCustomer: () => newCustomer, ensureFirstMonthCoupon: async () => 'coupon_test', FIRST_MONTH_PRICE_CENTS: 1700},
+    '@/lib/offer-cookie': {OFFER_COOKIE: 'klyp_offer', OFFER_VALUE: '17', offerCookieActive: value => value === '17' || value === '14', offerPriceCents: value => ({ '17': 1700, '14': 1400 }[value] ?? null)},
+    '@/lib/first-month-offer': {firstMonthOfferAvailable: (_profile, _env, fromLink) => offer && fromLink === true, isNewCustomer: () => newCustomer, ensureFirstMonthCoupon: async (_stripe, cents) => { couponCents.push(cents); return 'coupon_test'; }, FIRST_MONTH_PRICE_CENTS: 1700},
     '@/lib/pro-trial': proTrial,
     '@/lib/trial-uses': {trialKeysUsedByOthers: async () => false},
     '@/lib/checkout-price': {validateProPrice: (...args) => { validated.push(args.slice(1)); return validPrice; }},
@@ -37,7 +38,7 @@ function checkoutHarness({signedIn = true, subscribed = false, validPrice = true
   vm.runInNewContext(checkoutCode, {exports, require: name => modules[name],
     process: {env}, Response, Date, Error, console});
   return {post: (body = {}) => exports.POST({nextUrl: {origin: 'http://localhost:3000'}, json: async () => body,
-    cookies: {get: name => (link && name === 'klyp_offer' ? {value: '17'} : undefined)}}), get created() {return created;}, validated};
+    cookies: {get: name => (link && name === 'klyp_offer' ? {value: linkValue} : undefined)}}), get: () => exports.GET({cookies: {get: name => (link && name === 'klyp_offer' ? {value: linkValue} : undefined)}}), get created() {return created;}, couponCents, validated};
 }
 
 test('mocked signed-in checkout uses the advertised price and user identity without granting Sparks', async () => {
@@ -161,4 +162,13 @@ test('a yearly price that does not match $276 a year refuses to open checkout', 
   assert.equal(response.status, 500);
   assert.match((await response.json()).error, /\$276 USD\/year/);
   assert.equal(h.created, undefined);
+});
+
+test('the Black Friday link ($14) asks for the $14 coupon; the ad link and the plain offer stay at $17', async () => {
+  const bf = checkoutHarness({offer: true, linkValue: '14'});
+  await bf.post({interval: 'month'});
+  assert.deepEqual(bf.couponCents, [1400]);
+  const ad = checkoutHarness({offer: true, linkValue: '17'});
+  await ad.post({interval: 'month'});
+  assert.deepEqual(ad.couponCents, [1700]);
 });

@@ -5,6 +5,14 @@
  */
 export const OFFER_COOKIE = "klyp_offer";
 export const OFFER_VALUE = "17";
+/** Every first-month price a link may carry: the everyday $17 and the Black Friday $14. */
+export const OFFER_VALUES = ["17", "14"] as const;
+export const isOfferValue = (value: string | null | undefined): value is (typeof OFFER_VALUES)[number] => (OFFER_VALUES as readonly string[]).includes(value ?? "");
+/** The first-month price in cents that a link or cookie value stands for ("14" and "14|<deadline>" are $14, "17" and "17|<deadline>" are $17), or null. */
+export function offerPriceCents(value: string | null | undefined): number | null {
+  const m = /^(17|14)(\|\d{10,15})?$/.exec(value ?? "");
+  return m ? Number(m[1]) * 100 : null;
+}
 export const OFFER_PARAM = "offer";
 export const OFFER_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
@@ -25,17 +33,18 @@ export function offerDeadlineMs(until: string | null | undefined): number | null
  * What to save in the cookie for a visit to the offer link: "17" (no end date), "17|<deadline ms>",
  * or null when the link's end date has passed or is not a real date.
  */
-export function offerCookieValueFor(until: string | null | undefined, now = Date.now()): string | null {
-  if (until === null || until === undefined || until === "") return OFFER_VALUE;
+export function offerCookieValueFor(until: string | null | undefined, now = Date.now(), offer: string = OFFER_VALUE): string | null {
+  if (!isOfferValue(offer)) return null;
+  if (until === null || until === undefined || until === "") return offer;
   const deadline = offerDeadlineMs(until);
   if (deadline === null || now > deadline) return null;
-  return `${OFFER_VALUE}|${deadline}`;
+  return `${offer}|${deadline}`;
 }
 
 /** Is a saved cookie still a live offer? */
 export function offerCookieActive(value: string | null | undefined, now = Date.now()): boolean {
   if (!value) return false;
-  if (value === OFFER_VALUE) return true;
-  const m = /^17\|(\d{10,15})$/.exec(value);
+  if (isOfferValue(value)) return true;
+  const m = /^(?:17|14)\|(\d{10,15})$/.exec(value);
   return m !== null && now <= Number(m[1]);
 }

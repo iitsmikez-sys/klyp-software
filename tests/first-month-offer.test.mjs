@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ensureFirstMonthCoupon, firstMonthOfferAvailable, FIRST_MONTH_COUPON_ID, FIRST_MONTH_DISCOUNT_CENTS, FIRST_MONTH_PRICE_CENTS } from "../lib/first-month-offer.ts";
+import { ensureFirstMonthCoupon, firstMonthCouponFor, firstMonthOfferAvailable, BLACK_FRIDAY_COUPON_ID, BLACK_FRIDAY_PRICE_CENTS, FIRST_MONTH_COUPON_ID, FIRST_MONTH_DISCOUNT_CENTS, FIRST_MONTH_PRICE_CENTS } from "../lib/first-month-offer.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13), "");
 
@@ -97,4 +97,35 @@ test("an offer link with an end date gives $17 until the end of that day (Pacifi
   assert.equal(offerCookieActive("18", end - 1), false);
   assert.equal(offerCookieActive(undefined), false);
   assert.equal(offerCookieActive(""), false);
+});
+
+test("the Black Friday price is $14: half off, with its own fixed coupon that never mixes with the $17 one", async () => {
+  assert.equal(BLACK_FRIDAY_PRICE_CENTS, 1400);
+  assert.deepEqual(firstMonthCouponFor(1400), { id: BLACK_FRIDAY_COUPON_ID, priceCents: 1400, discountCents: 1400 });
+  assert.deepEqual(firstMonthCouponFor(1700), { id: FIRST_MONTH_COUPON_ID, priceCents: 1700, discountCents: FIRST_MONTH_DISCOUNT_CENTS });
+  assert.equal(firstMonthCouponFor(999).id, FIRST_MONTH_COUPON_ID, "an unknown price falls back to the everyday $17");
+  assert.notEqual(BLACK_FRIDAY_COUPON_ID, FIRST_MONTH_COUPON_ID);
+  const created = [];
+  const missing = { coupons: { retrieve: async () => { throw Object.assign(new Error("none"), { code: "resource_missing" }); }, create: async (c) => { created.push(c); } } };
+  assert.equal(await ensureFirstMonthCoupon(missing, 1400), BLACK_FRIDAY_COUPON_ID);
+  assert.deepEqual([created[0].id, created[0].amount_off, created[0].currency, created[0].duration, created[0].name], [BLACK_FRIDAY_COUPON_ID, 1400, "usd", "once", "Klyp: first month $14"]);
+  const wrong = { coupons: { retrieve: async () => ({ amount_off: 1100, currency: "usd", duration: "once" }), create: async () => {} } };
+  await assert.rejects(() => ensureFirstMonthCoupon(wrong, 1400), /does not match \$14/);
+  assert.equal(await ensureFirstMonthCoupon({ coupons: { retrieve: async () => ({ amount_off: 1400, currency: "usd", duration: "once" }), create: async () => {} } }, 1400), BLACK_FRIDAY_COUPON_ID);
+});
+
+test("a link can carry 14 or 17 with an end date; anything else is ignored", async () => {
+  const { offerCookieValueFor, offerCookieActive, offerPriceCents, isOfferValue } = await import("../lib/offer-cookie.ts");
+  const end = Date.parse("2026-11-30T23:59:59-08:00");
+  assert.equal(offerCookieValueFor("2026-11-30", end - 1000, "14"), `14|${end}`);
+  assert.equal(offerCookieValueFor("2026-11-30", end + 1000, "14"), null, "ended");
+  assert.equal(offerCookieValueFor(undefined, end, "14"), "14");
+  assert.equal(offerCookieValueFor("2026-11-30", end - 1000, "15"), null);
+  assert.equal(offerCookieValueFor("2026-11-30", end - 1000), `17|${end}`, "the default is still the $17 link");
+  assert.equal(offerCookieActive("14", end + 10_000_000), true);
+  assert.equal(offerCookieActive(`14|${end}`, end), true);
+  assert.equal(offerCookieActive(`14|${end}`, end + 1), false);
+  assert.equal(offerCookieActive("15", end), false);
+  assert.deepEqual(["14", "14|1893456000000", "17", "17|1893456000000", "15", "", null].map(offerPriceCents), [1400, 1400, 1700, 1700, null, null, null]);
+  assert.equal(isOfferValue("14") && isOfferValue("17") && !isOfferValue("15"), true);
 });

@@ -1,13 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { OFFER_COOKIE, OFFER_COOKIE_MAX_AGE, OFFER_PARAM, OFFER_UNTIL_PARAM, OFFER_VALUE, offerCookieValueFor } from "./lib/offer-cookie";
+import { OFFER_COOKIE, OFFER_COOKIE_MAX_AGE, OFFER_PARAM, OFFER_UNTIL_PARAM, isOfferValue, offerCookieValueFor } from "./lib/offer-cookie";
 import { SOURCE_COOKIE, SOURCE_COOKIE_MAX_AGE, shouldSaveSource, sourceFromVisit } from "./lib/acquisition-source";
 
 /** Remember that this visitor came from the $17 ad link. */
 function saveOffer(response: NextResponse, request: NextRequest) {
   // A link with an end date (`&until=2026-11-09`) stops giving the offer once that day has passed.
-  const value = offerCookieValueFor(request.nextUrl.searchParams.get(OFFER_UNTIL_PARAM));
+  const value = offerCookieValueFor(request.nextUrl.searchParams.get(OFFER_UNTIL_PARAM), Date.now(), request.nextUrl.searchParams.get(OFFER_PARAM) ?? undefined);
   if (value === null) return;
   response.cookies.set(OFFER_COOKIE, value, { maxAge: OFFER_COOKIE_MAX_AGE, path: "/", sameSite: "lax", httpOnly: true, secure: process.env.NODE_ENV === "production" });
 }
@@ -20,7 +20,7 @@ function saveSource(request: NextRequest, response: NextResponse) {
 }
 
 export async function proxy(request: NextRequest) {
-  const fromAd = request.nextUrl.searchParams.get(OFFER_PARAM) === OFFER_VALUE;
+  const fromAd = isOfferValue(request.nextUrl.searchParams.get(OFFER_PARAM));
   const path = request.nextUrl.pathname;
   // Public pages only need the offer and source saved; skip the sign-in check there.
   if (path !== "/login" && !path.startsWith("/dashboard")) {
